@@ -1,0 +1,25 @@
+{
+  "name": "home-page",
+  "label": "Home Page",
+  "type": "content-type",
+  "fields": [
+    {
+      "name": "title",
+      "label": "Title",
+      "type": "text",
+      "required": true
+    },
+    {
+      "name": "hero_image",
+      "label": "Hero Image",
+      "type": "image",
+      "required": false
+    },
+    {
+      "name": "body",
+      "label": "Body",
+      "type": "rich-text",
+      "required": false
+    }
+  ]
+}

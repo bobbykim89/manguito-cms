@@ -1,0 +1,22 @@
+{
+  "name": "sandbox",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch index.js",
+    "build": "tsc",
+    "test": "vitest run --passWithNoTests",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@bobbykim/manguito-cms-api": "workspace:*",
+    "@bobbykim/manguito-cms-admin": "workspace:*",
+    "@bobbykim/manguito-cms-core": "workspace:*",
+    "@bobbykim/manguito-cms-db": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "vitest": "^2.0.0"
+  }
+}

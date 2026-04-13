@@ -1,0 +1,19 @@
+{
+  "roles": [
+    {
+      "name": "admin",
+      "label": "Administrator",
+      "permissions": ["content:read", "content:write", "content:delete", "schema:read", "schema:write", "users:read", "users:write"]
+    },
+    {
+      "name": "editor",
+      "label": "Editor",
+      "permissions": ["content:read", "content:write", "schema:read"]
+    },
+    {
+      "name": "viewer",
+      "label": "Viewer",
+      "permissions": ["content:read"]
+    }
+  ]
+}
