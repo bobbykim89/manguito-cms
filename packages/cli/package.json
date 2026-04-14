@@ -1,8 +1,11 @@
 {
-  "name": "@bobbykim/manguito-cms-core",
+  "name": "@bobbykim/manguito-cms-cli",
   "version": "0.0.1",
   "engines": {
     "node": ">=22.0.0"
+  },
+  "bin": {
+    "manguito": "./dist/index.js"
   },
   "exports": {
     ".": {
@@ -24,7 +27,13 @@
     "lint": "eslint src"
   },
   "dependencies": {
-    "zod": "^4.3.0"
+    "@bobbykim/manguito-cms-admin": "workspace:*",
+    "@bobbykim/manguito-cms-api": "workspace:*",
+    "@bobbykim/manguito-cms-core": "workspace:*",
+    "@bobbykim/manguito-cms-db": "workspace:*",
+    "citty": "^0.2.2",
+    "@clack/prompts": "^1.2.0",
+    "handlebars": "^4.7.0"
   },
   "devDependencies": {
     "dotenv-cli": "latest",

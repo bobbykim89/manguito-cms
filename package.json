@@ -1,5 +1,8 @@
 {
   "private": true,
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
@@ -11,8 +14,10 @@
   },
   "devDependencies": {
     "@changesets/cli": "latest",
-    "eslint": "^9.0.0",
+    "dotenv-cli": "latest",
+    "eslint": "^10.0.0",
     "turbo": "latest",
-    "typescript": "^5.0.0"
+    "typescript": "^6.0.0",
+    "vitest": "latest"
   }
 }

@@ -1,0 +1,19 @@
+{
+  "name": "example-page",
+  "label": "Example Page",
+  "type": "content-type",
+  "fields": [
+    {
+      "name": "title",
+      "label": "Title",
+      "type": "text",
+      "required": true
+    },
+    {
+      "name": "body",
+      "label": "Body",
+      "type": "rich-text",
+      "required": false
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 {
-  "name": "home-page",
-  "label": "Home Page",
+  "name": "example-page",
+  "label": "Example Page",
   "type": "content-type",
   "fields": [
     {

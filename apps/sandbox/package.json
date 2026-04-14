@@ -4,19 +4,20 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node --watch index.js",
-    "build": "tsc",
-    "test": "vitest run --passWithNoTests",
+    "dev": "manguito dev",
+    "test": "dotenv -e .env.test -- vitest run",
     "lint": "eslint ."
   },
   "dependencies": {
-    "@bobbykim/manguito-cms-api": "workspace:*",
     "@bobbykim/manguito-cms-admin": "workspace:*",
+    "@bobbykim/manguito-cms-api": "workspace:*",
+    "@bobbykim/manguito-cms-cli": "workspace:*",
     "@bobbykim/manguito-cms-core": "workspace:*",
     "@bobbykim/manguito-cms-db": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "^5.0.0",
-    "vitest": "^2.0.0"
+    "dotenv-cli": "latest",
+    "typescript": "^6.0.0",
+    "vitest": "^4.1.0"
   }
 }
