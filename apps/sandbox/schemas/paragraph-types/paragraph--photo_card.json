@@ -1,0 +1,27 @@
+{
+  "name": "paragraph--photo_card",
+  "label": "Paragraph Photo Card",
+  "type": "paragraph-type",
+  "fields": [
+    {
+      "name": "photo_card_title",
+      "label": "Title",
+      "type": "text/plain",
+      "required": true
+    },
+    {
+      "name": "photo_card_image",
+      "label": "Image",
+      "type": "image",
+      "maxSize": "512KB",
+      "alt": true,
+      "required": true
+    },
+    {
+      "name": "photo_card_text",
+      "label": "Text",
+      "type": "text/rich",
+      "required": false
+    }
+  ]
+}

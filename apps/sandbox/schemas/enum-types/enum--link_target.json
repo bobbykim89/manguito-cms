@@ -1,0 +1,6 @@
+{
+  "name": "enum--targets",
+  "label": "targets",
+  "type": "enum-type",
+  "values": ["_self", "_blank"]
+}
