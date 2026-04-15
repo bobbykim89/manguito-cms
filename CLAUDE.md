@@ -7,11 +7,11 @@ Read docs/phase-XX.md before making changes.
 
 ## Current phase
 
-Phase 1 — repo scaffold and tooling. No application logic yet.
+Phase 2 — implementing schema parser, field type registry, and defineConfig.
 
 ## Completed phases
 
-(none yet)
+Phase 1 — repo scaffold and tooling. No application logic yet.
 
 ## Packages
 
