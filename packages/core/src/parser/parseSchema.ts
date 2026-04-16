@@ -349,9 +349,10 @@ function buildParsedField(
 
     case 'enum': {
       // Inline enum: values are already present on the field.
-      // Ref enum: values must be resolved externally when the full registry is
-      // available. For now, allowed_values is empty and check_constraint is empty.
-      // The registry builder is responsible for populating these for ref enums.
+      // Ref enum: values must be resolved by buildSchemaRegistry once the full
+      // registry is available. For now, allowed_values and check_constraint are
+      // empty; enum_ref is stored in ui_component so the registry builder can
+      // look up and populate the values.
       const allowedValues = rawField.values ?? []
       validation = { required, allowed_values: allowedValues }
       db_column = {
@@ -360,7 +361,11 @@ function buildParsedField(
         nullable,
         check_constraint: allowedValues,
       }
-      ui_component = { component: 'select', options: allowedValues }
+      ui_component = {
+        component: 'select',
+        options: allowedValues,
+        ...(rawField.ref !== undefined && { enum_ref: rawField.ref }),
+      }
       break
     }
 

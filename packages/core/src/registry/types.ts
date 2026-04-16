@@ -53,7 +53,7 @@ export type UiComponent =
   | { component: 'checkbox' }
   | { component: 'date-picker' }
   | { component: 'file-upload'; accepted_mime_types: string[] }
-  | { component: 'select'; options: string[] }
+  | { component: 'select'; options: string[]; enum_ref?: string }
   | { component: 'typeahead-select'; ref: string; rel: RelationType }
   | { component: 'paragraph-embed'; ref: string; rel: RelationType; max?: number }
 
