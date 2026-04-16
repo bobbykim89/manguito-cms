@@ -29,6 +29,9 @@ export type ParseErrorCode =
   | 'ROUTES_FILE_NOT_FOUND'
   | 'FILE_READ_ERROR'
   | 'FILE_PARSE_ERROR'
+  | 'DUPLICATE_HIERARCHY_LEVEL'
+  | 'UNKNOWN_PERMISSION'
+  | 'INVALID_PERMISSION'
 
 export type ParseError = {
   file: string

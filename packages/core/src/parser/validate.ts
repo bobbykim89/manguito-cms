@@ -24,6 +24,7 @@ export type ParsedRoutes = {
 export type ParsedRole = {
   name: string
   label: string
+  is_system?: boolean
   hierarchy_level: number
   permissions: string[]
 }
