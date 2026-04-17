@@ -1,0 +1,36 @@
+{
+  "name": "paragraph--card_image_link",
+  "label": "Paragraph Card Image Link",
+  "type": "paragraph-type",
+  "fields": [
+    {
+      "name": "card_image_link_title",
+      "label": "Title",
+      "type": "text/plain",
+      "required": true
+    },
+    {
+      "name": "card_image_link_image",
+      "label": "Image",
+      "type": "image",
+      "maxSize": "512KB",
+      "alt": true,
+      "required": true
+    },
+    {
+      "name": "card_image_link_text",
+      "label": "Text",
+      "type": "text/rich",
+      "required": false
+    },
+    {
+      "name": "card_image_link_link",
+      "label": "Link",
+      "type": "paragraph",
+      "ref": "paragraph--link_item",
+      "rel": "one-to-one",
+      "max": 1,
+      "required": true
+    }
+  ]
+}

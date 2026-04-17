@@ -1,0 +1,90 @@
+{
+  "name": "content--blog_post",
+  "label": "Blog Post",
+  "type": "content-type",
+  "fields": [
+    {
+      "tab": {
+        "name": "primary-tab",
+        "label": "Primary Tab",
+        "fields": [
+          {
+            "name": "blog_title",
+            "label": "Title",
+            "type": "text/plain",
+            "required": true
+          },
+          {
+            "name": "blog_hero_image",
+            "label": "Hero Image",
+            "type": "image",
+            "max_size": "512KB",
+            "alt": true,
+            "required": false
+          },
+          {
+            "name": "blog_desc",
+            "label": "Description",
+            "type": "text/rich",
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "tab": {
+        "name": "meta_info",
+        "label": "Meta Information Tab",
+        "fields": [
+          {
+            "name": "blog_meta_title",
+            "label": "Meta Title",
+            "type": "text/plain",
+            "required": true
+          },
+          {
+            "name": "blog_meta_desc",
+            "label": "Meta Description",
+            "type": "text/plain",
+            "required": true
+          }
+        ]
+      }
+    },
+    {
+      "tab": {
+        "name": "first_content_tab",
+        "label": "First Content Block Tab",
+        "fields": [
+          {
+            "name": "blog_cards",
+            "label": "Cards",
+            "type": "paragraph",
+            "ref": "paragraph--photo_cards",
+            "max": 8,
+            "rel": "one-to-many",
+            "required": true
+          },
+          {
+            "name": "blog_link",
+            "label": "Link",
+            "type": "paragraph",
+            "ref": "paragraph--link_item",
+            "max": 1,
+            "rel": "one-to-one",
+            "required": false
+          },
+          {
+            "name": "blog_related",
+            "label": "Related Posts",
+            "type": "reference",
+            "target": "content_blog_post",
+            "rel": "many-to-many",
+            "max": 10,
+            "required": false
+          }
+        ]
+      }
+    }
+  ]
+}

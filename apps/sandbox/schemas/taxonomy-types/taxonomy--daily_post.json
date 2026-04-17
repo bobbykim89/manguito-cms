@@ -1,0 +1,19 @@
+{
+  "name": "taxonomy--daily_post",
+  "label": "Daily Post",
+  "type": "taxonomy-type",
+  "fields": [
+    {
+      "name": "daily_title",
+      "label": "Title",
+      "type": "text/plain",
+      "required": true
+    },
+    {
+      "name": "daily_desc",
+      "label": "Description",
+      "type": "text/rich",
+      "required": true
+    }
+  ]
+}

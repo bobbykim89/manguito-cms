@@ -222,7 +222,7 @@ The **Field Type Registry** is the architectural keystone. Every supported field
 | Phase                         | Focus                                                         |
 | ----------------------------- | ------------------------------------------------------------- |
 | [Phase 1](./docs/phase-01.md) | Foundation — stack decisions, repo scaffold, tooling          |
-| Phase 2                       | `defineConfig` shape + schema parser + field type registry    |
+| [Phase 2](./docs/phase-02.md) | `defineConfig` shape + schema parser + field type registry    |
 | Phase 3                       | DB module — Drizzle codegen from schema, migrations           |
 | Phase 4                       | Migration strategy for schema changes                         |
 | Phase 5                       | REST API layer — route generation, request/response contracts |
