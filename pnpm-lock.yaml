@@ -45,6 +45,9 @@ importers:
         specifier: workspace:*
         version: link:../../packages/db
     devDependencies:
+      '@types/node':
+        specifier: ^25.6.0
+        version: 25.6.0
       dotenv-cli:
         specifier: latest
         version: 11.0.0
