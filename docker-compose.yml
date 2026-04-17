@@ -1,0 +1,9 @@
+services:
+  manguito-test-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: manguito_test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
