@@ -1,6 +1,7 @@
 import type {
   DbColumnType,
   ParsedField,
+  ParsedParagraphType,
   SchemaRegistry,
   SystemField,
 } from '@bobbykim/manguito-cms-core'
@@ -159,10 +160,188 @@ function buildFieldBase(
   }
 }
 
-// ─── generateSchemaFile (partial — orchestration in next chunk) ───────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function tableNameToVarName(tableName: string): string {
+  return tableName.replace(/-/g, '_')
+}
+
+function generateTableDef(
+  tableName: string,
+  varName: string,
+  systemFields: SystemField[],
+  fields: ParsedField[],
+): string {
+  const colLines: string[] = []
+
+  for (const f of systemFields) {
+    colLines.push(`${f.name}: ${generateSystemFieldColumn(f)},`)
+  }
+
+  for (const f of fields) {
+    const colExpr = generateFieldColumn(f)
+    if (colExpr === null) continue
+    colLines.push(`${f.db_column!.column_name}: ${colExpr},`)
+  }
+
+  const enumFields = fields.filter(
+    (f) => (f.db_column?.check_constraint?.length ?? 0) > 0,
+  )
+
+  if (enumFields.length === 0) {
+    const colBlock = colLines.map((l) => `  ${l}`).join('\n')
+    return `export const ${varName} = s.pgTable('${tableName}', {\n${colBlock}\n})`
+  }
+
+  const colBlock = colLines.map((l) => `    ${l}`).join('\n')
+  const constraints = enumFields
+    .map((f) => {
+      const col = f.db_column!
+      const values = col.check_constraint!.map((v) => `'${v}'`).join(', ')
+      const cname = `${col.column_name}_check`
+      return [
+        `    ${cname}: s.check(`,
+        `      '${cname}',`,
+        `      sql\`\${table.${col.column_name}} IN (${values})\``,
+        `    ),`,
+      ].join('\n')
+    })
+    .join('\n')
+
+  return [
+    `export const ${varName} = s.pgTable(`,
+    `  '${tableName}',`,
+    `  {`,
+    colBlock,
+    `  },`,
+    `  (table) => ({`,
+    constraints,
+    `  })`,
+    `)`,
+  ].join('\n')
+}
+
+// ─── Paragraph Topological Sort ───────────────────────────────────────────────
+
+export function orderParagraphTypes(
+  paragraphs: Record<string, ParsedParagraphType>,
+): ParsedParagraphType[] {
+  const sorted: ParsedParagraphType[] = []
+  const visited = new Set<string>()
+
+  function visit(name: string) {
+    if (visited.has(name)) return
+    visited.add(name)
+    const paragraph = paragraphs[name]
+    if (!paragraph) return
+    for (const field of paragraph.fields) {
+      if (field.field_type === 'paragraph') {
+        const ref = (field.ui_component as { ref: string }).ref
+        visit(ref)
+      }
+    }
+    sorted.push(paragraph)
+  }
+
+  for (const name of Object.keys(paragraphs)) visit(name)
+  return sorted
+}
+
+// ─── Junction Table Generation ────────────────────────────────────────────────
+
+function generateJunctionTables(registry: SchemaRegistry): string {
+  const tables: string[] = []
+
+  for (const ct of Object.values(registry.content_types)) {
+    const leftVar = tableNameToVarName(ct.db.table_name)
+
+    for (const jt of ct.db.junction_tables) {
+      const varName = tableNameToVarName(jt.table_name)
+      const rightVar = tableNameToVarName(jt.right_table)
+
+      const orderLine = jt.order_column
+        ? `    order: s.integer('order').notNull().default(0),`
+        : null
+
+      const def = [
+        `export const ${varName} = s.pgTable(`,
+        `  '${jt.table_name}',`,
+        `  {`,
+        `    ${jt.left_column}: s.uuid('${jt.left_column}')`,
+        `      .notNull()`,
+        `      .references(() => ${leftVar}.id, { onDelete: 'cascade' }),`,
+        `    ${jt.right_column}: s.uuid('${jt.right_column}')`,
+        `      .notNull()`,
+        `      .references(() => ${rightVar}.id, { onDelete: 'cascade' }),`,
+        ...(orderLine ? [orderLine] : []),
+        `  }`,
+        `)`,
+      ].join('\n')
+
+      tables.push(def)
+    }
+  }
+
+  if (tables.length === 0) return ''
+
+  return (
+    '// ─── Junction Tables ─────────────────────────────────────────────────────────\n' +
+    tables.join('\n\n')
+  )
+}
+
+// ─── generateSchemaFile ───────────────────────────────────────────────────────
 
 export function generateSchemaFile(registry: SchemaRegistry): string {
-  void registry
-  const parts: string[] = [generateFileHeader(), '', SYSTEM_TABLES_SECTION]
-  return parts.join('\n')
+  const sections: string[] = [generateFileHeader(), SYSTEM_TABLES_SECTION]
+
+  const taxonomyTypes = Object.values(registry.taxonomy_types)
+  if (taxonomyTypes.length > 0) {
+    const header =
+      '// ─── Taxonomy Types ──────────────────────────────────────────────────────────'
+    const defs = taxonomyTypes.map((t) =>
+      generateTableDef(
+        t.db.table_name,
+        tableNameToVarName(t.db.table_name),
+        t.system_fields,
+        t.fields,
+      ),
+    )
+    sections.push(header + '\n' + defs.join('\n\n'))
+  }
+
+  const paragraphTypes = orderParagraphTypes(registry.paragraph_types)
+  if (paragraphTypes.length > 0) {
+    const header =
+      '// ─── Paragraph Types ─────────────────────────────────────────────────────────'
+    const defs = paragraphTypes.map((p) =>
+      generateTableDef(
+        p.db.table_name,
+        tableNameToVarName(p.db.table_name),
+        p.system_fields,
+        p.fields,
+      ),
+    )
+    sections.push(header + '\n' + defs.join('\n\n'))
+  }
+
+  const contentTypes = Object.values(registry.content_types)
+  if (contentTypes.length > 0) {
+    const header =
+      '// ─── Content Types ───────────────────────────────────────────────────────────'
+    const defs = contentTypes.map((c) =>
+      generateTableDef(
+        c.db.table_name,
+        tableNameToVarName(c.db.table_name),
+        c.system_fields,
+        c.fields,
+      ),
+    )
+    sections.push(header + '\n' + defs.join('\n\n'))
+  }
+
+  const junctionSection = generateJunctionTables(registry)
+  if (junctionSection) sections.push(junctionSection)
+
+  return sections.join('\n\n')
 }
