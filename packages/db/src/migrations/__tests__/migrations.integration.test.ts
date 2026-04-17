@@ -20,7 +20,7 @@ if (!DB_URL) {
 
 // ─── Temp directory ───────────────────────────────────────────────────────────
 
-const TMP_DIR = path.resolve(__dirname, '..', '..', '..', '..', 'tests', '.tmp-migrations')
+const TMP_DIR = path.resolve(__dirname, '..', '..', '..', 'tests', '.tmp-migrations')
 const SCHEMA_PATH = path.join(TMP_DIR, 'schema.ts')
 const CONFIG_PATH = path.join(TMP_DIR, 'drizzle.config.ts')
 const MIGRATIONS_FOLDER = path.join(TMP_DIR, 'migrations')
@@ -76,16 +76,18 @@ const migrationOptions: MigrationRunnerOptions = {
 beforeAll(async () => {
   mkdirSync(TMP_DIR, { recursive: true })
   writeFileSync(SCHEMA_PATH, generateSchemaFile(MINIMAL_REGISTRY))
+  // Use relative paths — drizzle-kit migrate prepends './' to absolute out paths,
+  // producing './/absolute/path' which causes ENOENT on snapshot reads.
   writeFileSync(
     CONFIG_PATH,
     [
       "import { defineConfig } from 'drizzle-kit'",
       'export default defineConfig({',
-      `  schema: '${SCHEMA_PATH}',`,
-      `  out: '${MIGRATIONS_FOLDER}',`,
+      `  schema: './schema.ts',`,
+      `  out: './migrations',`,
       "  dialect: 'postgresql',",
       "  dbCredentials: { url: process.env['DB_URL']! },",
-      `  migrationsTable: '${MIGRATIONS_TABLE}',`,
+      `  migrations: { table: '${MIGRATIONS_TABLE}', schema: 'public' },`,
       '})',
     ].join('\n'),
   )
@@ -140,8 +142,14 @@ describe('getMigrationStatus', () => {
 
 describe('applyMigrations', () => {
   it('runs without error and getMigrationStatus reflects applied migrations', async () => {
-    // generateMigration may have already run in the getMigrationStatus test above —
-    // it is idempotent when no schema changes occurred, so this is safe to call again.
+    // Drop all tables the migration will CREATE — drizzle-kit generates plain
+    // CREATE TABLE (no IF NOT EXISTS), so pre-existing tables from the seeder
+    // test's runDevMigration would cause "relation already exists" errors.
+    for (const table of ['users', 'content_mig_test', 'content_test_article', 'roles', 'base_paths', 'media']) {
+      await db.execute(sql.raw(`DROP TABLE IF EXISTS "${table}" CASCADE`))
+    }
+    await db.execute(sql.raw(`DROP TABLE IF EXISTS "${MIGRATIONS_TABLE}" CASCADE`))
+
     await generateMigration(CONFIG_PATH, MIGRATIONS_FOLDER)
 
     const sqlFilesBefore = readdirSync(MIGRATIONS_FOLDER).filter((f) =>

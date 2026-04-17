@@ -22,7 +22,7 @@ if (!DB_URL) {
 
 // ─── Temp directory for drizzle config + schema ───────────────────────────────
 
-const TMP_DIR = path.resolve(__dirname, '..', '..', '..', '..', 'tests', '.tmp-seeder')
+const TMP_DIR = path.resolve(__dirname, '..', '..', '..', 'tests', '.tmp-seeder')
 const SCHEMA_PATH = path.join(TMP_DIR, 'schema.ts')
 const CONFIG_PATH = path.join(TMP_DIR, 'drizzle.config.ts')
 
@@ -128,7 +128,7 @@ beforeAll(async () => {
     [
       "import { defineConfig } from 'drizzle-kit'",
       'export default defineConfig({',
-      `  schema: '${SCHEMA_PATH}',`,
+      `  schema: './schema.ts',`,
       "  dialect: 'postgresql',",
       "  dbCredentials: { url: process.env['DB_URL']! },",
       '})',
