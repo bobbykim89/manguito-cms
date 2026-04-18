@@ -25,3 +25,38 @@ export type {
 } from './config/types.js'
 
 export { defineConfig } from './config/defineConfig.js'
+
+export type {
+  DbColumnType,
+  DbColumn,
+  FieldValidation,
+  FieldType,
+  RelationType,
+  UiComponent,
+  ParsedField,
+  SystemField,
+} from './registry/types.js'
+
+export type {
+  ParsedSchemaBase,
+  UiTab,
+  UiMeta,
+  JunctionTable,
+  ContentDbMeta,
+  ParagraphDbMeta,
+  TaxonomyDbMeta,
+  ParsedContentType,
+  ParsedParagraphType,
+  ParsedTaxonomyType,
+  ParsedEnumType,
+  ParsedSchema,
+  ParseResult,
+} from './parser/parseSchema.js'
+
+export type {
+  ParsedBasePath,
+  ParsedRoutes,
+  ParsedRole,
+  ParsedRoles,
+  SchemaRegistry,
+} from './parser/validate.js'

@@ -3,7 +3,8 @@
   "compilerOptions": {
     "rootDir": "src",
     "noEmit": true,
-    "types": ["node", "pg"]
+    "types": ["node", "pg"],
+    "ignoreDeprecations": "6.0"
   },
   "include": ["src", "tests"]
 }

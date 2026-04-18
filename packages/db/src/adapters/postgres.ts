@@ -1,8 +1,9 @@
-import type {
-  DbAdapter,
-  MigrationResult,
-  MigrationStatus,
-} from '@bobbykim/manguito-cms-core'
+import { drizzle as drizzleNode } from 'drizzle-orm/node-postgres'
+import { drizzle as drizzleNeon } from 'drizzle-orm/neon-http'
+import { neon } from '@neondatabase/serverless'
+import { Pool } from 'pg'
+import { sql } from 'drizzle-orm'
+import type { PostgresAdapter, DrizzlePostgresInstance } from '../types'
 
 export type PostgresAdapterOptions = {
   url?: string
@@ -16,12 +17,13 @@ export type PostgresAdapterOptions = {
 
 export function createPostgresAdapter(
   options: PostgresAdapterOptions = {}
-): DbAdapter {
+): PostgresAdapter {
   const url = options.url ?? process.env['DB_URL']
 
   if (!url) {
     throw new Error(
-      'DB_URL_MISSING: No database URL provided. Set the DB_URL environment variable or pass a url option.'
+      'DB_URL_MISSING: No database URL provided. ' +
+        'Set the DB_URL environment variable or pass a url option.'
     )
   }
 
@@ -31,26 +33,39 @@ export function createPostgresAdapter(
     )
   }
 
-  const isNeon = url.includes('neon.tech')
-  const _serverless = options.serverless ?? isNeon
-  const _pool = {
+  const isNeon = options.serverless ?? url.includes('neon.tech')
+  const poolConfig = {
     max: options.pool?.max ?? 10,
     idle_timeout: options.pool?.idle_timeout ?? 30,
     connect_timeout: options.pool?.connect_timeout ?? 10,
   }
 
+  let db: DrizzlePostgresInstance | null = null
   let connected = false
 
   return {
     type: 'postgres',
 
     async connect(): Promise<void> {
-      // Full connection logic implemented in Phase 3 (DB codegen).
-      // Validates connection at startup, not at config parse time.
+      if (isNeon) {
+        const sqlClient = neon(url)
+        db = drizzleNeon(sqlClient)
+      } else {
+        const pool = new Pool({
+          connectionString: url,
+          max: poolConfig.max,
+          idleTimeoutMillis: poolConfig.idle_timeout * 1000,
+          connectionTimeoutMillis: poolConfig.connect_timeout * 1000,
+        })
+        const client = await pool.connect()
+        client.release()
+        db = drizzleNode(pool)
+      }
       connected = true
     },
 
     async disconnect(): Promise<void> {
+      db = null
       connected = false
     },
 
@@ -58,20 +73,44 @@ export function createPostgresAdapter(
       return connected
     },
 
-    async runMigrations(): Promise<MigrationResult> {
-      throw new Error('runMigrations: not yet implemented (Phase 3)')
+    getDb(): DrizzlePostgresInstance {
+      if (!db) {
+        throw new Error(
+          'DB not connected — call connect() before accessing the database.'
+        )
+      }
+      return db
     },
 
-    async getMigrationStatus(): Promise<MigrationStatus> {
-      throw new Error('getMigrationStatus: not yet implemented (Phase 3)')
+    async runMigrations() {
+      throw new Error('runMigrations: wired by CLI in Phase 9')
+    },
+
+    async getMigrationStatus() {
+      throw new Error('getMigrationStatus: wired by CLI in Phase 9')
     },
 
     async getTableNames(): Promise<string[]> {
-      throw new Error('getTableNames: not yet implemented (Phase 3)')
+      if (!db) throw new Error('DB not connected')
+      const result = await db.execute(
+        sql`SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+            ORDER BY table_name`
+      )
+      return result.rows.map((r: any) => r.table_name as string)
     },
 
-    async tableExists(_name: string): Promise<boolean> {
-      throw new Error('tableExists: not yet implemented (Phase 3)')
+    async tableExists(name: string): Promise<boolean> {
+      if (!db) throw new Error('DB not connected')
+      const result = await db.execute(
+        sql`SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_name = ${name}
+            LIMIT 1`
+      )
+      return result.rows.length > 0
     },
   }
 }
