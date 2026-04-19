@@ -20,8 +20,8 @@ function formatDropColumn(line: string): string {
 
   if (tableStart < 0 || dropIdx < 0) return line.trim()
 
-  const tableName = line.slice(tableStart, dropIdx).trim().replace(/"/g, '')
-  const colName = line.slice(colStart).trim().replace(/"/g, '').split(/\s+/)[0]
+  const tableName = line.slice(tableStart, dropIdx).trim().replace(/"/g, '').replace(/;/g, '')
+  const colName = (line.slice(colStart).trim().replace(/"/g, '').split(/\s+/)[0] ?? '').replace(/;/g, '')
 
   if (!tableName || !colName) return line.trim()
 
@@ -34,7 +34,7 @@ function formatDropTable(line: string): string {
 
   if (tableStart < 'DROP TABLE'.length) return line.trim()
 
-  const tableName = line.slice(tableStart).trim().replace(/"/g, '').split(/\s+/)[0]
+  const tableName = (line.slice(tableStart).trim().replace(/"/g, '').split(/\s+/)[0] ?? '').replace(/;/g, '')
 
   if (!tableName) return line.trim()
 
@@ -52,7 +52,7 @@ function formatAlterColumnType(line: string): string {
 
   const tableName = line.slice(tableStart, alterColIdx).trim().replace(/"/g, '')
   const colName = line.slice(colStart, typeIdx).trim().replace(/"/g, '')
-  const newType = line.slice(typeIdx + ' TYPE '.length).trim().split(/\s+/)[0]
+  const newType = (line.slice(typeIdx + ' TYPE '.length).trim().split(/\s+/)[0] ?? '').replace(/;/g, '')
 
   if (!tableName || !colName || !newType) return line.trim()
 
