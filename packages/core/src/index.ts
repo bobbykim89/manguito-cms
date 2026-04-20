@@ -60,3 +60,14 @@ export type {
   ParsedRoles,
   SchemaRegistry,
 } from './parser/validate.js'
+
+export type { ErrorCode } from './errors.js'
+
+export type {
+  PaginatedResult,
+  FindManyOptions,
+  FindAllOptions,
+  CreateInput,
+  UpdateInput,
+  ContentRepository,
+} from './types.js'

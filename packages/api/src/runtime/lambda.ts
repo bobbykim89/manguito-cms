@@ -1,0 +1,1 @@
+// createLambdaHandler — AWS Lambda adapter
