@@ -90,6 +90,7 @@ export interface StorageAdapter {
 // ─── Server Adapter ───────────────────────────────────────────────────────────
 
 export type CorsConfig = {
+  enabled?: boolean
   origin: string | string[]
   methods?: string[]
   credentials?: boolean
