@@ -15,3 +15,6 @@ export {
   applyMigrations,
   getMigrationStatus,
 } from './migrations/index'
+
+export { scanMigrationFiles } from './migrations/scanner'
+export type { ScanResult, DestructiveOperation } from './migrations/scanner'
