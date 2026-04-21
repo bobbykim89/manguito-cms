@@ -105,12 +105,12 @@ export interface ServerAdapter {
 // ─── API Adapter ──────────────────────────────────────────────────────────────
 
 export type ResolvedMediaConfig = {
-  max_file_size: number
+  max_file_size?: number
 }
 
 export interface APIAdapter {
   readonly prefix: string
-  readonly media: ResolvedMediaConfig
+  readonly media?: ResolvedMediaConfig
 }
 
 // ─── Admin Adapter ────────────────────────────────────────────────────────────

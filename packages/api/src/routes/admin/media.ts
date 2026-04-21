@@ -466,12 +466,4 @@ export function registerAdminMediaRoutes(
     return c.json({ ok: true, data: item })
   })
 
-  // GET /admin/api/openapi.json
-  app.get('/admin/api/openapi.json', requireAuth, (c) => {
-    return c.json({
-      openapi: '3.0.3',
-      info: { title: 'Manguito CMS Admin API', version: '1.0.0' },
-      paths: {},
-    })
-  })
 }

@@ -16,14 +16,6 @@ function parsePagination(
 }
 
 export function registerPublicMediaRoutes(app: Hono, mediaRepo: MediaRepository): void {
-  app.get('/api/openapi.json', (c) => {
-    return c.json({
-      openapi: '3.0.3',
-      info: { title: 'Manguito CMS Public API', version: '1.0.0' },
-      paths: {},
-    })
-  })
-
   app.get('/api/media', async (c) => {
     const pagination = parsePagination(c.req.query('page'), c.req.query('per_page'))
     if (!pagination.ok) {
