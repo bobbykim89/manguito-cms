@@ -226,7 +226,7 @@ The **Field Type Registry** is the architectural keystone. Every supported field
 | [Phase 3](./docs/phase-03.md) | DB module — Drizzle codegen from schema, migrations           |
 | [Phase 4](./docs/phase-04.md) | Migration strategy for schema changes                         |
 | [Phase 5](./docs/phase-05.md) | REST API layer — route generation, request/response contracts |
-| Phase 6                       | Auth module — JWT, roles, route protection                    |
+| [Phase 6](./docs/phase-06.md) | Auth module — JWT, roles, route protection                    |
 | Phase 7                       | Testing — unit, integration, smoke tests                      |
 | Phase 8                       | Admin panel — Vue 3, auto-generated forms                     |
 | Phase 9                       | CLI — `init`, `dev`, `build`, `start`, `validate` commands    |
