@@ -1,6 +1,5 @@
 import type { Hono } from 'hono'
 import { createRequire } from 'node:module'
-import type { ResolvedManguitoConfig } from '@bobbykim/manguito-cms-core'
 import type { RolesRegistry } from '../../auth/registry.js'
 
 // ─── Version ──────────────────────────────────────────────────────────────────
@@ -35,7 +34,7 @@ type ActingUser = { id: string; role: string }
 
 export function registerConfigRoute(
   app: Hono,
-  config: ResolvedManguitoConfig,
+  config: { name: string },
   registry: RolesRegistry,
 ): void {
   app.get('/admin/api/config', (c) => {

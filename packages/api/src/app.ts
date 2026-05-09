@@ -1,21 +1,29 @@
 import { Hono } from 'hono'
-import type {
-  StorageAdapter,
-  SchemaRegistry,
-} from '@bobbykim/manguito-cms-core'
+import { sql } from 'drizzle-orm'
+import type { StorageAdapter, SchemaRegistry } from '@bobbykim/manguito-cms-core'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import { createCorsMiddleware } from './middleware/cors.js'
 import { errorHandler } from './middleware/error.js'
-import { createAuthMiddleware, requireAuth } from './middleware/auth.js'
+import { createAuthMiddleware } from './middleware/auth.js'
+import { mustChangePasswordCheck } from './middleware/must-change-password.js'
+import { createPermissionMiddleware } from './middleware/permission.js'
+import { createHierarchyMiddleware } from './middleware/hierarchy.js'
 import { createRateLimitMiddleware } from './middleware/rate-limit.js'
+import { buildRolesRegistry } from './auth/registry.js'
 import { registerPublicContentRoutes } from './routes/content.js'
 import { registerPublicMediaRoutes } from './routes/media.js'
 import { registerAdminContentRoutes } from './routes/admin/content.js'
 import { registerAdminMediaRoutes } from './routes/admin/media.js'
+import { registerAuthRoutes } from './routes/admin/auth.js'
+import { registerUserRoutes } from './routes/admin/users.js'
+import { registerConfigRoute } from './routes/admin/config.js'
+import { registerSchemaRoute } from './routes/admin/schema.js'
 import { createDrizzleContentRepository } from './repositories/content.js'
 import { createMediaRepository } from './repositories/media.js'
 
 export type CreateAPIAdapterOptions = {
+  /** CMS display name shown in GET /admin/api/config. Defaults to 'Manguito CMS'. */
+  name?: string
   prefix?: string
   storage: StorageAdapter
   registry: SchemaRegistry
@@ -51,6 +59,11 @@ export function createAPIAdapter(options: CreateAPIAdapterOptions): ManguitoCmsA
 
   const prefix = options.prefix ?? '/api'
   const { storage, registry, db, rateLimit } = options
+  const cmsName = options.name ?? 'Manguito CMS'
+
+  // Build roles registry — throws immediately if roles are missing or invalid.
+  // The server must not start with a broken registry.
+  const rolesRegistry = buildRolesRegistry(registry.roles.roles)
 
   const app = new Hono()
 
@@ -58,11 +71,7 @@ export function createAPIAdapter(options: CreateAPIAdapterOptions): ManguitoCmsA
   app.use('*', createCorsMiddleware({ origin: '*', enabled: true }))
   app.onError(errorHandler)
 
-  // Auth middleware — scoped to admin routes only.
-  app.use('/admin/api/*', createAuthMiddleware(db))
-
-  // Rate limiter scoped to public API routes — authenticated requests (auth_token cookie) are exempt.
-  // Applied after auth middleware per the rate-limiting decision doc.
+  // Rate limiter scoped to public API routes only
   app.use(
     '/api/*',
     createRateLimitMiddleware({
@@ -72,23 +81,56 @@ export function createAPIAdapter(options: CreateAPIAdapterOptions): ManguitoCmsA
     })
   )
 
-  // Build repositories from schema + db — api never imports DrizzleContentRepository directly
+  // ── Middleware factories — all close over rolesRegistry built once at startup ──
+
+  const authMiddleware = createAuthMiddleware(db)
+  const requirePermission = createPermissionMiddleware(rolesRegistry)
+
+  const getUserRole = async (userId: string): Promise<string | null> => {
+    const result = await db.execute(
+      sql`SELECT r.name AS role
+          FROM users u
+          JOIN roles r ON r.id = u.role_id
+          WHERE u.id = ${userId}
+          LIMIT 1`
+    )
+    return (result.rows[0] as { role: string } | undefined)?.role ?? null
+  }
+
+  const requireHierarchy = createHierarchyMiddleware(rolesRegistry, getUserRole)
+
+  // ── Repositories ──────────────────────────────────────────────────────────────
+
   const contentRepos = Object.fromEntries(
-    Object.entries(registry.content_types).map(([name, ct]) => [
-      name,
+    Object.entries(registry.content_types).map(([typeName, ct]) => [
+      typeName,
       createDrizzleContentRepository(db, ct.db.table_name),
     ])
   )
   const taxonomyRepos = Object.fromEntries(
-    Object.entries(registry.taxonomy_types).map(([name, tt]) => [
-      name,
+    Object.entries(registry.taxonomy_types).map(([typeName, tt]) => [
+      typeName,
       createDrizzleContentRepository(db, tt.db.table_name),
     ])
   )
   const repos = { ...contentRepos, ...taxonomyRepos }
   const mediaRepo = createMediaRepository(db)
 
-  // OpenAPI spec endpoints wired here — not inside route helpers to avoid duplication
+  // ── Auth routes — mounted BEFORE the blanket authMiddleware so they bypass it ──
+  //
+  // In Hono, handlers are executed in registration order. Route handlers that
+  // return a Response do not call next(), so blanket use() middleware registered
+  // afterward does not run for those matched requests.
+  const authRouter = new Hono()
+  registerAuthRoutes(authRouter, db)
+  app.route('/admin/api/auth', authRouter)
+
+  // ── Blanket middleware for all /admin/api/* (registered after authRouter) ──────
+  app.use('/admin/api/*', authMiddleware)
+  app.use('/admin/api/*', mustChangePasswordCheck)
+
+  // ── OpenAPI spec endpoints ────────────────────────────────────────────────────
+
   app.get('/api/openapi.json', (c) =>
     c.json({
       openapi: '3.0.3',
@@ -96,7 +138,8 @@ export function createAPIAdapter(options: CreateAPIAdapterOptions): ManguitoCmsA
       paths: {},
     })
   )
-  app.get('/admin/api/openapi.json', requireAuth, (c) =>
+  // Admin spec — auth covered by the blanket use() above
+  app.get('/admin/api/openapi.json', (c) =>
     c.json({
       openapi: '3.0.3',
       info: { title: 'Manguito CMS Admin API', version: '1.0.0' },
@@ -104,8 +147,17 @@ export function createAPIAdapter(options: CreateAPIAdapterOptions): ManguitoCmsA
     })
   )
 
+  // ── Public routes ─────────────────────────────────────────────────────────────
+
   registerPublicContentRoutes(app, registry, repos)
   registerPublicMediaRoutes(app, mediaRepo)
+
+  // ── Admin routes — all registered AFTER the blanket use() so auth middleware
+  //    runs before every handler. registerConfigRoute is called first so its
+  //    GET /admin/api/config handler wins over the stale stub in content.ts.
+  registerConfigRoute(app, { name: cmsName }, rolesRegistry)
+  registerSchemaRoute(app, registry)
+  registerUserRoutes(app, db, requirePermission, requireHierarchy)
   registerAdminContentRoutes(app, registry, repos, mediaRepo)
   registerAdminMediaRoutes(app, mediaRepo, storage)
 
