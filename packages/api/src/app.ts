@@ -116,16 +116,18 @@ export function createAPIAdapter(options: CreateAPIAdapterOptions): ManguitoCmsA
   const repos = { ...contentRepos, ...taxonomyRepos }
   const mediaRepo = createMediaRepository(db)
 
-  // ── Auth routes — mounted BEFORE the blanket authMiddleware so they bypass it ──
+  // ── Auth routes registered directly on app BEFORE the blanket use() calls ───────
   //
-  // In Hono, handlers are executed in registration order. Route handlers that
-  // return a Response do not call next(), so blanket use() middleware registered
-  // afterward does not run for those matched requests.
-  const authRouter = new Hono()
-  registerAuthRoutes(authRouter, db)
-  app.route('/admin/api/auth', authRouter)
+  // registerAuthRoutes uses full paths (/admin/api/auth/login etc.). Mounting via
+  // app.route('/admin/api/auth', subRouter) would strip that prefix and make the
+  // routes unreachable, so we register directly on app.
+  //
+  // In Hono, handlers registered before a use() call are reached first. A route
+  // handler that returns a Response does not call next(), so the blanket
+  // authMiddleware registered below never runs for matched auth paths.
+  registerAuthRoutes(app, db)
 
-  // ── Blanket middleware for all /admin/api/* (registered after authRouter) ──────
+  // ── Blanket middleware for all /admin/api/* (registered after auth routes) ─────
   app.use('/admin/api/*', authMiddleware)
   app.use('/admin/api/*', mustChangePasswordCheck)
 
