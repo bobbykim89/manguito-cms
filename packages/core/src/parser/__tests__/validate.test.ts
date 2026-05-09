@@ -146,8 +146,8 @@ describe('buildSchemaRegistry', () => {
   it('attaches routes and roles to the registry', () => {
     const routes: ParsedRoutes = { base_paths: [{ name: 'blog', path: '/blog' }] }
     const roles: ParsedRoles = {
-      roles: [{ name: 'admin', label: 'Admin', hierarchy_level: 0, permissions: ['*'] }],
-      valid_permissions: ['*'],
+      roles: [{ name: 'admin', label: 'Admin', is_system: true, hierarchy_level: 0, permissions: ['content:read'] }],
+      valid_permissions: ['content:read'],
     }
     const registry = buildSchemaRegistry([], routes, roles)
 

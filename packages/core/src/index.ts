@@ -64,6 +64,11 @@ export type {
 export type { ErrorCode } from './errors.js'
 
 export type {
+  PermissionTarget,
+  PermissionAction,
+  Permission,
+  JWTPayload,
+  User,
   FilterOperator,
   FilterValue,
   PaginatedResult,
@@ -77,3 +82,5 @@ export type {
   MediaFindManyOptions,
   MediaRepository,
 } from './types.js'
+
+export { hashPassword, verifyPassword } from './auth.js'

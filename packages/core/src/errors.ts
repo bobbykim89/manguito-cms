@@ -39,3 +39,8 @@ export type ErrorCode =
 
   // Phase 5 — rate limiting
   | 'RATE_LIMITED'
+
+  // Phase 6 — auth
+  | 'INVALID_CREDENTIALS'
+  | 'PASSWORD_CHANGE_REQUIRED'
+  | 'INVALID_ROLE'
