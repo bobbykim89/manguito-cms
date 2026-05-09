@@ -6,7 +6,7 @@ import type {
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import { createCorsMiddleware } from './middleware/cors.js'
 import { errorHandler } from './middleware/error.js'
-import { requireAuth } from './middleware/auth.js'
+import { createAuthMiddleware, requireAuth } from './middleware/auth.js'
 import { createRateLimitMiddleware } from './middleware/rate-limit.js'
 import { registerPublicContentRoutes } from './routes/content.js'
 import { registerPublicMediaRoutes } from './routes/media.js'
@@ -58,9 +58,8 @@ export function createAPIAdapter(options: CreateAPIAdapterOptions): ManguitoCmsA
   app.use('*', createCorsMiddleware({ origin: '*', enabled: true }))
   app.onError(errorHandler)
 
-  // Auth middleware placeholder — runs before rate limiter so authenticated requests are exempt.
-  // Phase 6 will replace this with real JWT validation + token_version check.
-  app.use('*', requireAuth)
+  // Auth middleware — scoped to admin routes only.
+  app.use('/admin/api/*', createAuthMiddleware(db))
 
   // Rate limiter scoped to public API routes — authenticated requests (auth_token cookie) are exempt.
   // Applied after auth middleware per the rate-limiting decision doc.
