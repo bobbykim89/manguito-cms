@@ -3,6 +3,7 @@
 
 export { createPostgresAdapter } from './adapters/postgres'
 export type { PostgresAdapterOptions } from './adapters/postgres'
+export type { DrizzlePostgresInstance } from './types'
 
 export { generateSchemaFile } from './codegen/index'
 

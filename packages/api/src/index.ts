@@ -1,2 +1,2 @@
-// @bobbykim/manguito-cms-api
-// Hono-based API layer: dynamic routes, auth middleware, and storage adapters.
+export { createAPIAdapter } from './app.js'
+export type { CreateAPIAdapterOptions } from './app.js'
