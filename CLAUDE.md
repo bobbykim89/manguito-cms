@@ -7,7 +7,7 @@ Read docs/phase-XX.md before making changes.
 
 ## Current phase
 
-Phase 6 — Auth module — JWT, roles, route protection
+Phase 7 — Testing — unit, integration, smoke tests
 
 ## Completed phases
 
@@ -16,6 +16,7 @@ Phase 2 — implementing schema parser, field type registry, and defineConfig.
 Phase 3 — DB module — Drizzle codegen from schema, migrations.
 Phase 4 — Migration strategy for schema changes.
 Phase 5 — REST API layer — route generation, request/response contracts.
+Phase 6 — Auth module — JWT, roles, route protection
 
 ## Packages
 
