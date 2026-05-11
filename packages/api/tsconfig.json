@@ -4,7 +4,8 @@
     "rootDir": "src",
     "noEmit": true,
     "types": ["node"],
-    "lib": ["ES2022", "DOM"]
+    "lib": ["ES2022", "DOM"],
+    "ignoreDeprecations": "6.0"
   },
   "include": ["src", "tests"]
 }
