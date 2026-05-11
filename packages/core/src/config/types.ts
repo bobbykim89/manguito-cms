@@ -122,6 +122,7 @@ export interface AdminAdapter {
 // ─── Top-level Config ─────────────────────────────────────────────────────────
 
 export type ManguitoConfig = {
+  name?: string
   schema?: SchemaConfig
   db: DbAdapter
   migrations?: MigrationsConfig
@@ -132,6 +133,7 @@ export type ManguitoConfig = {
 }
 
 export type ResolvedManguitoConfig = {
+  name: string
   schema: ResolvedSchemaConfig
   db: DbAdapter
   migrations: ResolvedMigrationsConfig | null

@@ -1,3 +1,27 @@
+// ─── Auth types ───────────────────────────────────────────────────────────────
+
+export type PermissionTarget = 'content' | 'media' | 'taxonomy' | 'users' | 'roles'
+export type PermissionAction = 'read' | 'create' | 'edit' | 'delete'
+export type Permission = `${PermissionTarget}:${PermissionAction}`
+
+export type JWTPayload = {
+  user_id: string
+  role: string
+  token_version: number
+  expires_at: number
+}
+
+export type User = {
+  id: string
+  email: string
+  password_hash: string
+  role_id: string
+  token_version: number
+  must_change_password: boolean
+  created_at: Date
+  updated_at: Date
+}
+
 // ─── Filter types ─────────────────────────────────────────────────────────────
 
 export type FilterOperator = {

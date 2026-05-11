@@ -1,4 +1,5 @@
 import type { ParseError } from './loader'
+import type { Permission } from '../types.js'
 import type {
   ParsedSchema,
   ParsedContentType,
@@ -24,9 +25,9 @@ export type ParsedRoutes = {
 export type ParsedRole = {
   name: string
   label: string
-  is_system?: boolean
+  is_system: boolean
   hierarchy_level: number
-  permissions: string[]
+  permissions: Permission[]
 }
 
 export type ParsedRoles = {

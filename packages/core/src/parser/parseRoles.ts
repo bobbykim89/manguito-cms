@@ -1,12 +1,7 @@
 import { z } from 'zod'
 import type { Result, ParseError } from './loader'
 import type { ParsedRoles, ParsedRole } from './validate'
-
-// ─── Permission types ─────────────────────────────────────────────────────────
-
-type PermissionTarget = 'content' | 'media' | 'taxonomy' | 'users' | 'roles'
-type PermissionAction = 'read' | 'create' | 'edit' | 'delete'
-export type Permission = `${PermissionTarget}:${PermissionAction}`
+import type { Permission } from '../types.js'
 
 // All 17 valid permission strings. roles:create, roles:edit, roles:delete are
 // excluded — roles are managed through schema files and CLI only.

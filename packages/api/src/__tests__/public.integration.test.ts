@@ -3,7 +3,7 @@ import { Hono } from 'hono'
 import { sql } from 'drizzle-orm'
 import { createPostgresAdapter } from '@bobbykim/manguito-cms-db'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
-import type { SchemaRegistry, ParsedContentType } from '@bobbykim/manguito-cms-core'
+import type { SchemaRegistry, ParsedContentType, ParsedRole } from '@bobbykim/manguito-cms-core'
 import { createAPIAdapter } from '../app'
 import { createLocalAdapter } from '../storage/adapters/local'
 import { createDrizzleContentRepository } from '../repositories/content'
@@ -67,9 +67,17 @@ const BLOG_TYPE: ParsedContentType = {
   },
 }
 
+const SYSTEM_ROLES: ParsedRole[] = [
+  { name: 'admin',   label: 'Admin',   is_system: true, hierarchy_level: 0, permissions: [] },
+  { name: 'manager', label: 'Manager', is_system: true, hierarchy_level: 1, permissions: [] },
+  { name: 'editor',  label: 'Editor',  is_system: true, hierarchy_level: 2, permissions: [] },
+  { name: 'writer',  label: 'Writer',  is_system: true, hierarchy_level: 3, permissions: [] },
+  { name: 'viewer',  label: 'Viewer',  is_system: true, hierarchy_level: 4, permissions: [] },
+]
+
 const TEST_REGISTRY: SchemaRegistry = {
   routes: { base_paths: [] },
-  roles: { roles: [], valid_permissions: [] },
+  roles: { roles: SYSTEM_ROLES, valid_permissions: [] },
   schemas: {},
   content_types: { 'pub-test-blog': BLOG_TYPE },
   paragraph_types: {},

@@ -59,6 +59,7 @@ export const users = s.pgTable('users', {
     .notNull()
     .references(() => roles.id, { onDelete: 'restrict' }),
   token_version: s.integer('token_version').notNull().default(0),
+  must_change_password: s.boolean('must_change_password').notNull().default(false),
   created_at: s.timestamp('created_at').defaultNow().notNull(),
   updated_at: s.timestamp('updated_at').defaultNow().notNull(),
 })`

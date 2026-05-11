@@ -10,6 +10,7 @@ import type {
 
 export function defineConfig(config: ManguitoConfig): ResolvedManguitoConfig {
   return {
+    name: config.name ?? 'Manguito CMS',
     schema: resolveSchemaConfig(config.schema),
     db: config.db,
     migrations: resolveMigrationsConfig(config.migrations, config.db),
