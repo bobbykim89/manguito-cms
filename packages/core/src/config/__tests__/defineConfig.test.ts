@@ -10,7 +10,7 @@ function makePostgresAdapter(): ManguitoConfig['db'] {
     connect: async () => {},
     disconnect: async () => {},
     isConnected: () => false,
-    runMigrations: async () => ({ applied: [], skipped: [] }),
+    runMigrations: async () => ({ applied: 0, skipped: 0 }),
     getMigrationStatus: async () => ({ applied: [], pending: [] }),
     getTableNames: async () => [],
     tableExists: async () => false,
@@ -182,5 +182,19 @@ describe('defineConfig — resolved config shape', () => {
     expect(resolved.schema).toBeDefined()
     // migrations is null for non-relational or a full object — never undefined
     expect('migrations' in resolved).toBe(true)
+  })
+})
+
+// ─── name field ───────────────────────────────────────────────────────────────
+
+describe('defineConfig — name field', () => {
+  it("defaults to 'Manguito CMS' when name is not provided", () => {
+    const resolved = defineConfig(minimalConfig())
+    expect(resolved.name).toBe('Manguito CMS')
+  })
+
+  it('uses the provided value when name is present', () => {
+    const resolved = defineConfig(minimalConfig({ name: 'My Headless CMS' }))
+    expect(resolved.name).toBe('My Headless CMS')
   })
 })
