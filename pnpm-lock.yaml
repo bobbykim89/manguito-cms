@@ -8,12 +8,24 @@ importers:
 
   .:
     devDependencies:
+      '@bobbykim/manguito-cms-core':
+        specifier: workspace:*
+        version: link:packages/core
+      '@bobbykim/manguito-cms-db':
+        specifier: workspace:*
+        version: link:packages/db
+      '@bobbykim/manguito-cms-test-utils':
+        specifier: workspace:*
+        version: link:packages/test-utils
       '@changesets/cli':
         specifier: latest
         version: 2.30.0(@types/node@25.6.0)
       dotenv-cli:
         specifier: latest
         version: 11.0.0
+      drizzle-orm:
+        specifier: ^0.45.0
+        version: 0.45.2(@neondatabase/serverless@1.0.2)(@opentelemetry/api@1.9.1)(@types/pg@8.20.0)(kysely@0.28.16)(pg@8.20.0)
       eslint:
         specifier: ^10.0.0
         version: 10.2.0(jiti@2.6.1)
