@@ -160,7 +160,7 @@ export function createAPIAdapter(options: CreateAPIAdapterOptions): ManguitoCmsA
   registerConfigRoute(app, { name: cmsName }, rolesRegistry)
   registerSchemaRoute(app, registry)
   registerUserRoutes(app, db, requirePermission, requireHierarchy)
-  registerAdminContentRoutes(app, registry, repos, mediaRepo)
+  registerAdminContentRoutes(app, registry, repos, mediaRepo, requirePermission)
   registerAdminMediaRoutes(app, mediaRepo, storage)
 
   return { prefix, app }
