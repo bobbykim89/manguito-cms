@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "manguito dev",
     "test": "dotenv -e .env.test -- vitest run",
+    "smoke": "dotenv -e ../../.env.test -- vitest run tests/smoke.test.ts",
     "lint": "eslint ."
   },
   "dependencies": {
@@ -16,8 +17,10 @@
     "@bobbykim/manguito-cms-db": "workspace:*"
   },
   "devDependencies": {
+    "@bobbykim/manguito-cms-test-utils": "workspace:*",
     "@types/node": "^25.6.0",
     "dotenv-cli": "latest",
+    "drizzle-kit": "^0.31.0",
     "typescript": "^6.0.0",
     "vitest": "^4.1.0"
   }
