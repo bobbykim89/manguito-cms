@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { fieldTypeRegistry } from '../fieldTypeRegistry'
+import { parseSchema } from '../../parser/parseSchema'
 import type { FieldType } from '../types'
 
 // ─── Coverage: every registered field type ───────────────────────────────────
@@ -167,5 +168,26 @@ describe('fieldTypeRegistry — serializability', () => {
     expect(deserialized['text/plain'].db_column.column_type).toBe('varchar')
     expect(deserialized['paragraph'].db_column).toBeNull()
     expect(deserialized['integer'].ui_component.step).toBe(1)
+  })
+})
+
+// ─── Unrecognized field type ──────────────────────────────────────────────────
+
+describe('fieldTypeRegistry — unrecognized field type', () => {
+  it('parseSchema returns an error for an unknown field type and names it — never throws', () => {
+    const raw: unknown = {
+      name: 'paragraph--card',
+      label: 'Card',
+      type: 'paragraph-type',
+      fields: [{ name: 'widget', label: 'Widget', type: 'multi-select-widget', required: false }],
+    }
+
+    const result = parseSchema(raw, 'paragraph-type', 'paragraph--card.json')
+
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+
+    expect(result.errors.length).toBeGreaterThan(0)
+    expect(result.errors[0]?.file).toBe('paragraph--card.json')
   })
 })

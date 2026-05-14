@@ -8,6 +8,7 @@ import type {
   SchemaRegistry,
   SystemField,
 } from '@bobbykim/manguito-cms-core'
+import { testParsedSchema } from '@bobbykim/manguito-cms-test-utils'
 import {
   generateFieldColumn,
   generateSchemaFile,
@@ -614,5 +615,43 @@ describe('generateSchemaFile — table output order', () => {
     expect(output).not.toContain('// ─── Paragraph Types')
     expect(output).not.toContain('// ─── Content Types')
     expect(output).not.toContain('// ─── Junction Tables')
+  })
+
+  it('nested paragraph: child variable declaration appears before parent in output string', () => {
+    const registry = makeEmptyRegistry()
+    const child = makeParagraphType('child_item', [])
+    const parent = makeParagraphType('parent_card', [
+      {
+        name: 'items',
+        label: 'Items',
+        field_type: 'paragraph',
+        required: false,
+        nullable: true,
+        order: 0,
+        validation: { required: false },
+        db_column: null,
+        ui_component: { component: 'paragraph-embed', ref: 'child_item', rel: 'one-to-many' },
+      },
+    ])
+    // insert parent first — confirms topological sort overrides insertion order
+    registry.paragraph_types['parent_card'] = parent
+    registry.paragraph_types['child_item'] = child
+
+    const output = generateSchemaFile(registry)
+
+    const childPos = output.indexOf("export const paragraph_child_item =")
+    const parentPos = output.indexOf("export const paragraph_parent_card =")
+
+    expect(childPos).toBeGreaterThanOrEqual(0)
+    expect(parentPos).toBeGreaterThanOrEqual(0)
+    expect(childPos).toBeLessThan(parentPos)
+  })
+})
+
+// ─── Snapshot ─────────────────────────────────────────────────────────────────
+
+describe('generateSchemaFile — snapshot', () => {
+  it('matches snapshot for testParsedSchema fixture', () => {
+    expect(generateSchemaFile(testParsedSchema)).toMatchSnapshot()
   })
 })

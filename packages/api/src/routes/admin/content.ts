@@ -6,7 +6,8 @@ import type {
   FilterOperator,
   ParsedField,
 } from '@bobbykim/manguito-cms-core'
-import { requireAuth, requirePermission } from '../../middleware/auth.js'
+import { requireAuth, requirePermission as requirePermissionShim } from '../../middleware/auth.js'
+import type { createPermissionMiddleware } from '../../middleware/permission.js'
 import type { ContentRepos } from '../content.js'
 
 // ─── Shared query-param helpers ───────────────────────────────────────────────
@@ -206,7 +207,8 @@ export function registerAdminContentRoutes(
   app: Hono,
   registry: SchemaRegistry,
   repos: ContentRepos,
-  mediaRepo: MediaRepository
+  mediaRepo: MediaRepository,
+  requirePermission: ReturnType<typeof createPermissionMiddleware> = requirePermissionShim,
 ): void {
   // ── Content type routes ───────────────────────────────────────────────────
 
@@ -374,7 +376,7 @@ export function registerAdminContentRoutes(
     app.patch(
       `/admin/api/${basePath}/:id`,
       requireAuth,
-      requirePermission('content:update'),
+      requirePermission('content:edit'),
       async (c) => {
         const id = c.req.param('id')
         const body = (await c.req.json()) as Record<string, unknown>
@@ -433,8 +435,7 @@ export function registerAdminContentRoutes(
         }
 
         if (body['published'] === true) {
-          // content:publish is a distinct permission from content:update — enforced in Phase 6.
-          const publishDeny = await requirePermission('content:publish')(c, async () => {})
+          const publishDeny = await requirePermission('content:edit')(c, async () => {})
           if (publishDeny) return publishDeny
 
           const merged = { ...(existing as Record<string, unknown>), ...body }
@@ -599,7 +600,7 @@ export function registerAdminContentRoutes(
     app.patch(
       `/admin/api/taxonomy/${typeName}/:id`,
       requireAuth,
-      requirePermission('content:update'),
+      requirePermission('content:edit'),
       async (c) => {
         const id = c.req.param('id')
         const body = (await c.req.json()) as Record<string, unknown>
@@ -613,7 +614,7 @@ export function registerAdminContentRoutes(
         }
 
         if (body['published'] === true) {
-          const publishDeny = await requirePermission('content:publish')(c, async () => {})
+          const publishDeny = await requirePermission('content:edit')(c, async () => {})
           if (publishDeny) return publishDeny
 
           const merged = { ...(existing as Record<string, unknown>), ...body }

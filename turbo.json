@@ -13,6 +13,10 @@
     "test": {
       "dependsOn": ["^build"]
     },
-    "lint": {}
+    "lint": {},
+    "smoke": {
+      "dependsOn": ["test"],
+      "cache": false
+    }
   }
 }
