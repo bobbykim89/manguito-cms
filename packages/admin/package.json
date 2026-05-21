@@ -33,9 +33,11 @@
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.2",
     "@testing-library/vue": "^8.1.0",
+    "@types/jsdom": "^28.0.3",
     "@vitejs/plugin-vue": "^6.0.6",
     "@vue/test-utils": "^2.4.0",
     "dotenv-cli": "latest",
+    "jsdom": "^29.1.1",
     "msw": "^2.7.0",
     "shadcn-vue": "^0.10.0",
     "tailwindcss": "^4.2.2",
