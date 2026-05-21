@@ -18,6 +18,7 @@ export const useUiStore = defineStore('ui', () => {
   const sidebarOpen = ref(false)
   const activeModal = ref<string | null>(null)
   const maxFileSize = ref(0)
+  const cmsName = ref('Manguito CMS')
 
   function addToast(variant: ToastVariant, message: string, duration: number | null = DEFAULT_DURATION) {
     // Evict oldest when at capacity before adding the new one.
@@ -44,13 +45,19 @@ export const useUiStore = defineStore('ui', () => {
     maxFileSize.value = bytes
   }
 
+  function setCmsName(name: string) {
+    cmsName.value = name
+  }
+
   return {
     toasts,
     sidebarOpen,
     activeModal,
     maxFileSize,
+    cmsName,
     addToast,
     removeToast,
     setMaxFileSize,
+    setCmsName,
   }
 })

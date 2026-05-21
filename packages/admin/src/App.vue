@@ -80,6 +80,8 @@ onMounted(async () => {
         })
       }
 
+      uiStore.setCmsName(data.cms_name)
+
       // Populate ui store with media config when present.
       if (data.media) {
         uiStore.setMaxFileSize(data.media.max_file_size)
