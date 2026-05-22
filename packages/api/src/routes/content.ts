@@ -1,4 +1,4 @@
-import type { Hono } from 'hono'
+import type { Hono, Handler, MiddlewareHandler } from 'hono'
 import type {
   SchemaRegistry,
   ContentRepository,
@@ -80,8 +80,39 @@ function isPublished(item: unknown): boolean {
 export function registerPublicContentRoutes(
   app: Hono,
   registry: SchemaRegistry,
-  repos: ContentRepos
+  repos: ContentRepos,
+  listRateLimit?: MiddlewareHandler
 ): void {
+  // ── Meta-endpoints: list available schema types ───────────────────────────
+  // Registered before the dynamic per-type routes to avoid path conflicts.
+
+  function registerListRoute(path: string, handler: Handler): void {
+    if (listRateLimit) {
+      app.get(path, listRateLimit, handler)
+    } else {
+      app.get(path, handler)
+    }
+  }
+
+  registerListRoute('/api/content', (c) => {
+    const data = Object.values(registry.content_types).map((ct) => ({
+      name: ct.name,
+      label: ct.label,
+      only_one: ct.only_one,
+    }))
+    return c.json({ ok: true, data })
+  })
+
+  registerListRoute('/api/taxonomy', (c) => {
+    const data = Object.values(registry.taxonomy_types).map((tt) => ({
+      name: tt.name,
+      label: tt.label,
+    }))
+    return c.json({ ok: true, data })
+  })
+
+  // ── Per-type content routes ───────────────────────────────────────────────
+
   for (const [typeName, contentType] of Object.entries(registry.content_types)) {
     const basePath = contentType.default_base_path
     const repo = repos[typeName]
@@ -110,7 +141,7 @@ export function registerPublicContentRoutes(
         return c.json({ ok: true, data: result.data[0] })
       })
     } else {
-      app.get(`/api/${basePath}`, async (c) => {
+      registerListRoute(`/api/${basePath}`, async (c) => {
         const pagination = parsePagination(c.req.query('page'), c.req.query('per_page'))
         if (!pagination.ok) {
           return c.json(
@@ -236,7 +267,7 @@ export function registerPublicContentRoutes(
     const repo = repos[typeName]
     if (!repo) continue
 
-    app.get(`/api/taxonomy/${typeName}`, async (c) => {
+    registerListRoute(`/api/taxonomy/${typeName}`, async (c) => {
       const pagination = parsePagination(c.req.query('page'), c.req.query('per_page'))
       if (!pagination.ok) {
         return c.json(

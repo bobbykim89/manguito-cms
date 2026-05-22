@@ -1,8 +1,6 @@
 import crypto from 'node:crypto'
 import type {
   StorageAdapter,
-  UploadOptions,
-  UploadResult,
   PresignedOptions,
   PresignedResult,
 } from '@bobbykim/manguito-cms-core'
@@ -47,12 +45,6 @@ export function createCloudinaryAdapter(
 
   return {
     type: 'cloudinary',
-
-    async upload(_file: File | Buffer, _options: UploadOptions): Promise<UploadResult> {
-      throw new Error(
-        'createCloudinaryAdapter.upload: binary upload not supported — use presigned URL flow'
-      )
-    },
 
     async getPresignedUploadUrl(opts: PresignedOptions): Promise<PresignedResult> {
       const uuid = crypto.randomUUID()

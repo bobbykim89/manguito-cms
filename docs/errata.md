@@ -72,43 +72,43 @@ Cross-phase documentation audit performed 2026-05-21. Lists all known inconsiste
 
 ---
 
-## 🟡 6 — `StorageAdapter.upload()` is in the interface but never used
+## ✅ 6 — `StorageAdapter.upload()` removed from interface and all adapters
 
 **Documents affected:** `docs/decisions/phase-02/phase-02-defineconfig.md`, `docs/decisions/phase-05/phase-05-storage-adapter.md`
 
 **Conflict:** Phase 2 included `upload(file, options): Promise<UploadResult>` in the `StorageAdapter` interface. Phase 5 reversed this: "all uploads use the presigned URL flow exclusively — the CMS server never handles binary file data." The interface in `packages/core/src/config/types.ts` retained `upload()` from Phase 2, but the API routes never call it.
 
-**Decision needed:** Remove `upload()` from the interface entirely (breaking change for any adapter implementations), or document it as intentionally reserved for direct-upload environments (not the default Neon/Lambda setup). See Phase 5 storage adapter doc for context.
+**Resolution:** `upload()` confirmed unused — all three adapter implementations threw immediately. Removed from `StorageAdapter` interface in `packages/core/src/config/types.ts`, removed from `packages/core/src/index.ts` exports, removed from all three adapter files, and deleted the dead `packages/api/src/storage/types.ts` duplicate. All uploads use the presigned URL flow exclusively, matching `phase-05-storage-adapter.md`.
 
 ---
 
-## 🟡 7 — Rate limiting scope: `findAll` only (doc) vs all `/api/*` (code)
+## ✅ 7 — Rate limiting scope narrowed to list endpoints
 
 **Documents affected:** `docs/decisions/phase-05/phase-05-rate-limiting.md`
 
 **Conflict:** The doc says rate limiting applies to the bulk `findAll` endpoint only. `packages/api/src/app.ts` applies the middleware to all `/api/*` routes.
 
-**Decision needed:** Was the broader scope intentional? If yes, update the doc. If the doc is correct, refactor the middleware registration to be path-specific.
+**Resolution:** Blanket `app.use('/api/*', ...)` removed. Rate limiter is now threaded as an optional `listRateLimit` parameter into `registerPublicContentRoutes` and `registerPublicMediaRoutes`, applied only to paginated collection routes (`GET /api/{base_path}` for `only_one: false` types, `GET /api/taxonomy/{type}`, `GET /api/media`, and the new `GET /api/content` and `GET /api/taxonomy` meta-endpoints). Single-item lookups are unthrottled. The `rateLimit.findAll` config key naming now accurately reflects the scope.
 
 ---
 
-## 🟡 8 — `GET /admin/api/config` missing `user` and `media` fields
+## ✅ 8 — `GET /admin/api/config` extended with `user` and `media` fields
 
 **Documents affected:** `docs/decisions/phase-06/phase-06-config-schema-endpoints.md`, `docs/decisions/phase-08/phase-08-api-client.md`
 
 **Conflict:** Phase 6 defines the config response as `{ cms_name, version, roles }`. Phase 8 defines `ConfigResponse` as `{ cms_name, version, roles, user, media }` — the admin panel uses `user` to bootstrap auth state and `media.max_file_size` for the upload size cap. The API only returns the Phase 6 shape; `user` and `media` are never sent.
 
-**Decision needed:** Extend the config endpoint to include `user` (current authenticated user) and `media` (global media settings), or define a separate bootstrap mechanism. The admin panel's `must_change_password` redirect and upload size cap cannot work correctly until this is resolved.
+**Resolution:** Config endpoint extended per `phase-08-api-client.md`. The handler now queries the DB for the acting user's `email` and `must_change_password`, and accepts an optional `max_file_size` from `CreateAPIAdapterOptions.media`. The `media` key is omitted from the response when not configured. `phase-06-config-schema-endpoints.md` should be updated separately to document the extended shape.
 
 ---
 
-## 🟡 9 — `GET /api/content` and `GET /api/taxonomy` meta-endpoints are documented but not implemented
+## ✅ 9 — `GET /api/content`, `GET /api/taxonomy`, `GET /admin/api/content`, `GET /admin/api/taxonomy` implemented
 
 **Documents affected:** `docs/decisions/phase-05/phase-05-route-generation.md`, `docs/decisions/phase-08/phase-08-admin-panel.md`
 
 **Conflict:** Both docs reference `GET /api/content` (list available content types) and `GET /api/taxonomy` (list available taxonomy types) as navigation data sources. Neither endpoint exists in the API. The admin panel's schema store uses `GET /admin/api/schema` instead.
 
-**Decision needed:** Implement the documented endpoints, or remove the references and confirm `GET /admin/api/schema` is the single source for navigation generation. If removed, update `phase-05-route-generation.md` and the navigation section of `phase-08-admin-panel.md`.
+**Resolution:** All four endpoints implemented. Public `GET /api/content` and `GET /api/taxonomy` return schema metadata (name, label, only_one) with no DB access, registered in `registerPublicContentRoutes` before the dynamic per-type routes. Admin `GET /admin/api/content` and `GET /admin/api/taxonomy` return the same metadata plus a live item count per type via `COUNT(*)`, registered in `registerSchemaRoute` behind auth middleware.
 
 ---
 

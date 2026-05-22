@@ -1,4 +1,4 @@
-import type { Hono } from 'hono'
+import type { Hono, Handler, MiddlewareHandler } from 'hono'
 import type { MediaRepository } from '@bobbykim/manguito-cms-core'
 
 const VALID_MEDIA_TYPES = new Set(['image', 'video', 'file'])
@@ -15,8 +15,12 @@ function parsePagination(
   return { ok: true, page, per_page }
 }
 
-export function registerPublicMediaRoutes(app: Hono, mediaRepo: MediaRepository): void {
-  app.get('/api/media', async (c) => {
+export function registerPublicMediaRoutes(
+  app: Hono,
+  mediaRepo: MediaRepository,
+  listRateLimit?: MiddlewareHandler
+): void {
+  const mediaListHandler: Handler = async (c) => {
     const pagination = parsePagination(c.req.query('page'), c.req.query('per_page'))
     if (!pagination.ok) {
       return c.json(
@@ -54,9 +58,14 @@ export function registerPublicMediaRoutes(app: Hono, mediaRepo: MediaRepository)
     }
 
     const result = await mediaRepo.findMany(opts)
-
     return c.json(result)
-  })
+  }
+
+  if (listRateLimit) {
+    app.get('/api/media', listRateLimit, mediaListHandler)
+  } else {
+    app.get('/api/media', mediaListHandler)
+  }
 
   app.get('/api/media/:id', async (c) => {
     const id = c.req.param('id')

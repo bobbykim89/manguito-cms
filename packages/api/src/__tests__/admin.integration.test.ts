@@ -5,9 +5,24 @@ import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import type { SchemaRegistry, ParsedContentType, ParsedRole } from '@bobbykim/manguito-cms-core'
 import { createAPIAdapter } from '../app'
 import { createLocalAdapter } from '../storage/adapters/local'
+import { signToken } from '../auth/jwt'
 
 const DB_URL = process.env['DB_URL']
 if (!DB_URL) throw new Error('DB_URL must be set in .env.test before running integration tests')
+
+// ─── Auth state (populated in beforeAll) ─────────────────────────────────────
+
+let TEST_AUTH_TOKEN = ''
+
+function withAuth(init: RequestInit = {}): RequestInit {
+  return {
+    ...init,
+    headers: {
+      ...(init.headers as Record<string, string> | undefined),
+      Cookie: `auth_token=${TEST_AUTH_TOKEN}`,
+    },
+  }
+}
 
 // ─── Table names (unique to this suite) ──────────────────────────────────────
 
@@ -52,8 +67,16 @@ const BLOG_TYPE: ParsedContentType = {
   },
 }
 
+const ALL_PERMISSIONS: ParsedRole['permissions'] = [
+  'content:read', 'content:create', 'content:edit', 'content:delete',
+  'media:read', 'media:create', 'media:edit', 'media:delete',
+  'taxonomy:read', 'taxonomy:create', 'taxonomy:edit', 'taxonomy:delete',
+  'users:read', 'users:create', 'users:edit', 'users:delete',
+  'roles:read', 'roles:create', 'roles:edit', 'roles:delete',
+]
+
 const SYSTEM_ROLES: ParsedRole[] = [
-  { name: 'admin',   label: 'Admin',   is_system: true, hierarchy_level: 0, permissions: [] },
+  { name: 'admin',   label: 'Admin',   is_system: true, hierarchy_level: 0, permissions: ALL_PERMISSIONS },
   { name: 'manager', label: 'Manager', is_system: true, hierarchy_level: 1, permissions: [] },
   { name: 'editor',  label: 'Editor',  is_system: true, hierarchy_level: 2, permissions: [] },
   { name: 'writer',  label: 'Writer',  is_system: true, hierarchy_level: 3, permissions: [] },
@@ -77,8 +100,51 @@ const pgAdapter = createPostgresAdapter({ url: DB_URL })
 let db: DrizzlePostgresInstance
 
 beforeAll(async () => {
+  process.env['AUTH_SECRET'] = 'admin-int-test-secret'
   await pgAdapter.connect()
   db = pgAdapter.getDb()
+
+  await db.execute(sql.raw(`
+    CREATE TABLE IF NOT EXISTS roles (
+      id              UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+      name            VARCHAR(255) NOT NULL UNIQUE,
+      label           VARCHAR(255) NOT NULL,
+      is_system       BOOLEAN      NOT NULL DEFAULT false,
+      hierarchy_level INTEGER      NOT NULL UNIQUE,
+      permissions     TEXT[]       NOT NULL DEFAULT '{}',
+      created_at      TIMESTAMP    NOT NULL DEFAULT NOW(),
+      updated_at      TIMESTAMP    NOT NULL DEFAULT NOW()
+    )
+  `))
+
+  await db.execute(sql.raw(`
+    INSERT INTO roles (name, label, is_system, hierarchy_level, permissions)
+    VALUES ('admin', 'Admin', true, 0, '{}')
+    ON CONFLICT (name) DO NOTHING
+  `))
+
+  await db.execute(sql.raw(`
+    CREATE TABLE IF NOT EXISTS users (
+      id                   UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+      email                VARCHAR(255) NOT NULL UNIQUE,
+      password_hash        VARCHAR(255) NOT NULL DEFAULT '',
+      role_id              UUID         NOT NULL REFERENCES roles(id),
+      token_version        INTEGER      NOT NULL DEFAULT 0,
+      must_change_password BOOLEAN      NOT NULL DEFAULT false,
+      created_at           TIMESTAMP    NOT NULL DEFAULT NOW(),
+      updated_at           TIMESTAMP    NOT NULL DEFAULT NOW()
+    )
+  `))
+
+  const userResult = await db.execute(sql.raw(`
+    INSERT INTO users (email, password_hash, role_id, token_version, must_change_password)
+    SELECT 'admin-int-test@example.com', '', r.id, 0, false
+    FROM roles r WHERE r.name = 'admin'
+    ON CONFLICT (email) DO UPDATE SET token_version = 0
+    RETURNING id
+  `))
+  const userId = (userResult.rows[0] as { id: string }).id
+  TEST_AUTH_TOKEN = await signToken({ user_id: userId, role: 'admin', token_version: 0 }, 3600)
 
   await db.execute(sql.raw(`
     CREATE TABLE IF NOT EXISTS "${BLOG_TABLE}" (
@@ -95,6 +161,7 @@ beforeAll(async () => {
   await db.execute(sql.raw(`
     CREATE TABLE IF NOT EXISTS media (
       id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      type            VARCHAR(50)      NOT NULL DEFAULT 'image',
       url             VARCHAR(2048)    NOT NULL,
       mime_type       VARCHAR(255)     NOT NULL,
       alt             VARCHAR(255),
@@ -107,10 +174,15 @@ beforeAll(async () => {
       updated_at      TIMESTAMP        NOT NULL DEFAULT NOW()
     )
   `))
+  await db.execute(sql.raw(
+    `ALTER TABLE media ADD COLUMN IF NOT EXISTS type VARCHAR(50) NOT NULL DEFAULT 'image'`
+  ))
 }, 30_000)
 
 afterAll(async () => {
   await db.execute(sql.raw(`DROP TABLE IF EXISTS "${BLOG_TABLE}" CASCADE`))
+  await db.execute(sql.raw(`DELETE FROM users WHERE email = 'admin-int-test@example.com'`))
+  delete process.env['AUTH_SECRET']
   // Leave the media table — other test files may share it; it will be dropped by its own suite.
   await pgAdapter.disconnect()
 })
@@ -152,7 +224,7 @@ describe('admin content routes — integration', () => {
         ('draft-1', false, 'Draft One')
     `))
 
-    const res = await app.request(`/admin/api/${BASE_PATH}`)
+    const res = await app.request(`/admin/api/${BASE_PATH}`, withAuth())
     expect(res.status).toBe(200)
 
     const body = await res.json() as {
@@ -177,11 +249,11 @@ describe('admin content routes — integration', () => {
     `))
     const id = (result.rows[0] as { id: string }).id
 
-    const res = await app.request(`/admin/api/${BASE_PATH}/${id}`, {
+    const res = await app.request(`/admin/api/${BASE_PATH}/${id}`, withAuth({
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ published: true }),
-    })
+    }))
 
     expect(res.status).toBe(422)
     const body = await res.json() as {
@@ -206,11 +278,11 @@ describe('admin content routes — integration', () => {
     `))
     const id = (result.rows[0] as { id: string }).id
 
-    const res = await app.request(`/admin/api/${BASE_PATH}/${id}`, {
+    const res = await app.request(`/admin/api/${BASE_PATH}/${id}`, withAuth({
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ published: false, blog_title: '' }),
-    })
+    }))
 
     expect(res.status).toBe(200)
     const body = await res.json() as { ok: boolean; data: { published: boolean } }
@@ -229,10 +301,10 @@ describe('admin media routes — integration', () => {
     const formData = new FormData()
     formData.append('file', file)
 
-    const res = await app.request('/admin/api/media/image', {
+    const res = await app.request('/admin/api/media/image', withAuth({
       method: 'POST',
       body: formData,
-    })
+    }))
 
     expect(res.status).toBe(201)
     const body = await res.json() as {
@@ -261,7 +333,7 @@ describe('admin media routes — integration', () => {
     `))
     const id = (insertResult.rows[0] as { id: string }).id
 
-    const res = await app.request(`/admin/api/media/${id}`, { method: 'DELETE' })
+    const res = await app.request(`/admin/api/media/${id}`, withAuth({ method: 'DELETE' }))
     expect(res.status).toBe(200)
 
     const body = await res.json() as { ok: boolean }
@@ -282,7 +354,7 @@ describe('admin media routes — integration', () => {
     `))
     const id = (insertResult.rows[0] as { id: string }).id
 
-    const res = await app.request(`/admin/api/media/${id}`, { method: 'DELETE' })
+    const res = await app.request(`/admin/api/media/${id}`, withAuth({ method: 'DELETE' }))
     expect(res.status).toBe(409)
 
     const body = await res.json() as { ok: boolean; error: { code: string } }
@@ -293,17 +365,15 @@ describe('admin media routes — integration', () => {
 
 describe('admin OpenAPI — integration', () => {
   it('GET /admin/api/openapi.json requires auth — returns 401 without token', async () => {
-    // Phase 6 NOTE: requireAuth is currently a no-op placeholder so this returns 200.
-    // Once JWT auth middleware is wired in Phase 6, this test should pass with 401.
     const app = makeApp()
-
     const res = await app.request('/admin/api/openapi.json')
+    expect(res.status).toBe(401)
+  })
 
-    // Temporarily assert 200 to document current behavior until Phase 6 ships auth.
-    // When Phase 6 is complete, change this to: expect(res.status).toBe(401)
+  it('GET /admin/api/openapi.json returns spec when authenticated', async () => {
+    const app = makeApp()
+    const res = await app.request('/admin/api/openapi.json', withAuth())
     expect(res.status).toBe(200)
-
-    // Confirm the spec is well-formed (auth check lives in the 401 assertion above)
     const body = await res.json() as Record<string, unknown>
     expect(typeof body['openapi']).toBe('string')
   })
