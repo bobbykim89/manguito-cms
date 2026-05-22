@@ -83,19 +83,17 @@ Setting `published: false` (unpublishing) skips required field validation — an
 
 ## Permission
 
-`content:publish` is a distinct permission from `content:update`. A role can hold update rights without publish rights — for example, a contributor role that can write drafts but cannot go live without approval.
+Toggling `published` requires `content:edit`. There is no separate `content:publish` permission — publish and unpublish are edit operations and are gated by the same permission as any other field update.
 
 ```ts
-// admin content route — publish requires separate permission
-app.patch('/admin/api/:type/:id', 
-  requirePermission('content:update'),
+// admin content route — publish/unpublish uses content:edit
+app.patch('/admin/api/:type/:id',
+  requirePermission('content:edit'),
   async (c) => {
-    const body = await c.req.json()
-    if (body.published === true) {
-      // check additional publish permission
-      requirePermission('content:publish')(c, next)
-    }
-    // ...
+    // body may include { published: true } or { published: false }
+    // no additional permission check — content:edit covers it
   }
 )
 ```
+
+> **Note:** Earlier drafts of this doc introduced `content:publish` as a distinct permission and used `content:update` in code examples. Neither permission exists. The authoritative permission definition is in `phase-02-roles-and-auth-design.md`. See `docs/errata.md` entry 1.

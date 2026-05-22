@@ -128,7 +128,7 @@ export const getBlogPostListRoute = createRoute({
   tags: ['Blog Post'],
   request: {
     query: z.object({
-      page: z.coerce.number().int().min(0).default(0),
+      page: z.coerce.number().int().min(1).default(1),
       per_page: z.coerce.number().int().min(1).max(100).default(10),
       include: z.string().optional()
         .describe('Comma-separated relation field names to expand')
