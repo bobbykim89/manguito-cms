@@ -33,7 +33,7 @@ export function registerStart(program: Command): void {
 
 export async function runStart(
   options: { env?: string },
-  deps: { cwd: string },
+  deps: { cwd: string; loadServer?: (url: string) => Promise<void> },
 ): Promise<void> {
   const { cwd } = deps
 
@@ -136,7 +136,7 @@ export async function runStart(
 
   // 8. Load dist/server.js — the production bundle starts the Hono server on import
   const serverUrl = pathToFileURL(resolve(cwd, 'dist/server.js')).href
-  await import(serverUrl)
+  await (deps.loadServer ? deps.loadServer(serverUrl) : import(serverUrl))
 
   // 9. Print server info
   const port = Number(process.env['PORT'] ?? 3000)
