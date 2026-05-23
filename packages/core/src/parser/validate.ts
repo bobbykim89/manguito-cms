@@ -1,5 +1,6 @@
-import type { ParseError } from './loader'
+import type { Result, ParseError, ParseErrorCode } from './loader'
 import type { Permission } from '../types.js'
+import { RoutesFileSchema } from './validators.js'
 import type {
   ParsedSchema,
   ParsedContentType,
@@ -396,4 +397,30 @@ function checkMaxSizeLimit(
   }
 
   return errors
+}
+
+// ─── parseRoutes ──────────────────────────────────────────────────────────────
+
+/**
+ * Validates a raw routes.json object and produces a ParsedRoutes value.
+ * Returns Result<ParsedRoutes> — never throws for expected failures.
+ * sourceFile is optional; supply it for accurate error file paths.
+ */
+export function parseRoutes(
+  raw: unknown,
+  sourceFile = 'routes.json'
+): Result<ParsedRoutes> {
+  const result = RoutesFileSchema.safeParse(raw)
+  if (!result.success) {
+    return {
+      ok: false,
+      errors: result.error.issues.map((issue) => ({
+        file: sourceFile,
+        code: 'MISSING_REQUIRED_FIELD' as ParseErrorCode,
+        message: issue.message,
+        ...(issue.path.length > 0 ? { path: issue.path.map(String).join('.') } : {}),
+      })),
+    }
+  }
+  return { ok: true, value: result.data }
 }

@@ -59,6 +59,26 @@ export type {
   SchemaRegistry,
 } from './parser/validate.js'
 
+export {
+  buildSchemaRegistry,
+  validateCrossReferences,
+  parseRoutes,
+} from './parser/validate.js'
+
+export type {
+  Result,
+  ParseError,
+  ParseErrorCode,
+  SchemaFile,
+  SchemaType,
+} from './parser/loader.js'
+
+export { walkSchemaDirectory, loadSchemaFile } from './parser/loader.js'
+
+export { parseSchema } from './parser/parseSchema.js'
+
+export { parseRoles } from './parser/parseRoles.js'
+
 export type { ErrorCode } from './errors.js'
 
 export type {
