@@ -56,6 +56,20 @@ packages/admin/src/components/fields/
 └── ReferenceSelect.vue    — reference (typeahead select)
 ```
 
+The `UiComponent.component` string from the parser (e.g. `'checkbox'`, `'text-input'`) is the key used by the static form codegen (`codegen/form-generator.ts` — `COMPONENT_NAME` map) to look up the Vue component name. The dynamic renderer maps by `field_type` directly. The full key-to-file mapping is:
+
+| `UiComponent.component` | Vue component file |
+|-------------------------|--------------------|
+| `text-input` | `TextInput.vue` |
+| `rich-text-editor` | `RichTextEditor.vue` |
+| `number-input` | `NumberInput.vue` |
+| `checkbox` | `BooleanToggle.vue` |
+| `date-picker` | `DatePicker.vue` |
+| `file-upload` | `MediaUpload.vue` |
+| `select` | `EnumSelect.vue` |
+| `typeahead-select` | `ReferenceSelect.vue` |
+| `paragraph-embed` | `ParagraphEmbed.vue` |
+
 All field components share a standardized props interface:
 
 ```ts
@@ -281,9 +295,9 @@ Route priority:
 .manguito/
 ├── schema-registry.ts    — parsed schema registry
 ├── routes.ts             — Hono route registrations
-├── forms/                — dynamic form definitions
-│   ├── content--blog_post.ts
-│   └── content--home_page.ts
+├── forms/                — generated Vue SFCs
+│   ├── content--blog_post.vue
+│   └── content--home_page.vue
 └── nav.ts                — admin panel navigation
 ```
 

@@ -55,17 +55,6 @@ export interface DbAdapter {
 
 // ─── Storage Adapter ──────────────────────────────────────────────────────────
 
-export type UploadOptions = {
-  folder: 'image' | 'video' | 'file'
-  filename: string
-  mime_type: string
-}
-
-export type UploadResult = {
-  key: string
-  url: string
-}
-
 export type PresignedOptions = {
   folder: 'image' | 'video' | 'file'
   filename: string
@@ -81,7 +70,6 @@ export type PresignedResult = {
 
 export interface StorageAdapter {
   readonly type: 'local' | 's3' | 'cloudinary'
-  upload(file: File | Buffer, options: UploadOptions): Promise<UploadResult>
   delete(key: string): Promise<void>
   getUrl(key: string): string
   getPresignedUploadUrl(options: PresignedOptions): Promise<PresignedResult>

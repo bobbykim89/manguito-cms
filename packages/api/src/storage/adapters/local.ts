@@ -3,8 +3,6 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import type {
   StorageAdapter,
-  UploadOptions,
-  UploadResult,
   PresignedOptions,
   PresignedResult,
 } from '@bobbykim/manguito-cms-core'
@@ -35,10 +33,6 @@ export function createLocalAdapter(
 
   return {
     type: 'local',
-
-    async upload(_file: File | Buffer, _options: UploadOptions): Promise<UploadResult> {
-      throw new Error('createLocalAdapter.upload: binary upload not supported — use presigned URL flow')
-    },
 
     async getPresignedUploadUrl(opts: PresignedOptions): Promise<PresignedResult> {
       const raw_ext = path.extname(opts.filename)

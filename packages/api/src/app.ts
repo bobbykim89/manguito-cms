@@ -28,7 +28,12 @@ export type CreateAPIAdapterOptions = {
   storage: StorageAdapter
   registry: SchemaRegistry
   db: DrizzlePostgresInstance
+  media?: {
+    /** Optional upload size cap in bytes. Returned by GET /admin/api/config for client-side UX validation. */
+    max_file_size?: number
+  }
   rateLimit?: {
+    /** Rate limiting applied to public list endpoints only (paginated collections, not single-item lookups). */
     findAll?: {
       windowMs?: number
       maxPerIp?: number
@@ -58,8 +63,9 @@ export function createAPIAdapter(options: CreateAPIAdapterOptions): ManguitoCmsA
   }
 
   const prefix = options.prefix ?? '/api'
-  const { storage, registry, db, rateLimit } = options
+  const { storage, registry, db, rateLimit, media } = options
   const cmsName = options.name ?? 'Manguito CMS'
+  const maxFileSize = media?.max_file_size
 
   // Build roles registry — throws immediately if roles are missing or invalid.
   // The server must not start with a broken registry.
@@ -71,15 +77,13 @@ export function createAPIAdapter(options: CreateAPIAdapterOptions): ManguitoCmsA
   app.use('*', createCorsMiddleware({ origin: '*', enabled: true }))
   app.onError(errorHandler)
 
-  // Rate limiter scoped to public API routes only
-  app.use(
-    '/api/*',
-    createRateLimitMiddleware({
-      windowMs: rateLimit?.findAll?.windowMs ?? 60_000,
-      maxPerIp: rateLimit?.findAll?.maxPerIp ?? 30,
-      maxGlobal: rateLimit?.findAll?.maxGlobal ?? 500,
-    })
-  )
+  // Rate limiter for public list endpoints — threaded into route registrators,
+  // applied only to paginated collection routes (not single-item lookups).
+  const listRateLimit = createRateLimitMiddleware({
+    windowMs: rateLimit?.findAll?.windowMs ?? 60_000,
+    maxPerIp: rateLimit?.findAll?.maxPerIp ?? 30,
+    maxGlobal: rateLimit?.findAll?.maxGlobal ?? 500,
+  })
 
   // ── Middleware factories — all close over rolesRegistry built once at startup ──
 
@@ -151,14 +155,19 @@ export function createAPIAdapter(options: CreateAPIAdapterOptions): ManguitoCmsA
 
   // ── Public routes ─────────────────────────────────────────────────────────────
 
-  registerPublicContentRoutes(app, registry, repos)
-  registerPublicMediaRoutes(app, mediaRepo)
+  registerPublicContentRoutes(app, registry, repos, listRateLimit)
+  registerPublicMediaRoutes(app, mediaRepo, listRateLimit)
 
   // ── Admin routes — all registered AFTER the blanket use() so auth middleware
   //    runs before every handler. registerConfigRoute is called first so its
   //    GET /admin/api/config handler wins over the stale stub in content.ts.
-  registerConfigRoute(app, { name: cmsName }, rolesRegistry)
-  registerSchemaRoute(app, registry)
+  registerConfigRoute(
+    app,
+    { name: cmsName, ...(maxFileSize !== undefined && { maxFileSize }) },
+    rolesRegistry,
+    db,
+  )
+  registerSchemaRoute(app, registry, db)
   registerUserRoutes(app, db, requirePermission, requireHierarchy)
   registerAdminContentRoutes(app, registry, repos, mediaRepo, requirePermission)
   registerAdminMediaRoutes(app, mediaRepo, storage)

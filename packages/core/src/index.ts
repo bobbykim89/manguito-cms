@@ -10,8 +10,6 @@ export type {
   MigrationResult,
   MigrationStatus,
   DbAdapter,
-  UploadOptions,
-  UploadResult,
   PresignedOptions,
   PresignedResult,
   StorageAdapter,

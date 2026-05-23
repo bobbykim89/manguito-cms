@@ -4,8 +4,6 @@ import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import type {
   StorageAdapter,
-  UploadOptions,
-  UploadResult,
   PresignedOptions,
   PresignedResult,
 } from '@bobbykim/manguito-cms-core'
@@ -32,10 +30,6 @@ export function createS3Adapter(options: S3AdapterOptions): StorageAdapter {
 
   return {
     type: 's3',
-
-    async upload(_file: File | Buffer, _options: UploadOptions): Promise<UploadResult> {
-      throw new Error('createS3Adapter.upload: binary upload not supported — use presigned URL flow')
-    },
 
     async getPresignedUploadUrl(opts: PresignedOptions): Promise<PresignedResult> {
       const raw_ext = path.extname(opts.filename)

@@ -39,7 +39,6 @@ Execution stops immediately. No prompts are shown.
 ```
 Creating superuser. Press Ctrl+C to cancel.
 
-Username: admin
 Email: admin@example.com
 Password: ········
 Confirm password: ········
@@ -48,7 +47,7 @@ Confirm password: ········
   You can now log in at /admin with the credentials above.
 ```
 
-- Username, email, and password are prompted in sequence.
+- Email and password are prompted in sequence.
 - Password input is masked — no characters echoed to the terminal.
 - Password confirmation is required — mismatch re-prompts the password field without restarting the whole flow.
 - Empty input for any field re-prompts that field.
@@ -59,11 +58,10 @@ Confirm password: ········
 
 | Field | Rules |
 | ----- | ----- |
-| Username | Required, non-empty, unique in `users` table |
 | Email | Required, valid email format, unique in `users` table |
 | Password | Required, minimum 8 characters |
 
-If username or email already exists in the DB, a clear error is shown and the relevant field is re-prompted:
+If the email already exists in the DB, a clear error is shown and the field is re-prompted:
 
 ```
 ✖ A user with that email already exists. Please use a different email.
