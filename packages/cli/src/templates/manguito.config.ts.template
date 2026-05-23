@@ -1,0 +1,39 @@
+import { defineConfig } from '@bobbykim/manguito-cms-core'
+import { createPostgresAdapter } from '@bobbykim/manguito-cms-db'
+import {
+  createLocalAdapter,
+  createS3Adapter,
+  createCloudinaryAdapter,
+  createServer,
+  createAPIAdapter,
+} from '@bobbykim/manguito-cms-api'
+import { createAdminAdapter } from '@bobbykim/manguito-cms-admin'
+
+export default defineConfig({
+  name: '{{projectName}}',
+
+  schema: {
+    base_path: './schemas',
+  },
+
+  db: createPostgresAdapter(),
+
+  migrations: {
+    table: '__manguito_migrations',
+    folder: './migrations',
+  },
+
+  // Storage — alternatives:
+  //   createLocalAdapter({ upload_dir: process.env['STORAGE_LOCAL_UPLOAD_DIR'] })
+  //   createS3Adapter({ bucket: process.env['STORAGE_S3_BUCKET'], region: process.env['STORAGE_S3_REGION'] })
+  //   createCloudinaryAdapter({ cloud_name: process.env['STORAGE_CLOUDINARY_CLOUD_NAME'], api_key: process.env['STORAGE_CLOUDINARY_API_KEY'], api_secret: process.env['STORAGE_CLOUDINARY_API_SECRET'] })
+  storage: {{storageAdapter}},
+
+  server: createServer({
+    cors: { origin: process.env['ALLOWED_ORIGIN'] ?? '*' },
+  }),
+
+  api: createAPIAdapter({ prefix: '/api' }),
+
+  admin: createAdminAdapter({ prefix: '/admin' }),
+})
