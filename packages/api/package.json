@@ -19,6 +19,11 @@
       "import": "./dist/runtime/index.mjs",
       "require": "./dist/runtime/index.js",
       "types": "./dist/runtime/index.d.ts"
+    },
+    "./codegen": {
+      "import": "./dist/codegen/index.mjs",
+      "require": "./dist/codegen/index.js",
+      "types": "./dist/codegen/index.d.ts"
     }
   },
   "main": "./dist/index.js",
