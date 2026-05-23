@@ -1,6 +1,8 @@
 // @bobbykim/manguito-cms-db
 // Drizzle ORM adapters, migrations, and schema codegen.
 
+export { sql } from 'drizzle-orm'
+
 export { createPostgresAdapter } from './adapters/postgres'
 export type { PostgresAdapterOptions } from './adapters/postgres'
 export type { DrizzlePostgresInstance } from './types'
