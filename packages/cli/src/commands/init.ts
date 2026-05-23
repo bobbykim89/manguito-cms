@@ -80,20 +80,16 @@ export async function runInit(
   mkdirSync(paragraphTypesDir, { recursive: true })
   writeFileSync(join(paragraphTypesDir, '.gitkeep'), '', 'utf8')
 
-  const fileCount = templateFiles.length + 1
-
-  process.stdout.write('\n')
-  printSuccess(`Created ${displayName}/`)
-  printSuccess(`Scaffolded ${fileCount} files`)
+  printSuccess('Project scaffolded.')
 
   process.stdout.write('\nNext steps:\n')
   if (!usesCwd) {
     process.stdout.write(`  cd ${name}\n`)
   }
   process.stdout.write('  cp .env.example .env\n')
-  process.stdout.write('  # Set DB_URL (and storage credentials) in .env\n')
+  process.stdout.write('  # Fill in DB_URL in .env\n')
   process.stdout.write('  pnpm install\n')
-  process.stdout.write('  pnpm dev\n')
+  process.stdout.write('  manguito dev\n')
 }
 
 function walkTemplates(dir: string): string[] {
