@@ -3,27 +3,13 @@ import type { Hono } from 'hono'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import type { RolesRegistry } from '../../auth/registry.js'
 
-// ─── Version ──────────────────────────────────────────────────────────────────
+// ─── Version — injected by tsup at build time; falls back in test/dev ─────────
 
-import { createRequire } from 'node:module'
+declare const __API_VERSION__: string
 
-const _require = createRequire(__filename)
-
-function readApiVersion(): string {
-  for (const path of ['../package.json', '../../../package.json']) {
-    try {
-      const pkg = _require(path) as { name?: string; version?: string }
-      if (pkg.name === '@bobbykim/manguito-cms-api' && typeof pkg.version === 'string') {
-        return pkg.version
-      }
-    } catch {
-      // not found at this path — try next
-    }
-  }
-  return '0.0.0'
-}
-
-const API_VERSION = readApiVersion()
+const API_VERSION: string = (() => {
+  try { return __API_VERSION__ } catch { return '0.0.0' }
+})()
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -47,10 +33,22 @@ export function registerConfigRoute(
     const actingRole = registry[actingUser.role]
     const actingLevel = actingRole?.hierarchy_level ?? Infinity
 
+    // Subordinate roles only — used by user management forms for role assignment.
     const roles = Object.values(registry)
       .filter((r) => r.name !== 'admin' && r.hierarchy_level > actingLevel)
       .sort((a, b) => a.hierarchy_level - b.hierarchy_level)
       .map((r) => ({ name: r.name, label: r.label, hierarchy_level: r.hierarchy_level }))
+
+    // All roles with full data — used by the admin panel to resolve permissions.
+    const all_roles = Object.values(registry)
+      .sort((a, b) => a.hierarchy_level - b.hierarchy_level)
+      .map((r) => ({
+        name: r.name,
+        label: r.label,
+        hierarchy_level: r.hierarchy_level,
+        is_system: r.is_system,
+        permissions: r.permissions,
+      }))
 
     const userResult = await db.execute(
       sql`SELECT email, must_change_password FROM users WHERE id = ${actingUser.id} LIMIT 1`
@@ -65,6 +63,7 @@ export function registerConfigRoute(
         cms_name: config.name ?? 'Manguito CMS',
         version: API_VERSION,
         roles,
+        all_roles,
         user: {
           id: actingUser.id,
           email: userRow?.email ?? '',

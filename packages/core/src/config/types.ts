@@ -73,6 +73,7 @@ export interface StorageAdapter {
   delete(key: string): Promise<void>
   getUrl(key: string): string
   getPresignedUploadUrl(options: PresignedOptions): Promise<PresignedResult>
+  upload?(key: string, data: Uint8Array, mimeType: string): Promise<void>
 }
 
 // ─── Server Adapter ───────────────────────────────────────────────────────────

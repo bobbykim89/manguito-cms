@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import AppShell from '../components/layout/AppShell.vue'
 
 // ─── Route meta typing ────────────────────────────────────────────────────────
 
@@ -12,7 +13,6 @@ declare module 'vue-router' {
 }
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
-// All paths include __ADMIN_PREFIX__ so to.path in guards matches without stripping.
 
 const routes: RouteRecordRaw[] = [
   // ── Public ────────────────────────────────────────────────────────────────
@@ -22,101 +22,104 @@ const routes: RouteRecordRaw[] = [
     component: () => import('../views/LoginView.vue'),
   },
 
-  // ── Auth required ─────────────────────────────────────────────────────────
+  // ── Authenticated — all rendered inside the AppShell layout ───────────────
+  // AppShell contains the sidebar, topbar, and a <router-view> for the child.
+  // meta.requiresAuth on the parent is merged into every child's to.meta.
   {
-    path: `${__ADMIN_PREFIX__}/change-password`,
-    name: 'change-password',
-    component: () => import('../views/ChangePasswordView.vue'),
+    path: `${__ADMIN_PREFIX__}`,
+    component: AppShell,
     meta: { requiresAuth: true },
-  },
+    children: [
+      // Default landing
+      { path: '', redirect: `${__ADMIN_PREFIX__}/media` },
 
-  // ── Content ───────────────────────────────────────────────────────────────
-  // Define /new and /settings before /:id so static segments win over dynamic ones.
-  {
-    path: `${__ADMIN_PREFIX__}/content/:type`,
-    name: 'content-list',
-    component: () => import('../views/content/ContentListView.vue'),
-    meta: { requiresAuth: true },
-  },
-  {
-    path: `${__ADMIN_PREFIX__}/content/:type/new`,
-    name: 'content-new',
-    component: () => import('../views/content/ContentFormView.vue'),
-    meta: { requiresAuth: true },
-  },
-  {
-    path: `${__ADMIN_PREFIX__}/content/:type/settings`,
-    name: 'content-settings',
-    component: () => import('../views/content/ContentSettingsView.vue'),
-    meta: { requiresAuth: true, permission: 'content:edit' },
-  },
-  {
-    path: `${__ADMIN_PREFIX__}/content/:type/:id`,
-    name: 'content-edit',
-    component: () => import('../views/content/ContentFormView.vue'),
-    meta: { requiresAuth: true },
-  },
+      // Change password
+      {
+        path: 'change-password',
+        name: 'change-password',
+        component: () => import('../views/ChangePasswordView.vue'),
+      },
 
-  // ── Taxonomy ──────────────────────────────────────────────────────────────
-  {
-    path: `${__ADMIN_PREFIX__}/taxonomy/:type`,
-    name: 'taxonomy-list',
-    component: () => import('../views/taxonomy/TaxonomyListView.vue'),
-    meta: { requiresAuth: true },
-  },
-  {
-    path: `${__ADMIN_PREFIX__}/taxonomy/:type/new`,
-    name: 'taxonomy-new',
-    component: () => import('../views/taxonomy/TaxonomyFormView.vue'),
-    meta: { requiresAuth: true },
-  },
-  {
-    path: `${__ADMIN_PREFIX__}/taxonomy/:type/:id`,
-    name: 'taxonomy-edit',
-    component: () => import('../views/taxonomy/TaxonomyFormView.vue'),
-    meta: { requiresAuth: true },
-  },
+      // ── Content ─────────────────────────────────────────────────────────
+      // /new and /settings defined before /:id so static segments win.
+      {
+        path: 'content/:type',
+        name: 'content-list',
+        component: () => import('../views/content/ContentListView.vue'),
+      },
+      {
+        path: 'content/:type/new',
+        name: 'content-new',
+        component: () => import('../views/content/ContentFormView.vue'),
+      },
+      {
+        path: 'content/:type/settings',
+        name: 'content-settings',
+        component: () => import('../views/content/ContentSettingsView.vue'),
+        meta: { permission: 'content:edit' },
+      },
+      {
+        path: 'content/:type/:id',
+        name: 'content-edit',
+        component: () => import('../views/content/ContentFormView.vue'),
+      },
 
-  // ── Media ─────────────────────────────────────────────────────────────────
-  {
-    path: `${__ADMIN_PREFIX__}/media`,
-    name: 'media-library',
-    component: () => import('../views/media/MediaLibraryView.vue'),
-    meta: { requiresAuth: true },
-  },
-  {
-    path: `${__ADMIN_PREFIX__}/media/:id`,
-    name: 'media-detail',
-    component: () => import('../views/media/MediaDetailView.vue'),
-    meta: { requiresAuth: true },
-  },
+      // ── Taxonomy ─────────────────────────────────────────────────────────
+      {
+        path: 'taxonomy/:type',
+        name: 'taxonomy-list',
+        component: () => import('../views/taxonomy/TaxonomyListView.vue'),
+      },
+      {
+        path: 'taxonomy/:type/new',
+        name: 'taxonomy-new',
+        component: () => import('../views/taxonomy/TaxonomyFormView.vue'),
+      },
+      {
+        path: 'taxonomy/:type/:id',
+        name: 'taxonomy-edit',
+        component: () => import('../views/taxonomy/TaxonomyFormView.vue'),
+      },
 
-  // ── Users — all gated by users:read at the route level ────────────────────
-  {
-    path: `${__ADMIN_PREFIX__}/users`,
-    name: 'user-list',
-    component: () => import('../views/users/UserListView.vue'),
-    meta: { requiresAuth: true, permission: 'users:read' },
-  },
-  {
-    path: `${__ADMIN_PREFIX__}/users/new`,
-    name: 'user-new',
-    component: () => import('../views/users/UserFormView.vue'),
-    meta: { requiresAuth: true, permission: 'users:read' },
-  },
-  {
-    path: `${__ADMIN_PREFIX__}/users/:id`,
-    name: 'user-edit',
-    component: () => import('../views/users/UserFormView.vue'),
-    meta: { requiresAuth: true, permission: 'users:read' },
-  },
+      // ── Media ─────────────────────────────────────────────────────────────
+      {
+        path: 'media',
+        name: 'media-library',
+        component: () => import('../views/media/MediaLibraryView.vue'),
+      },
+      {
+        path: 'media/:id',
+        name: 'media-detail',
+        component: () => import('../views/media/MediaDetailView.vue'),
+      },
 
-  // ── Roles ─────────────────────────────────────────────────────────────────
-  {
-    path: `${__ADMIN_PREFIX__}/roles`,
-    name: 'roles',
-    component: () => import('../views/RolesView.vue'),
-    meta: { requiresAuth: true },
+      // ── Users ─────────────────────────────────────────────────────────────
+      {
+        path: 'users',
+        name: 'user-list',
+        component: () => import('../views/users/UserListView.vue'),
+        meta: { permission: 'users:read' },
+      },
+      {
+        path: 'users/new',
+        name: 'user-new',
+        component: () => import('../views/users/UserFormView.vue'),
+        meta: { permission: 'users:read' },
+      },
+      {
+        path: 'users/:id',
+        name: 'user-edit',
+        component: () => import('../views/users/UserFormView.vue'),
+        meta: { permission: 'users:read' },
+      },
+
+      // ── Roles ─────────────────────────────────────────────────────────────
+      {
+        path: 'roles',
+        name: 'roles',
+        component: () => import('../views/RolesView.vue'),
+      },
+    ],
   },
 ]
 
@@ -134,7 +137,7 @@ router.beforeEach((to) => {
 
   // Already authenticated — redirect away from login.
   if (to.path === `${__ADMIN_PREFIX__}/login`) {
-    if (auth.isAuthenticated) return { path: `${__ADMIN_PREFIX__}/` }
+    if (auth.isAuthenticated) return { path: `${__ADMIN_PREFIX__}/media` }
     return true
   }
 
@@ -153,7 +156,7 @@ router.beforeEach((to) => {
 
   // Password already changed — redirect away from change-password.
   if (!auth.mustChangePassword && to.path === `${__ADMIN_PREFIX__}/change-password`) {
-    return { path: `${__ADMIN_PREFIX__}/` }
+    return { path: `${__ADMIN_PREFIX__}/media` }
   }
 
   return true
@@ -164,7 +167,7 @@ router.beforeEach((to) => {
 router.beforeEach((to) => {
   const auth = useAuthStore()
   if (to.meta.permission && !auth.hasPermission(to.meta.permission)) {
-    return { path: `${__ADMIN_PREFIX__}/` }
+    return { path: `${__ADMIN_PREFIX__}/media` }
   }
 })
 

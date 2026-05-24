@@ -7,7 +7,37 @@ import type {
   ParsedTaxonomyType,
   ParsedEnumType,
   ParsedRole,
+  ParsedField,
+  UiMeta,
+  SystemField,
 } from '@bobbykim/manguito-cms-core'
+
+// Shape returned by GET /admin/api/schema — full ParsedField objects so the
+// admin forms can render inputs and run client-side validation without extra
+// round-trips to the server.
+export type ApiSchemaResponse = {
+  content_types: Array<{
+    name: string
+    label: string
+    only_one: boolean
+    ui: UiMeta
+    system_fields: SystemField[]
+    fields: ParsedField[]
+  }>
+  taxonomy_types: Array<{
+    name: string
+    label: string
+    system_fields: SystemField[]
+    fields: ParsedField[]
+  }>
+  paragraph_types: Array<{
+    name: string
+    label: string
+    system_fields: SystemField[]
+    fields: ParsedField[]
+  }>
+  enum_types: Array<{ name: string; label: string; values: string[] }>
+}
 
 export const useSchemaStore = defineStore('schema', () => {
   const contentTypes = ref<Record<string, ParsedContentType>>({})
@@ -37,6 +67,46 @@ export const useSchemaStore = defineStore('schema', () => {
     roles.value = newRoles
   }
 
+  function setFromApiSchema(data: ApiSchemaResponse) {
+    for (const ct of data.content_types) {
+      contentTypes.value[ct.name] = {
+        schema_type: 'content-type',
+        name: ct.name,
+        label: ct.label,
+        only_one: ct.only_one,
+        ui: ct.ui,
+        system_fields: ct.system_fields,
+        fields: ct.fields,
+      } as unknown as ParsedContentType
+    }
+    for (const tt of data.taxonomy_types) {
+      taxonomyTypes.value[tt.name] = {
+        schema_type: 'taxonomy-type',
+        name: tt.name,
+        label: tt.label,
+        system_fields: tt.system_fields,
+        fields: tt.fields,
+      } as unknown as ParsedTaxonomyType
+    }
+    for (const pt of data.paragraph_types) {
+      paragraphTypes.value[pt.name] = {
+        schema_type: 'paragraph-type',
+        name: pt.name,
+        label: pt.label,
+        system_fields: pt.system_fields,
+        fields: pt.fields,
+      } as unknown as ParsedParagraphType
+    }
+    for (const et of data.enum_types) {
+      enumTypes.value[et.name] = {
+        schema_type: 'enum-type',
+        name: et.name,
+        label: et.label,
+        values: et.values,
+      } as unknown as ParsedEnumType
+    }
+  }
+
   function getContentType(name: string): ParsedContentType | undefined {
     return contentTypes.value[name]
   }
@@ -53,6 +123,7 @@ export const useSchemaStore = defineStore('schema', () => {
     roles,
     setSchema,
     setRoles,
+    setFromApiSchema,
     getContentType,
     getRoleByName,
   }

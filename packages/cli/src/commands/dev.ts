@@ -1,8 +1,9 @@
 // manguito dev — start dev server with schema watching and Vite admin panel
 import { createServer as createHttpServer } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { resolve, join } from 'node:path'
-import { mkdir, writeFile, watch } from 'node:fs/promises'
+import { resolve, join, dirname, extname } from 'node:path'
+import { mkdir, writeFile, watch, readFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import type { Command } from 'commander'
 import { sql } from '@bobbykim/manguito-cms-db'
 import { createServer as createViteServer } from 'vite'
@@ -12,7 +13,7 @@ import {
   generateSchemaFile,
   createPostgresAdapter,
 } from '@bobbykim/manguito-cms-db'
-import { createAPIAdapter } from '@bobbykim/manguito-cms-api'
+import { createCmsApp } from '@bobbykim/manguito-cms-api'
 import {
   walkSchemaDirectory,
   parseSchema,
@@ -36,6 +37,19 @@ import { printGuidedError, printSuccess } from '../utils/error.js'
 import { createPromptAdapter } from '../utils/prompt.js'
 
 type HonoFetch = (request: Request) => Response | Promise<Response>
+
+const UPLOAD_MIME_MAP: Record<string, string> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  svg: 'image/svg+xml',
+  mp4: 'video/mp4',
+  webm: 'video/webm',
+  mov: 'video/quicktime',
+  pdf: 'application/pdf',
+}
 
 export function registerDev(program: Command): void {
   program
@@ -72,18 +86,17 @@ export async function runDev(
   await mkdir(manguitoDir, { recursive: true })
   const drizzleConfigPath = resolve(manguitoDir, 'drizzle.config.ts')
 
-  // 4. Check if schema tables exist; if not, push schema and seed
-  const tablesExist = await db.tableExists('users')
-  if (!tablesExist) {
-    // Parse schemas first so we can generate schema.ts for drizzle-kit push
-    const bootstrapRegistry = await parseAllSchemas(cwd, config)
+  // 4. Parse schemas and always push schema to DB (idempotent — creates tables on
+  //    first run, adds missing columns on subsequent runs when schema evolves).
+  const needsSeed = !(await db.tableExists('users'))
+  const bootstrapRegistry = await parseAllSchemas(cwd, config)
 
-    await generateDrizzleConfig(config, manguitoDir)
-    await writeFile(join(manguitoDir, 'schema.ts'), generateSchemaFile(bootstrapRegistry), 'utf8')
+  await generateDrizzleConfig(config, manguitoDir)
+  await writeFile(join(manguitoDir, 'schema.ts'), generateSchemaFile(bootstrapRegistry), 'utf8')
+  await runDevMigration(drizzleConfigPath)
+  printSuccess(needsSeed ? 'Schema tables created' : 'Schema tables up to date')
 
-    await runDevMigration(drizzleConfigPath)
-    printSuccess('Schema tables created')
-
+  if (needsSeed) {
     await seedSystemTables(db.getDb(), bootstrapRegistry)
     printSuccess('System tables seeded')
   }
@@ -124,8 +137,8 @@ export async function runDev(
     printSuccess('Admin account created')
   }
 
-  // 6. Parse all schemas → build registry
-  const registry = await parseAllSchemas(cwd, config)
+  // 6. Use the already-parsed registry; write remaining .manguito/ artifacts
+  const registry = bootstrapRegistry
 
   const contentCount = Object.keys(registry.content_types).length
   const paragraphCount = Object.keys(registry.paragraph_types).length
@@ -134,16 +147,14 @@ export async function runDev(
     `Schema parsed (${contentCount} content types, ${paragraphCount} paragraph types, ${taxonomyCount} taxonomy types)`,
   )
 
-  // 7. Write .manguito/ artifacts
-  await generateDrizzleConfig(config, manguitoDir)
-  await writeFile(join(manguitoDir, 'schema.ts'), generateSchemaFile(registry), 'utf8')
+  // 7. Write .manguito/ artifacts (drizzle config and schema.ts already written above)
   await generateSchemaRegistry(registry, manguitoDir)
   await generateRoutes(registry, manguitoDir)
   await generateForms(registry, join(manguitoDir, 'forms'))
   await generateNav(registry, manguitoDir)
 
-  // 8. Create Hono app via createAPIAdapter
-  const adapter = createAPIAdapter({
+  // 8. Create Hono app via createCmsApp
+  const adapter = createCmsApp({
     registry,
     db: db.getDb(),
     storage: config.storage,
@@ -155,7 +166,7 @@ export async function runDev(
 
   // 9. Mount Vite dev server as Hono middleware for admin routes
   const vite = await createViteServer({
-    root: resolve(cwd, 'packages/admin'),
+    root: resolveAdminRoot(cwd),
     server: { middlewareMode: true },
     appType: 'spa',
     logLevel: 'warn',
@@ -171,6 +182,27 @@ export async function runDev(
       // API routes → Hono (both public API and admin API)
       if (url.startsWith(apiPrefix) || url.startsWith('/admin/api')) {
         await bridgeToHono(req, res, honoFetch)
+        return
+      }
+      // Static uploads → serve files written by the local storage adapter
+      if (url.startsWith('/uploads/')) {
+        const relativePath = (url.slice('/uploads/'.length).split('?')[0] ?? '').replace(/\.\./g, '')
+        const uploadsDir = resolve(cwd, 'uploads')
+        const filePath = resolve(uploadsDir, relativePath)
+        if (!filePath.startsWith(uploadsDir + '/') && filePath !== uploadsDir) {
+          res.statusCode = 403
+          res.end('Forbidden')
+          return
+        }
+        try {
+          const data = await readFile(filePath)
+          const ext = extname(filePath).slice(1).toLowerCase()
+          res.setHeader('Content-Type', UPLOAD_MIME_MAP[ext] ?? 'application/octet-stream')
+          res.end(data)
+        } catch {
+          res.statusCode = 404
+          res.end('Not found')
+        }
         return
       }
       // Admin panel and all other routes → Vite
@@ -262,7 +294,7 @@ async function onSchemaFileChange(args: OnSchemaFileChangeArgs): Promise<void> {
   }
 
   // Hot-swap Hono app with updated registry
-  const newAdapter = createAPIAdapter({
+  const newAdapter = createCmsApp({
     registry,
     db: db.getDb(),
     storage: config.storage,
@@ -296,7 +328,7 @@ async function parseAllSchemas(
     parsedSchemas.push(parseResult.schema)
   }
 
-  const rolesPath = resolve(cwd, 'roles.json')
+  const rolesPath = resolve(cwd, config.schema.base_path, 'roles.json')
   const rolesLoad = loadSchemaFile(rolesPath)
   if (!rolesLoad.ok) {
     printGuidedError('Could not read roles.json.')
@@ -308,7 +340,7 @@ async function parseAllSchemas(
     process.exit(1)
   }
 
-  const routesPath = resolve(cwd, 'routes.json')
+  const routesPath = resolve(cwd, config.schema.base_path, 'routes.json')
   const routesLoad = loadSchemaFile(routesPath)
   if (!routesLoad.ok) {
     printGuidedError('Could not read routes.json.')
@@ -321,6 +353,17 @@ async function parseAllSchemas(
   }
 
   return buildSchemaRegistry(parsedSchemas, routesResult.value, rolesResult.value)
+}
+
+// ─── Admin root resolver ──────────────────────────────────────────────────────
+
+// Resolves the admin package's source directory from the project being served.
+// Uses package.json resolution (exported via ./package.json) so it works both
+// in pnpm workspaces (symlinked) and real installs.
+function resolveAdminRoot(cwd: string): string {
+  const cwdRequire = createRequire(join(cwd, 'package.json'))
+  const adminPkgJson = cwdRequire.resolve('@bobbykim/manguito-cms-admin/package.json')
+  return dirname(adminPkgJson)
 }
 
 // ─── Node.js → Hono bridge ────────────────────────────────────────────────────
@@ -360,8 +403,16 @@ async function bridgeToHono(
   const webRes = await Promise.resolve(honoFetch(webReq))
 
   res.statusCode = webRes.status
+  const setCookieValues: string[] = []
   for (const [key, val] of webRes.headers.entries()) {
-    res.setHeader(key, val)
+    if (key.toLowerCase() === 'set-cookie') {
+      setCookieValues.push(val)
+    } else {
+      res.setHeader(key, val)
+    }
+  }
+  if (setCookieValues.length > 0) {
+    res.setHeader('Set-Cookie', setCookieValues)
   }
   res.end(Buffer.from(await webRes.arrayBuffer()))
 }

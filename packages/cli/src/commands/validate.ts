@@ -56,7 +56,7 @@ export async function runValidate(
   }
 
   // 4. Parse roles.json
-  const rolesPath = resolve(cwd, 'roles.json')
+  const rolesPath = resolve(cwd, config.schema.base_path, 'roles.json')
   const rolesLoadResult = loadSchemaFile(rolesPath)
   let parsedRoles = null
   if (!rolesLoadResult.ok) {
@@ -71,7 +71,7 @@ export async function runValidate(
   }
 
   // 5. Parse routes.json
-  const routesPath = resolve(cwd, 'routes.json')
+  const routesPath = resolve(cwd, config.schema.base_path, 'routes.json')
   const routesLoadResult = loadSchemaFile(routesPath)
   let parsedRoutesDef = null
   if (!routesLoadResult.ok) {

@@ -1,25 +1,35 @@
 {
-  "name": "example-page",
+  "name": "content--example_page",
   "label": "Example Page",
   "type": "content-type",
+  "default_base_path": "pages",
+  "only_one": false,
   "fields": [
     {
-      "name": "title",
-      "label": "Title",
-      "type": "text",
-      "required": true
-    },
-    {
-      "name": "hero_image",
-      "label": "Hero Image",
-      "type": "image",
-      "required": false
-    },
-    {
-      "name": "body",
-      "label": "Body",
-      "type": "rich-text",
-      "required": false
+      "tab": {
+        "name": "primary_tab",
+        "label": "Primary Tab",
+        "fields": [
+          {
+            "name": "title",
+            "label": "Title",
+            "type": "text/plain",
+            "required": true
+          },
+          {
+            "name": "hero_image",
+            "label": "Hero Image",
+            "type": "image",
+            "required": false
+          },
+          {
+            "name": "body",
+            "label": "Body",
+            "type": "text/rich",
+            "required": false
+          }
+        ]
+      }
     }
   ]
 }

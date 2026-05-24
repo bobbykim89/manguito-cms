@@ -2,10 +2,12 @@
   "name": "content--blog_post",
   "label": "Blog Post",
   "type": "content-type",
+  "default_base_path": "blog",
+  "only_one": false,
   "fields": [
     {
       "tab": {
-        "name": "primary-tab",
+        "name": "primary_tab",
         "label": "Primary Tab",
         "fields": [
           {
@@ -60,7 +62,7 @@
             "name": "blog_cards",
             "label": "Cards",
             "type": "paragraph",
-            "ref": "paragraph--photo_cards",
+            "ref": "paragraph--photo_card",
             "max": 8,
             "rel": "one-to-many",
             "required": true
@@ -78,7 +80,7 @@
             "name": "blog_related",
             "label": "Related Posts",
             "type": "reference",
-            "target": "content_blog_post",
+            "target": "content--blog_post",
             "rel": "many-to-many",
             "max": 10,
             "required": false

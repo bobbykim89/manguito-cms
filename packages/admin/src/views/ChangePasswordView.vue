@@ -45,15 +45,15 @@ async function onSubmit() {
     return
   }
 
+  // Only mustChangePassword changes — id/email/role are unchanged.
   authStore.setUser({
-    id: res.data.id,
-    email: res.data.email,
-    role: res.data.role,
-    mustChangePassword: res.data.must_change_password,
+    id: authStore.id!,
+    email: authStore.email!,
+    role: authStore.role!,
+    mustChangePassword: false,
   })
 
-  // Navigation guard now allows normal navigation since mustChangePassword is false.
-  void router.push(`${__ADMIN_PREFIX__}/`)
+  void router.push(`${__ADMIN_PREFIX__}/media`)
 }
 </script>
 

@@ -2,13 +2,26 @@ import { ref, computed } from 'vue'
 import { defineStore } from 'pinia'
 import { useSchemaStore } from './schema'
 
+const STORAGE_KEY = 'manguito_auth'
+type StoredAuth = { id: string; email: string; role: string; mustChangePassword: boolean }
+
+function loadStored(): StoredAuth | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    return raw ? (JSON.parse(raw) as StoredAuth) : null
+  } catch {
+    return null
+  }
+}
+
 export const useAuthStore = defineStore('auth', () => {
   const schemaStore = useSchemaStore()
 
-  const id = ref<string | null>(null)
-  const email = ref<string | null>(null)
-  const role = ref<string | null>(null)
-  const mustChangePassword = ref(false)
+  const stored = loadStored()
+  const id = ref<string | null>(stored?.id ?? null)
+  const email = ref<string | null>(stored?.email ?? null)
+  const role = ref<string | null>(stored?.role ?? null)
+  const mustChangePassword = ref(stored?.mustChangePassword ?? false)
 
   const isAuthenticated = computed(() => id.value !== null)
 
@@ -34,6 +47,12 @@ export const useAuthStore = defineStore('auth', () => {
     email.value = user.email
     role.value = user.role
     mustChangePassword.value = user.mustChangePassword ?? false
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        id: user.id, email: user.email, role: user.role,
+        mustChangePassword: user.mustChangePassword ?? false,
+      }))
+    } catch {}
   }
 
   function clear() {
@@ -41,6 +60,7 @@ export const useAuthStore = defineStore('auth', () => {
     email.value = null
     role.value = null
     mustChangePassword.value = false
+    try { localStorage.removeItem(STORAGE_KEY) } catch {}
   }
 
   function hasPermission(permission: string): boolean {

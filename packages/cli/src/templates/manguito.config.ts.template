@@ -4,9 +4,8 @@ import {
   createLocalAdapter,
   createS3Adapter,
   createCloudinaryAdapter,
-  createServer,
-  createAPIAdapter,
-} from '@bobbykim/manguito-cms-api'
+} from '@bobbykim/manguito-cms-api/storage'
+import { createServer, createAPIAdapter } from '@bobbykim/manguito-cms-api'
 import { createAdminAdapter } from '@bobbykim/manguito-cms-admin'
 
 export default defineConfig({

@@ -109,9 +109,13 @@ export function registerAuthRoutes(app: Hono, db: DrizzlePostgresInstance): void
     }
 
     const roleResult = await db.execute(
-      sql`SELECT name FROM roles WHERE id = ${user.role_id} LIMIT 1`,
+      sql`SELECT r.name AS name, u.must_change_password
+          FROM roles r
+          JOIN users u ON u.role_id = r.id
+          WHERE r.id = ${user.role_id} AND u.id = ${user.id}
+          LIMIT 1`,
     )
-    const roleRow = roleResult.rows[0] as { name: string } | undefined
+    const roleRow = roleResult.rows[0] as { name: string; must_change_password: boolean } | undefined
 
     if (!roleRow) {
       return c.json(
@@ -134,7 +138,15 @@ export function registerAuthRoutes(app: Hono, db: DrizzlePostgresInstance): void
     setAuthCookie(c, 'auth_token', authToken, { path: '/' })
     setAuthCookie(c, 'refresh_token', refreshToken, { path: '/admin/api/auth' })
 
-    return c.json({ ok: true, data: { id: user.id, email: user.email, role: roleRow.name } })
+    return c.json({
+      ok: true,
+      data: {
+        id: user.id,
+        email: user.email,
+        role: roleRow.name,
+        must_change_password: roleRow.must_change_password,
+      },
+    })
   })
 
   // POST /admin/api/auth/refresh

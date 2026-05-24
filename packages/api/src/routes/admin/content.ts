@@ -1,3 +1,5 @@
+import crypto from 'node:crypto'
+import { sql } from 'drizzle-orm'
 import type { Hono } from 'hono'
 import type {
   SchemaRegistry,
@@ -5,10 +7,72 @@ import type {
   FilterValue,
   FilterOperator,
   ParsedField,
+  ParsedParagraphType,
 } from '@bobbykim/manguito-cms-core'
+import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import { requireAuth, requirePermission as requirePermissionShim } from '../../middleware/auth.js'
 import type { createPermissionMiddleware } from '../../middleware/permission.js'
 import type { ContentRepos } from '../content.js'
+
+// ─── SQL helpers ─────────────────────────────────────────────────────────────
+
+function quoteIdent(name: string): string {
+  if (!/^[a-z][a-z0-9_-]*$/.test(name)) throw new Error(`Unsafe identifier: ${name}`)
+  return `"${name}"`
+}
+
+async function lookupBasePathId(db: DrizzlePostgresInstance, pathOrName: string): Promise<string | null> {
+  const r = await db.execute(
+    sql`SELECT id FROM base_paths WHERE path = ${pathOrName} OR name = ${pathOrName} LIMIT 1`
+  )
+  return (r.rows[0] as { id: string } | undefined)?.id ?? null
+}
+
+async function saveParagraphField(
+  db: DrizzlePostgresInstance,
+  itemId: string,
+  parentType: string,
+  fieldName: string,
+  pType: ParsedParagraphType,
+  items: unknown[],
+): Promise<void> {
+  const tbl = sql.raw(quoteIdent(pType.db.table_name))
+  await db.execute(sql`DELETE FROM ${tbl} WHERE parent_id = ${itemId} AND parent_field = ${fieldName}`)
+  for (let i = 0; i < items.length; i++) {
+    const pItem = items[i] as Record<string, unknown>
+    const data: Record<string, unknown> = {
+      id: crypto.randomUUID(),
+      parent_id: itemId,
+      parent_type: parentType,
+      parent_field: fieldName,
+      order: i,
+      created_at: new Date(),
+      updated_at: new Date(),
+    }
+    for (const pf of pType.fields) {
+      if (!pf.db_column || pf.db_column.junction) continue
+      data[pf.db_column.column_name] = pItem[pf.name] ?? null
+    }
+    const cols = sql.join(Object.keys(data).map((k) => sql.raw(quoteIdent(k))), sql`, `)
+    const vals = sql.join(Object.values(data).map((v) => sql`${v}`), sql`, `)
+    await db.execute(sql`INSERT INTO ${tbl} (${cols}) VALUES (${vals})`)
+  }
+}
+
+async function saveJunctionField(
+  db: DrizzlePostgresInstance,
+  itemId: string,
+  junction: { table_name: string; left_column: string; right_column: string },
+  relatedIds: string[],
+): Promise<void> {
+  const tbl = sql.raw(quoteIdent(junction.table_name))
+  const left = sql.raw(quoteIdent(junction.left_column))
+  const right = sql.raw(quoteIdent(junction.right_column))
+  await db.execute(sql`DELETE FROM ${tbl} WHERE ${left} = ${itemId}`)
+  for (const rid of relatedIds) {
+    await db.execute(sql`INSERT INTO ${tbl} (${left}, ${right}) VALUES (${itemId}, ${rid})`)
+  }
+}
 
 // ─── Shared query-param helpers ───────────────────────────────────────────────
 
@@ -209,11 +273,12 @@ export function registerAdminContentRoutes(
   repos: ContentRepos,
   mediaRepo: MediaRepository,
   requirePermission: ReturnType<typeof createPermissionMiddleware> = requirePermissionShim,
+  db?: DrizzlePostgresInstance,
 ): void {
   // ── Content type routes ───────────────────────────────────────────────────
 
   for (const [typeName, contentType] of Object.entries(registry.content_types)) {
-    const basePath = contentType.default_base_path
+    const basePath = `content/${typeName}`
     const repo = repos[typeName]
     if (!repo) continue
 
@@ -279,6 +344,31 @@ export function registerAdminContentRoutes(
             { ok: false, error: { code: 'NOT_FOUND', message: 'Not found' } },
             404
           )
+        }
+
+        // Resolve paragraph and junction fields so the edit form loads real data
+        if (db) {
+          const row = item as Record<string, unknown>
+          for (const f of contentType.fields) {
+            if (f.db_column === null) {
+              const comp = f.ui_component as { component: string; ref?: string }
+              if (comp.component !== 'paragraph-embed' || !comp.ref) continue
+              const pType = registry.paragraph_types[comp.ref]
+              if (!pType) continue
+              const r = await db.execute(
+                sql`SELECT * FROM ${sql.raw(quoteIdent(pType.db.table_name))} WHERE parent_id = ${id} AND parent_field = ${f.name} ORDER BY "order" ASC`
+              )
+              row[f.name] = r.rows
+            } else if (f.db_column.junction) {
+              const j = f.db_column.junction
+              const r = await db.execute(
+                sql`SELECT ${sql.raw(quoteIdent(j.right_column))} FROM ${sql.raw(quoteIdent(j.table_name))} WHERE ${sql.raw(quoteIdent(j.left_column))} = ${id}`
+              )
+              row[f.name] = r.rows.map(
+                (row) => (row as Record<string, unknown>)[j.right_column] as string
+              )
+            }
+          }
         }
 
         return c.json({ ok: true, data: item })
@@ -367,7 +457,69 @@ export function registerAdminContentRoutes(
           )
         }
 
-        const item = await repo.create(body as Parameters<typeof repo.create>[0])
+        // Classify fields
+        const paragraphFields = contentType.fields.filter((f) => f.db_column === null)
+        const junctionFields = contentType.fields.filter(
+          (f) => f.db_column !== null && f.db_column.junction !== undefined
+        )
+        const columnFields = contentType.fields.filter(
+          (f) => f.db_column !== null && f.db_column.junction === undefined
+        )
+
+        // Build column-only data
+        const columnData: Record<string, unknown> = {
+          published: body['published'] ?? false,
+        }
+        if (contentType.only_one) {
+          columnData['slug'] = typeName
+        } else {
+          columnData['slug'] = body['slug']
+        }
+        for (const f of columnFields) {
+          const val = body[f.name]
+          columnData[f.db_column!.column_name] = val !== undefined ? val : null
+        }
+
+        // Resolve base_path_id (seeded from routes.json at startup)
+        if (db) {
+          const basePathId = await lookupBasePathId(db, contentType.default_base_path)
+          if (!basePathId) {
+            return c.json(
+              {
+                ok: false,
+                error: {
+                  code: 'BASE_PATH_NOT_FOUND',
+                  message: `Base path '${contentType.default_base_path}' not found — run manguito migrate`,
+                },
+              },
+              500
+            )
+          }
+          columnData['base_path_id'] = basePathId
+        }
+
+        const item = await repo.create(columnData as Parameters<typeof repo.create>[0])
+        const itemId = (item as Record<string, unknown>)['id'] as string
+
+        // Save paragraph and junction rows
+        if (db) {
+          for (const f of paragraphFields) {
+            const comp = f.ui_component as { component: string; ref?: string }
+            if (comp.component !== 'paragraph-embed' || !comp.ref) continue
+            const pType = registry.paragraph_types[comp.ref]
+            if (!pType) continue
+            const items = Array.isArray(body[f.name]) ? (body[f.name] as unknown[]) : []
+            await saveParagraphField(db, itemId, contentType.db.table_name, f.name, pType, items)
+          }
+          for (const f of junctionFields) {
+            const junction = f.db_column!.junction!
+            const relatedIds = Array.isArray(body[f.name])
+              ? (body[f.name] as unknown[]).filter((v): v is string => typeof v === 'string')
+              : []
+            await saveJunctionField(db, itemId, junction, relatedIds)
+          }
+        }
+
         return c.json({ ok: true, data: item }, 201)
       }
     )
@@ -455,12 +607,51 @@ export function registerAdminContentRoutes(
           }
         }
 
-        const updated = await repo.update(id, body as Parameters<typeof repo.update>[1])
+        // Classify fields
+        const patchParagraphFields = contentType.fields.filter((f) => f.db_column === null)
+        const patchJunctionFields = contentType.fields.filter(
+          (f) => f.db_column !== null && f.db_column.junction !== undefined
+        )
+        const patchColumnFields = contentType.fields.filter(
+          (f) => f.db_column !== null && f.db_column.junction === undefined
+        )
+
+        // Build column-only patch data
+        const patchData: Record<string, unknown> = {}
+        if (!contentType.only_one && 'slug' in body) patchData['slug'] = body['slug']
+        if ('published' in body) patchData['published'] = body['published']
+        for (const f of patchColumnFields) {
+          if (f.name in body) {
+            const val = body[f.name]
+            patchData[f.db_column!.column_name] = val !== undefined ? val : null
+          }
+        }
+
+        const updated = await repo.update(id, patchData as Parameters<typeof repo.update>[1])
         if (!updated) {
           return c.json(
             { ok: false, error: { code: 'NOT_FOUND', message: 'Not found' } },
             404
           )
+        }
+
+        // Delete+reinsert paragraph and junction rows
+        if (db) {
+          for (const f of patchParagraphFields) {
+            const comp = f.ui_component as { component: string; ref?: string }
+            if (comp.component !== 'paragraph-embed' || !comp.ref) continue
+            const pType = registry.paragraph_types[comp.ref]
+            if (!pType) continue
+            const items = Array.isArray(body[f.name]) ? (body[f.name] as unknown[]) : []
+            await saveParagraphField(db, id, contentType.db.table_name, f.name, pType, items)
+          }
+          for (const f of patchJunctionFields) {
+            const junction = f.db_column!.junction!
+            const relatedIds = Array.isArray(body[f.name])
+              ? (body[f.name] as unknown[]).filter((v): v is string => typeof v === 'string')
+              : []
+            await saveJunctionField(db, id, junction, relatedIds)
+          }
         }
 
         return c.json({ ok: true, data: updated })
@@ -591,7 +782,33 @@ export function registerAdminContentRoutes(
           )
         }
 
-        const item = await repo.create(body as Parameters<typeof repo.create>[0])
+        // Filter to column-only fields
+        const taxColumnFields = taxonomyType.fields.filter(
+          (f) => f.db_column !== null && f.db_column.junction === undefined
+        )
+        const taxParagraphFields = taxonomyType.fields.filter((f) => f.db_column === null)
+        const taxColumnData: Record<string, unknown> = {
+          published: body['published'] ?? false,
+        }
+        for (const f of taxColumnFields) {
+          const val = body[f.name]
+          taxColumnData[f.db_column!.column_name] = val !== undefined ? val : null
+        }
+
+        const item = await repo.create(taxColumnData as Parameters<typeof repo.create>[0])
+        const taxItemId = (item as Record<string, unknown>)['id'] as string
+
+        if (db) {
+          for (const f of taxParagraphFields) {
+            const comp = f.ui_component as { component: string; ref?: string }
+            if (comp.component !== 'paragraph-embed' || !comp.ref) continue
+            const pType = registry.paragraph_types[comp.ref]
+            if (!pType) continue
+            const items = Array.isArray(body[f.name]) ? (body[f.name] as unknown[]) : []
+            await saveParagraphField(db, taxItemId, taxonomyType.db.table_name, f.name, pType, items)
+          }
+        }
+
         return c.json({ ok: true, data: item }, 201)
       }
     )
@@ -634,12 +851,37 @@ export function registerAdminContentRoutes(
           }
         }
 
-        const updated = await repo.update(id, body as Parameters<typeof repo.update>[1])
+        // Filter to column-only fields
+        const taxPatchColumnFields = taxonomyType.fields.filter(
+          (f) => f.db_column !== null && f.db_column.junction === undefined
+        )
+        const taxPatchParagraphFields = taxonomyType.fields.filter((f) => f.db_column === null)
+        const taxPatchData: Record<string, unknown> = {}
+        if ('published' in body) taxPatchData['published'] = body['published']
+        for (const f of taxPatchColumnFields) {
+          if (f.name in body) {
+            const val = body[f.name]
+            taxPatchData[f.db_column!.column_name] = val !== undefined ? val : null
+          }
+        }
+
+        const updated = await repo.update(id, taxPatchData as Parameters<typeof repo.update>[1])
         if (!updated) {
           return c.json(
             { ok: false, error: { code: 'NOT_FOUND', message: 'Taxonomy term not found' } },
             404
           )
+        }
+
+        if (db) {
+          for (const f of taxPatchParagraphFields) {
+            const comp = f.ui_component as { component: string; ref?: string }
+            if (comp.component !== 'paragraph-embed' || !comp.ref) continue
+            const pType = registry.paragraph_types[comp.ref]
+            if (!pType) continue
+            const items = Array.isArray(body[f.name]) ? (body[f.name] as unknown[]) : []
+            await saveParagraphField(db, id, taxonomyType.db.table_name, f.name, pType, items)
+          }
         }
 
         return c.json({ ok: true, data: updated })

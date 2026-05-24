@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 vi.mock('../src/utils/env.js', () => ({ loadEnvFile: vi.fn() }))
 vi.mock('../src/utils/config.js', () => ({
   resolveConfig: vi.fn().mockResolvedValue({
-    schema: { dir: '/fake/schemas' },
+    schema: { base_path: 'schemas', dir: '/fake/schemas' },
     db: {},
     storage: {},
     server: {},
@@ -52,7 +52,7 @@ describe('runBuild', () => {
     vi.resetAllMocks()
     // Re-establish defaults after reset
     vi.mocked(resolveConfig).mockResolvedValue({
-      schema: { dir: '/fake/schemas' },
+      schema: { base_path: 'schemas', dir: '/fake/schemas' },
       db: {},
       storage: {},
       server: {},

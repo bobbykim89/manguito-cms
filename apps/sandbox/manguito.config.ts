@@ -1,22 +1,10 @@
 import { defineConfig } from '@bobbykim/manguito-cms-core'
 import { createPostgresAdapter } from '@bobbykim/manguito-cms-db'
-import {
-  createLocalAdapter,
-  createS3Adapter,
-  createCloudinaryAdapter,
-} from '@bobbykim/manguito-cms-api'
-import {
-  createServer,
-  createLambdaHandler,
-  createVercelHandler,
-} from '@bobbykim/manguito-cms-api'
-import { createAPIAdapter } from '@bobbykim/manguito-cms-api'
+import { createLocalAdapter } from '@bobbykim/manguito-cms-api/storage'
+import { createServer, createAPIAdapter } from '@bobbykim/manguito-cms-api'
 import { createAdminAdapter } from '@bobbykim/manguito-cms-admin'
 
-const isProd = process.env.NODE_ENV === 'production'
-
 export default defineConfig({
-  // all optional — defaults apply if omitted
   schema: {
     base_path: './schemas',
     folders: {
@@ -28,40 +16,24 @@ export default defineConfig({
     },
   },
 
-  db: isProd
-    ? createPostgresAdapter()
-    : createPostgresAdapter({ url: process.env.DEV_DB_URL }),
+  // connectDb reads DB_URL from process.env — set it in .env
+  db: createPostgresAdapter(),
 
-  // optional — omit entirely if db adapter doesn't support migrations
   migrations: {
     table: '__manguito_migrations',
     folder: './migrations',
   },
 
-  storage: isProd
-    ? createS3Adapter({
-        bucket: process.env.S3_BUCKET,
-        region: process.env.AWS_REGION,
-      })
-    : createLocalAdapter(),
+  storage: createLocalAdapter(),
 
-  server: isProd
-    ? createLambdaHandler({
-        cors: { origin: process.env.ALLOWED_ORIGIN },
-      })
-    : createServer({
-        port: 3000,
-        cors: { origin: 'http://localhost:5173' },
-      }),
+  server: createServer({
+    cors: { origin: process.env['ALLOWED_ORIGIN'] ?? 'http://localhost:5173' },
+  }),
 
   api: createAPIAdapter({
-    prefix: '/api', // default
-    media: {
-      max_file_size: 4 * 1024 * 1024, // default: 4MB
-    },
+    prefix: '/api',
+    media: { max_file_size: 4 * 1024 * 1024 },
   }),
 
-  admin: createAdminAdapter({
-    prefix: '/admin', // default
-  }),
+  admin: createAdminAdapter({ prefix: '/admin' }),
 })

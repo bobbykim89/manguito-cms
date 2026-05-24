@@ -173,10 +173,10 @@ async function startUpload(file: File) {
 
   try {
     const alt = altText.value.trim()
-    const item =
-      file.size <= uiStore.maxFileSize
-        ? await uploadDirect(file, alt)
-        : await uploadPresigned(file, alt)
+    const maxSize = uiStore.maxFileSize
+    const item = (maxSize === 0 || file.size <= maxSize)
+      ? await uploadDirect(file, alt)
+      : await uploadPresigned(file, alt)
 
     displayItem.value = item
     altText.value = item.alt ?? ''

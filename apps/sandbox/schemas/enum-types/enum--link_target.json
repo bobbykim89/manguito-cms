@@ -1,6 +1,6 @@
 {
-  "name": "enum--targets",
-  "label": "targets",
+  "name": "enum--link_target",
+  "label": "Link Target",
   "type": "enum-type",
   "values": ["_self", "_blank"]
 }
