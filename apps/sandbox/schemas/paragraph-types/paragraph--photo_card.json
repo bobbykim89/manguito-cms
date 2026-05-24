@@ -13,7 +13,7 @@
       "name": "photo_card_image",
       "label": "Image",
       "type": "image",
-      "maxSize": "512KB",
+      "max_size": "512KB",
       "alt": true,
       "required": true
     },

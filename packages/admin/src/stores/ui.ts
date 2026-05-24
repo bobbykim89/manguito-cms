@@ -15,7 +15,7 @@ const DEFAULT_DURATION = 4000
 
 export const useUiStore = defineStore('ui', () => {
   const toasts = ref<Toast[]>([])
-  const sidebarOpen = ref(false)
+  const sidebarOpen = ref(true)
   const activeModal = ref<string | null>(null)
   const maxFileSize = ref(0)
   const cmsName = ref('Manguito CMS')

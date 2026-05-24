@@ -93,7 +93,7 @@ async function onSubmit() {
     void router.push(`${__ADMIN_PREFIX__}/change-password`)
   } else {
     const redirect = route.query.redirect
-    void router.push(typeof redirect === 'string' ? redirect : `${__ADMIN_PREFIX__}/`)
+    void router.push(typeof redirect === 'string' ? redirect : `${__ADMIN_PREFIX__}/media`)
   }
 }
 </script>

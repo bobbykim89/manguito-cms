@@ -56,8 +56,16 @@ export function createLocalAdapter(
       return `http://localhost:3000/uploads/${key}`
     },
 
-    async delete(key: string): Promise<void> {
+    async upload(key: string, data: Uint8Array): Promise<void> {
       const filepath = path.join(upload_dir, key)
+      await fs.mkdir(path.dirname(filepath), { recursive: true })
+      await fs.writeFile(filepath, data)
+    },
+
+    async delete(key: string): Promise<void> {
+      // Key may come in as 'uploads/image/uuid.jpg' when derived from URL pathname
+      const normalizedKey = key.startsWith('uploads/') ? key.slice('uploads/'.length) : key
+      const filepath = path.join(upload_dir, normalizedKey)
       try {
         await fs.unlink(filepath)
       } catch (err: unknown) {

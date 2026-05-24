@@ -10,40 +10,31 @@ export function registerSchemaRoute(
   registry: SchemaRegistry,
   db: DrizzlePostgresInstance,
 ): void {
-  // Full schema — used by dynamic renderer in dev mode
+  // Full schema — used by the admin panel for form rendering, validation, and navigation.
+  // Returns complete ParsedField objects (validation, ui_component) so the admin
+  // forms can render inputs and run client-side validation without extra round-trips.
   app.get('/admin/api/schema', (c) => {
     const content_types = Object.values(registry.content_types).map((ct) => ({
       name: ct.name,
       label: ct.label,
       only_one: ct.only_one,
-      fields: ct.fields.map((f) => ({
-        name: f.name,
-        label: f.label,
-        type: f.field_type,
-        required: f.required,
-      })),
+      ui: ct.ui,
+      system_fields: ct.system_fields,
+      fields: ct.fields,
     }))
 
     const taxonomy_types = Object.values(registry.taxonomy_types).map((tt) => ({
       name: tt.name,
       label: tt.label,
-      fields: tt.fields.map((f) => ({
-        name: f.name,
-        label: f.label,
-        type: f.field_type,
-        required: f.required,
-      })),
+      system_fields: tt.system_fields,
+      fields: tt.fields,
     }))
 
     const paragraph_types = Object.values(registry.paragraph_types).map((pt) => ({
       name: pt.name,
       label: pt.label,
-      fields: pt.fields.map((f) => ({
-        name: f.name,
-        label: f.label,
-        type: f.field_type,
-        required: f.required,
-      })),
+      system_fields: pt.system_fields,
+      fields: pt.fields,
     }))
 
     const enum_types = Object.values(registry.enum_types).map((et) => ({

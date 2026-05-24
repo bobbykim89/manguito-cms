@@ -17,7 +17,8 @@ export async function signToken(
   payload: Omit<JWTPayload, 'expires_at'>,
   expiresInSeconds: number,
 ): Promise<string> {
-  const secret = process.env['AUTH_SECRET']!
+  const secret = process.env['AUTH_SECRET']
+  if (!secret) throw new Error('AUTH_SECRET environment variable is not set')
   const fullPayload: JWTPayload = {
     ...payload,
     expires_at: Math.floor(Date.now() / 1000) + expiresInSeconds,
@@ -26,7 +27,8 @@ export async function signToken(
 }
 
 export async function verifyToken(token: string): Promise<JWTPayload> {
-  const secret = process.env['AUTH_SECRET']!
+  const secret = process.env['AUTH_SECRET']
+  if (!secret) throw new Error('AUTH_SECRET environment variable is not set')
   let raw: Record<string, unknown>
   try {
     raw = (await jwtVerify(token, secret, 'HS256')) as Record<string, unknown>

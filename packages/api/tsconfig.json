@@ -7,5 +7,5 @@
     "lib": ["ES2022", "DOM"],
     "ignoreDeprecations": "6.0"
   },
-  "include": ["src", "tests"]
+  "include": ["src", "tests", "tsup.config.ts"]
 }

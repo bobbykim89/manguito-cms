@@ -6,19 +6,24 @@
   },
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
-      "require": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/index.js"
     },
     "./storage": {
+      "types": "./dist/storage/index.d.ts",
       "import": "./dist/storage/index.mjs",
-      "require": "./dist/storage/index.js",
-      "types": "./dist/storage/index.d.ts"
+      "require": "./dist/storage/index.js"
     },
     "./runtime": {
+      "types": "./dist/runtime/index.d.ts",
       "import": "./dist/runtime/index.mjs",
-      "require": "./dist/runtime/index.js",
-      "types": "./dist/runtime/index.d.ts"
+      "require": "./dist/runtime/index.js"
+    },
+    "./codegen": {
+      "types": "./dist/codegen/index.d.ts",
+      "import": "./dist/codegen/index.mjs",
+      "require": "./dist/codegen/index.js"
     }
   },
   "main": "./dist/index.js",

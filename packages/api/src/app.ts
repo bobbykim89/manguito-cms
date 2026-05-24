@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { sql } from 'drizzle-orm'
-import type { StorageAdapter, SchemaRegistry } from '@bobbykim/manguito-cms-core'
+import type { StorageAdapter, SchemaRegistry, ParsedContentType, ParsedTaxonomyType } from '@bobbykim/manguito-cms-core'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import { createCorsMiddleware } from './middleware/cors.js'
 import { errorHandler } from './middleware/error.js'
@@ -21,7 +21,7 @@ import { registerSchemaRoute } from './routes/admin/schema.js'
 import { createDrizzleContentRepository } from './repositories/content.js'
 import { createMediaRepository } from './repositories/media.js'
 
-export type CreateAPIAdapterOptions = {
+export type CreateCmsAppOptions = {
   /** CMS display name shown in GET /admin/api/config. Defaults to 'Manguito CMS'. */
   name?: string
   prefix?: string
@@ -57,7 +57,7 @@ const MISSING_STORAGE_ERROR = `✗ api.storage is required but not configured.
 
 Exiting.`
 
-export function createAPIAdapter(options: CreateAPIAdapterOptions): ManguitoCmsAPIAdapter {
+export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapter {
   if (!options.storage) {
     throw new Error(MISSING_STORAGE_ERROR)
   }
@@ -108,13 +108,13 @@ export function createAPIAdapter(options: CreateAPIAdapterOptions): ManguitoCmsA
   const contentRepos = Object.fromEntries(
     Object.entries(registry.content_types).map(([typeName, ct]) => [
       typeName,
-      createDrizzleContentRepository(db, ct.db.table_name),
+      createDrizzleContentRepository(db, (ct as ParsedContentType).db.table_name),
     ])
   )
   const taxonomyRepos = Object.fromEntries(
     Object.entries(registry.taxonomy_types).map(([typeName, tt]) => [
       typeName,
-      createDrizzleContentRepository(db, tt.db.table_name),
+      createDrizzleContentRepository(db, (tt as ParsedTaxonomyType).db.table_name),
     ])
   )
   const repos = { ...contentRepos, ...taxonomyRepos }
@@ -137,13 +137,33 @@ export function createAPIAdapter(options: CreateAPIAdapterOptions): ManguitoCmsA
 
   // ── OpenAPI spec endpoints ────────────────────────────────────────────────────
 
-  app.get('/api/openapi.json', (c) =>
-    c.json({
+  app.get('/api/openapi.json', (c) => {
+    const paths: Record<string, unknown> = {}
+
+    for (const ct of Object.values(registry.content_types) as ParsedContentType[]) {
+      const base = ct.default_base_path
+      if (ct.only_one) {
+        paths[`/api/${base}`] = { get: { summary: `Get ${ct.label}`, tags: [ct.label] } }
+      } else {
+        paths[`/api/${base}`] = { get: { summary: `List published ${ct.label}`, tags: [ct.label] } }
+        paths[`/api/${base}/{slug}`] = { get: { summary: `Get ${ct.label} by slug`, tags: [ct.label] } }
+      }
+    }
+
+    for (const tt of Object.values(registry.taxonomy_types) as ParsedTaxonomyType[]) {
+      paths[`/api/taxonomy/${tt.name}`] = { get: { summary: `List published ${tt.label}`, tags: [tt.label] } }
+      paths[`/api/taxonomy/${tt.name}/{id}`] = { get: { summary: `Get ${tt.label} by id`, tags: [tt.label] } }
+    }
+
+    paths['/api/media'] = { get: { summary: 'List media items', tags: ['Media'] } }
+    paths['/api/media/{id}'] = { get: { summary: 'Get media item by id', tags: ['Media'] } }
+
+    return c.json({
       openapi: '3.0.3',
       info: { title: 'Manguito CMS Public API', version: '1.0.0' },
-      paths: {},
+      paths,
     })
-  )
+  })
   // Admin spec — auth covered by the blanket use() above
   app.get('/admin/api/openapi.json', (c) =>
     c.json({
@@ -169,7 +189,7 @@ export function createAPIAdapter(options: CreateAPIAdapterOptions): ManguitoCmsA
   )
   registerSchemaRoute(app, registry, db)
   registerUserRoutes(app, db, requirePermission, requireHierarchy)
-  registerAdminContentRoutes(app, registry, repos, mediaRepo, requirePermission)
+  registerAdminContentRoutes(app, registry, repos, mediaRepo, requirePermission, db)
   registerAdminMediaRoutes(app, mediaRepo, storage)
 
   return { prefix, app }

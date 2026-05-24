@@ -1,2 +1,25 @@
-export { createAPIAdapter } from './app.js'
-export type { CreateAPIAdapterOptions } from './app.js'
+import type { APIAdapter } from '@bobbykim/manguito-cms-core'
+
+export { createCmsApp } from './app.js'
+export type { CreateCmsAppOptions } from './app.js'
+
+export { createServer } from './server/node.js'
+export type { NodeServerOptions } from './server/node.js'
+
+// ─── User-facing config factory ───────────────────────────────────────────────
+
+export type APIAdapterOptions = {
+  prefix?: string
+  media?: {
+    max_file_size?: number
+  }
+}
+
+export function createAPIAdapter(options: APIAdapterOptions = {}): APIAdapter {
+  const prefix = options.prefix ?? '/api'
+  const media = options.media?.max_file_size !== undefined
+    ? { max_file_size: options.media.max_file_size }
+    : undefined
+
+  return { prefix, ...(media !== undefined && { media }) }
+}

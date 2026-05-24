@@ -4,7 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "manguito dev",
+    "dev": "manguito dev --env .env",
+    "build": "manguito build --env .env",
+    "start": "manguito start --env .env",
+    "migrate": "manguito migrate --env .env",
+    "validate": "manguito validate --env .env",
     "test": "dotenv -e .env.test -- vitest run",
     "smoke": "dotenv -e ../../.env.test -- vitest run tests/smoke.test.ts",
     "lint": "eslint ."

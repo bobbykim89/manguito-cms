@@ -222,7 +222,8 @@ async function startUpload(file: File) {
 
   try {
     const alt = altText.value.trim()
-    const newItem = file.size <= uiStore.maxFileSize
+    const maxSize = uiStore.maxFileSize
+    const newItem = (maxSize === 0 || file.size <= maxSize)
       ? await uploadDirect(file, alt)
       : await uploadPresigned(file, alt)
 

@@ -115,6 +115,18 @@ async function handleDirectUpload(
     )
   }
 
+  if (storage.upload) {
+    try {
+      const bytes = new Uint8Array(await fileField.arrayBuffer())
+      await storage.upload(presigned.key, bytes, mimeType)
+    } catch {
+      return c.json(
+        { ok: false, error: { code: 'STORAGE_ERROR', message: 'Storage upload failed' } },
+        502
+      )
+    }
+  }
+
   const url = storage.getUrl(presigned.key)
   const fileSize = fileField.size
 
