@@ -5,6 +5,7 @@ import { createServer, createAPIAdapter } from '@bobbykim/manguito-cms-api'
 import { createAdminAdapter } from '@bobbykim/manguito-cms-admin'
 
 export default defineConfig({
+  name: 'Sandbox - Manguito CMS',
   schema: {
     base_path: './schemas',
     folders: {

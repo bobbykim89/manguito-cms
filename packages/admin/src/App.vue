@@ -110,6 +110,8 @@ onMounted(async () => {
   }
 })
 
+watch(() => uiStore.cmsName, (name) => { document.title = name }, { immediate: true })
+
 // Re-run bootstrap when the user logs in (isAuthenticated flips false → true).
 // Errors are swallowed — the user just authenticated successfully, so we must
 // not clear their session even if the config fetch fails.

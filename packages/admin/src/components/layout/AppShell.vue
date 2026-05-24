@@ -2,6 +2,7 @@
 import { useUiStore } from '../../stores/ui'
 import Sidebar from './Sidebar.vue'
 import Topbar from './Topbar.vue'
+import Footer from './Footer.vue'
 import ToastContainer from '../shared/ToastContainer.vue'
 
 const uiStore = useUiStore()
@@ -16,6 +17,7 @@ const uiStore = useUiStore()
       <Topbar />
       <main class="flex-1 overflow-y-auto p-6">
         <router-view />
+        <Footer />
       </main>
     </div>
 
