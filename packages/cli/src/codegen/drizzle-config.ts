@@ -24,6 +24,7 @@ export async function generateDrizzleConfig(
     `    table: '${migrationsTable}',`,
     `    schema: 'public',`,
     `  },`,
+    `  tablesFilter: ['!${migrationsTable}'],`,
     `})`,
   ].join('\n')
 

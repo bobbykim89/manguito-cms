@@ -40,6 +40,18 @@ export async function applyMigrations(
   db: DrizzlePostgresInstance,
   options: MigrationRunnerOptions,
 ): Promise<MigrationResult> {
+  const { migrationsTable } = options
+
+  // Pre-create the tracking table without a serial/sequence column so that
+  // drizzle-kit finds it already exists and skips its own CREATE TABLE.
+  // This prevents an orphaned sequence from appearing in the DB, which
+  // drizzle-kit push would otherwise try to drop (non-fatally, but noisily).
+  await db.execute(
+    sql.raw(
+      `CREATE TABLE IF NOT EXISTS "${migrationsTable}" (hash text NOT NULL, created_at bigint)`,
+    ),
+  )
+
   const result = spawnSync(
     'drizzle-kit',
     ['migrate', `--config=${configPath}`],
@@ -48,7 +60,20 @@ export async function applyMigrations(
   if (result.stdout) process.stdout.write(result.stdout)
   if (result.stderr) process.stderr.write(result.stderr)
   if (result.status !== 0) {
-    const detail = result.stderr?.trim() || result.stdout?.trim() || 'drizzle-kit exited with status ' + String(result.status)
+    const raw = result.stderr?.trim() || result.stdout?.trim() || ''
+    const detail = raw || `drizzle-kit exited with status ${String(result.status)}`
+    // "already exists" means the migrations folder was regenerated while the DB
+    // already has the schema.  Tell the user how to recover rather than dumping
+    // the raw spinner output.
+    if (raw.includes('already exists')) {
+      throw new Error(
+        'Migration failed: a table that already exists was included in the migration.\n' +
+        'This usually means the migrations folder was deleted and regenerated.\n' +
+        'Fix: insert the pending migration\'s timestamp into the tracking table so\n' +
+        'drizzle-kit treats it as already applied, then re-run `manguito migrate`.\n' +
+        `Raw drizzle-kit output:\n${raw}`
+      )
+    }
     throw new Error(detail)
   }
 
