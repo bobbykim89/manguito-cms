@@ -1,6 +1,9 @@
 import { defineConfig } from '@bobbykim/manguito-cms-core'
 import { createPostgresAdapter } from '@bobbykim/manguito-cms-db'
-import { createLocalAdapter } from '@bobbykim/manguito-cms-api/storage'
+import {
+  createLocalAdapter,
+  createCloudinaryAdapter,
+} from '@bobbykim/manguito-cms-api/storage'
 import { createServer, createAPIAdapter } from '@bobbykim/manguito-cms-api'
 import { createAdminAdapter } from '@bobbykim/manguito-cms-admin'
 
@@ -25,7 +28,10 @@ export default defineConfig({
     folder: './migrations',
   },
 
-  storage: createLocalAdapter(),
+  storage: createCloudinaryAdapter({
+    folder: 'manguito-sandbox',
+  }),
+  // storage: createLocalAdapter(), // for local testing
 
   server: createServer({
     cors: { origin: process.env['ALLOWED_ORIGIN'] ?? 'http://localhost:5173' },
