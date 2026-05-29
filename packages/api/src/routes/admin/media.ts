@@ -119,7 +119,8 @@ async function handleDirectUpload(
     try {
       const bytes = new Uint8Array(await fileField.arrayBuffer())
       await storage.upload(presigned.key, bytes, mimeType)
-    } catch {
+    } catch (err) {
+      console.error('[media] storage.upload error:', err)
       return c.json(
         { ok: false, error: { code: 'STORAGE_ERROR', message: 'Storage upload failed' } },
         502
@@ -392,12 +393,21 @@ export function registerAdminMediaRoutes(
         )
       }
 
-      // Derive storage key from URL — key is the path segment after the base URL
-      const key = new URL(item.url).pathname.replace(/^\//, '')
+      // Derive storage key from URL.
+      // Cloudinary delivery URLs: https://res.cloudinary.com/{cloud}/{type}/upload/{public_id}
+      // Local delivery URLs:      http://localhost/uploads/{key}
+      // For Cloudinary, the adapter key is the public_id — everything after "/upload/".
+      // For local (and S3), the adapter key is the full path after the host.
+      const pathname = new URL(item.url).pathname
+      const uploadIdx = pathname.indexOf('/upload/')
+      const key = uploadIdx >= 0
+        ? pathname.slice(uploadIdx + '/upload/'.length)
+        : pathname.replace(/^\//, '')
 
       try {
         await storage.delete(key)
-      } catch {
+      } catch (err) {
+        console.error('[media] storage.delete error:', err)
         return c.json(
           {
             ok: false,

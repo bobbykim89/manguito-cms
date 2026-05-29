@@ -6,7 +6,7 @@ import type {
 } from '@bobbykim/manguito-cms-core'
 
 export type CloudinaryAdapterOptions = {
-  cloud_name: string
+  cloud_name?: string
   folder?: string
   access_key_id?: string
   secret_access_key?: string
@@ -26,18 +26,26 @@ function toCloudinaryResourceType(folder: string): string {
   return 'image'
 }
 
+function resourceTypeFromKey(key: string): string {
+  for (const part of key.split('/')) {
+    if (part === 'video') return 'video'
+    if (part === 'file') return 'raw'
+  }
+  return 'image'
+}
+
 function signParams(params: Record<string, string | number>, secret: string): string {
-  const sorted = Object.keys(params)
+  const to_sign = Object.keys(params)
     .sort()
     .map((k) => `${k}=${params[k]}`)
     .join('&')
-  return crypto.createHmac('sha256', secret).update(sorted).digest('hex')
+  return crypto.createHash('sha256').update(to_sign + secret).digest('hex')
 }
 
 export function createCloudinaryAdapter(
-  options: CloudinaryAdapterOptions
+  options: CloudinaryAdapterOptions = {}
 ): StorageAdapter {
-  const { cloud_name } = options
+  const cloud_name = options.cloud_name ?? process.env['CLOUDINARY_CLOUD_NAME'] ?? ''
   const folder_prefix = options.folder
   const access_key_id = options.access_key_id ?? process.env['CLOUDINARY_API_KEY'] ?? ''
   const secret_access_key =
@@ -79,7 +87,32 @@ export function createCloudinaryAdapter(
     },
 
     getUrl(key: string): string {
-      return `https://res.cloudinary.com/${cloud_name}/image/upload/${key}`
+      const resource_type = resourceTypeFromKey(key)
+      return `https://res.cloudinary.com/${cloud_name}/${resource_type}/upload/${key}`
+    },
+
+    async upload(key: string, data: Uint8Array, mimeType: string): Promise<void> {
+      const timestamp = Math.floor(Date.now() / 1000)
+      const params_to_sign: Record<string, string | number> = { public_id: key, timestamp }
+      const signature = signParams(params_to_sign, secret_access_key)
+      const resource_type = resourceTypeFromKey(key)
+
+      const form = new FormData()
+      form.append('file', new Blob([new Uint8Array(data)], { type: mimeType }), 'upload')
+      form.append('public_id', key)
+      form.append('timestamp', String(timestamp))
+      form.append('api_key', access_key_id)
+      form.append('signature', signature)
+
+      const res = await fetch(
+        `https://api.cloudinary.com/v1_1/${cloud_name}/${resource_type}/upload`,
+        { method: 'POST', body: form }
+      )
+
+      if (!res.ok) {
+        const text = await res.text()
+        throw new Error(`Cloudinary upload failed: ${res.status} ${res.statusText} — ${text}`)
+      }
     },
 
     async delete(key: string): Promise<void> {
@@ -90,6 +123,9 @@ export function createCloudinaryAdapter(
       }
       const signature = signParams(params_to_sign, secret_access_key)
 
+      const resource_type = resourceTypeFromKey(key)
+      const endpoint = `https://api.cloudinary.com/v1_1/${cloud_name}/${resource_type}/destroy`
+
       const body = new URLSearchParams({
         public_id: key,
         signature,
@@ -97,14 +133,19 @@ export function createCloudinaryAdapter(
         api_key: access_key_id,
       })
 
-      const res = await fetch(
-        `https://api.cloudinary.com/v1_1/${cloud_name}/image/destroy`,
-        { method: 'POST', body, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-      )
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        body,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      })
 
-      if (!res.ok) {
-        throw new Error(`Cloudinary delete failed: ${res.status} ${res.statusText}`)
-      }
+      const json = await res.json() as { result?: string; error?: { message: string } }
+
+      if (json.result === 'ok' || json.result === 'not found') return
+
+      throw new Error(
+        `Cloudinary delete failed: ${json.error?.message ?? json.result ?? res.statusText}`
+      )
     },
   }
 }
