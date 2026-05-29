@@ -113,14 +113,17 @@ onMounted(async () => {
 watch(() => uiStore.cmsName, (name) => { document.title = name }, { immediate: true })
 
 // Re-run bootstrap when the user logs in (isAuthenticated flips false → true).
-// Errors are swallowed — the user just authenticated successfully, so we must
-// not clear their session even if the config fetch fails.
+// Show the loading spinner during the fetch so AppShell never renders with an
+// empty schema store (same guarantee as a page refresh gives).
 watch(() => authStore.isAuthenticated, async (isAuth, wasAuth) => {
   if (isAuth && !wasAuth) {
+    loading.value = true
     try {
       await fetchConfigAndSchema(false)
     } catch {
       // ignore
+    } finally {
+      loading.value = false
     }
   }
 })
