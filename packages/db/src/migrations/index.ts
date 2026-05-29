@@ -1,4 +1,4 @@
-import { execSync } from 'node:child_process'
+import { execSync, spawnSync } from 'node:child_process'
 import path from 'node:path'
 import fs from 'node:fs/promises'
 import { sql } from 'drizzle-orm'
@@ -40,7 +40,17 @@ export async function applyMigrations(
   db: DrizzlePostgresInstance,
   options: MigrationRunnerOptions,
 ): Promise<MigrationResult> {
-  execSync(`drizzle-kit migrate --config=${configPath}`, { stdio: 'inherit', cwd: path.dirname(configPath) })
+  const result = spawnSync(
+    'drizzle-kit',
+    ['migrate', `--config=${configPath}`],
+    { cwd: path.dirname(configPath), encoding: 'utf8' },
+  )
+  if (result.stdout) process.stdout.write(result.stdout)
+  if (result.stderr) process.stderr.write(result.stderr)
+  if (result.status !== 0) {
+    const detail = result.stderr?.trim() || result.stdout?.trim() || 'drizzle-kit exited with status ' + String(result.status)
+    throw new Error(detail)
+  }
 
   const status = await getMigrationStatus(db, options)
   return {

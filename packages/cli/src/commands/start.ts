@@ -93,7 +93,7 @@ export async function runStart(
     allErrors.push(...walkResult.errors)
   }
 
-  const rolesPath = resolve(cwd, 'roles.json')
+  const rolesPath = resolve(cwd, config.schema.base_path, 'roles.json')
   const rolesLoad = loadSchemaFile(rolesPath)
   let parsedRoles = null
   if (rolesLoad.ok) {
@@ -107,7 +107,7 @@ export async function runStart(
     allErrors.push(...rolesLoad.errors)
   }
 
-  const routesPath = resolve(cwd, 'routes.json')
+  const routesPath = resolve(cwd, config.schema.base_path, 'routes.json')
   const routesLoad = loadSchemaFile(routesPath)
   let parsedRoutes = null
   if (routesLoad.ok) {

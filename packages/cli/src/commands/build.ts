@@ -1,5 +1,6 @@
-import { mkdirSync, statSync, existsSync, readdirSync } from 'node:fs'
-import { resolve, join } from 'node:path'
+import { mkdirSync, statSync, existsSync, readdirSync, writeFileSync } from 'node:fs'
+import { resolve, join, dirname } from 'node:path'
+import { createRequire } from 'node:module'
 import type { Command } from 'commander'
 import { build as viteBuild } from 'vite'
 import { build as tsupBuild } from 'tsup'
@@ -13,9 +14,11 @@ import {
   type ParseError,
   type ParsedSchema,
 } from '@bobbykim/manguito-cms-core'
+import { generateSchemaFile } from '@bobbykim/manguito-cms-db'
 import { generateSchemaRegistry } from '../codegen/registry.js'
 import { generateRoutes } from '../codegen/routes.js'
 import { generateForms } from '../codegen/forms.js'
+import { generateServerEntries } from '../codegen/server-entries.js'
 import { resolveConfig } from '../utils/config.js'
 import { loadEnvFile } from '../utils/env.js'
 import { printGuidedError, printSuccess, printValidationErrors } from '../utils/error.js'
@@ -116,9 +119,14 @@ export async function runBuild(
   const generatedDir = resolve(cwd, 'dist/generated')
   mkdirSync(generatedDir, { recursive: true })
 
+  writeFileSync(join(generatedDir, 'schema.ts'), generateSchemaFile(registry), 'utf8')
   await generateSchemaRegistry(registry, generatedDir)
   await generateRoutes(registry, generatedDir)
   await generateForms(registry, join(generatedDir, 'forms'))
+  await generateServerEntries(
+    { adminPrefix: config.admin.prefix, apiPrefix: config.api.prefix },
+    generatedDir,
+  )
 
   // 9. Codegen complete
   printSuccess('Codegen complete')
@@ -126,7 +134,8 @@ export async function runBuild(
   // 10. Vite build — admin panel
   try {
     await viteBuild({
-      root: cwd,
+      root: resolveAdminRoot(cwd),
+      base: config.admin.prefix + '/',
       build: {
         outDir: resolve(cwd, 'dist/admin'),
         emptyOutDir: true,
@@ -160,6 +169,9 @@ export async function runBuild(
       outDir: resolve(cwd, 'dist'),
       dts: false,
       silent: true,
+      // hono/aws-lambda and hono/vercel are optional peer deps — mark external
+      // so the build succeeds even when they aren't installed.
+      external: ['hono/aws-lambda', 'hono/vercel'],
     })
   } catch (err) {
     printGuidedError(
@@ -196,6 +208,12 @@ export async function needsRebuild(cwd: string): Promise<boolean> {
   return walkFiles(schemasDir).some(
     (file) => statSync(file).mtimeMs > sentinelMtime
   )
+}
+
+function resolveAdminRoot(cwd: string): string {
+  const cwdRequire = createRequire(join(cwd, 'package.json'))
+  const adminPkgJson = cwdRequire.resolve('@bobbykim/manguito-cms-admin/package.json')
+  return dirname(adminPkgJson)
 }
 
 function walkFiles(dir: string): string[] {

@@ -67,6 +67,10 @@ export function registerMigrate(program: Command): void {
 }
 
 function buildDeps(options: { env?: string }, cwd: string): MigrateDeps {
+  // Load env before createPostgresAdapter() reads DB_URL from process.env.
+  // buildDeps is called as an argument to runMigrate (evaluated first), so
+  // waiting until inside runMigrate to call loadEnvFile is too late.
+  loadEnvFile(options.env)
   return {
     buildRunner: async () => runBuild(options.env ? { env: options.env } : {}, { cwd }),
     needsRebuild: () => checkNeedsRebuild(cwd),
@@ -257,7 +261,7 @@ export async function runMigrate(options: MigrateOptions, deps: MigrateDeps): Pr
     allErrors.push(...walkResult.errors)
   }
 
-  const rolesPath = resolve(cwd, 'roles.json')
+  const rolesPath = resolve(cwd, config.schema.base_path, 'roles.json')
   const rolesLoad = loadSchemaFile(rolesPath)
   let parsedRoles = null
   if (rolesLoad.ok) {
@@ -271,7 +275,7 @@ export async function runMigrate(options: MigrateOptions, deps: MigrateDeps): Pr
     allErrors.push(...rolesLoad.errors)
   }
 
-  const routesPath = resolve(cwd, 'routes.json')
+  const routesPath = resolve(cwd, config.schema.base_path, 'routes.json')
   const routesLoad = loadSchemaFile(routesPath)
   let parsedRoutes = null
   if (routesLoad.ok) {
