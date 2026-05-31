@@ -3,6 +3,7 @@ import { createPostgresAdapter } from '@bobbykim/manguito-cms-db'
 import {
   createLocalAdapter,
   createCloudinaryAdapter,
+  createS3Adapter,
 } from '@bobbykim/manguito-cms-api/storage'
 import { createServer, createAPIAdapter } from '@bobbykim/manguito-cms-api'
 import { createAdminAdapter } from '@bobbykim/manguito-cms-admin'
@@ -28,8 +29,12 @@ export default defineConfig({
     folder: './migrations',
   },
 
-  storage: createCloudinaryAdapter({
-    folder: 'manguito-sandbox',
+  // storage: createCloudinaryAdapter({
+  //   folder: 'manguito-sandbox',
+  // }),
+  storage: createS3Adapter({
+    bucket: process.env['S3_BUCKET'] ?? '',
+    region: process.env['AWS_REGION'] ?? 'us-east-1',
   }),
   // storage: createLocalAdapter(), // for local testing
 
