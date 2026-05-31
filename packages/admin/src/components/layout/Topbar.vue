@@ -1,20 +1,7 @@
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
-import { useAuthStore } from '../../stores/auth'
 import { useUiStore } from '../../stores/ui'
-import { useApiClient } from '../../composables/useApiClient'
 
-const router = useRouter()
-const authStore = useAuthStore()
 const uiStore = useUiStore()
-const api = useApiClient()
-
-async function logout() {
-  // Always clear client session and redirect — regardless of server response.
-  await api.post('/auth/logout', {})
-  authStore.clear()
-  router.push(`${__ADMIN_PREFIX__}/login`)
-}
 
 function toggleSidebar() {
   uiStore.sidebarOpen = !uiStore.sidebarOpen
@@ -46,13 +33,5 @@ function toggleSidebar() {
     <span class="flex-1 text-sm font-semibold text-gray-800">
       {{ uiStore.cmsName }}
     </span>
-
-    <button
-      type="button"
-      class="rounded-md px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-800"
-      @click="logout"
-    >
-      Log out
-    </button>
   </header>
 </template>

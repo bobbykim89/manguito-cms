@@ -1,3 +1,5 @@
-[
-  { "base_path": "posts", "content_type": "blog_post", "published_only": true }
-]
+{
+  "base_paths": [
+    { "name": "posts", "path": "/posts" }
+  ]
+}

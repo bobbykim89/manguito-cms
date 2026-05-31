@@ -1,4 +1,5 @@
-import { execSync } from 'node:child_process'
+import { execSync, spawnSync } from 'node:child_process'
+import crypto from 'node:crypto'
 import path from 'node:path'
 import fs from 'node:fs/promises'
 import { sql } from 'drizzle-orm'
@@ -40,7 +41,99 @@ export async function applyMigrations(
   db: DrizzlePostgresInstance,
   options: MigrationRunnerOptions,
 ): Promise<MigrationResult> {
-  execSync(`drizzle-kit migrate --config=${configPath}`, { stdio: 'inherit', cwd: path.dirname(configPath) })
+  const { migrationsTable, migrationsFolder } = options
+
+  // Pre-create the tracking table without a serial/sequence column so that
+  // drizzle-kit finds it already exists and skips its own CREATE TABLE.
+  // This prevents an orphaned sequence from appearing in the DB, which
+  // drizzle-kit push would otherwise try to drop (non-fatally, but noisily).
+  await db.execute(
+    sql.raw(
+      `CREATE TABLE IF NOT EXISTS "${migrationsTable}" (hash text NOT NULL, created_at bigint)`,
+    ),
+  )
+
+  // Reconcile migrations that are pending in the tracking table but already
+  // applied in the DB — the typical result of running `manguito dev` (which
+  // uses drizzle-kit push and never writes to the tracking table) before
+  // `manguito migrate`.  For each pending migration, check whether the first
+  // table it creates already exists in Postgres.  If it does, seed the
+  // tracking record so drizzle-kit migrate treats it as applied.
+  const statusBefore = await getMigrationStatus(db, options)
+  if (statusBefore.pending.length > 0) {
+    type JournalEntry = { when: number; tag: string }
+    let journalEntries: JournalEntry[] = []
+    try {
+      const journalPath = path.join(migrationsFolder, 'meta', '_journal.json')
+      const raw = await fs.readFile(journalPath, 'utf-8')
+      journalEntries = (JSON.parse(raw) as { entries: JournalEntry[] }).entries
+    } catch { /* no journal — skip reconciliation */ }
+
+    for (const pendingFile of statusBefore.pending) {
+      const sqlPath = path.join(migrationsFolder, pendingFile)
+      let sqlContent: string
+      try {
+        sqlContent = await fs.readFile(sqlPath, 'utf-8')
+      } catch { continue }
+
+      // Extract the first table name from the migration SQL.
+      const tableMatch = sqlContent.match(/CREATE TABLE (?:IF NOT EXISTS )?"([^"]+)"/)
+      if (!tableMatch) continue
+      const tableName = tableMatch[1]
+
+      const checkResult = await db.execute(
+        sql.raw(`SELECT to_regclass('"${tableName}"') AS t`),
+      )
+      const tableExists = (checkResult.rows[0] as { t: string | null } | undefined)?.t !== null
+
+      if (!tableExists) continue
+
+      // Table already exists — seed the tracking record.
+      const entry = journalEntries.find((e) => `${e.tag}.sql` === pendingFile)
+      if (!entry) continue
+      const hash = crypto.createHash('sha256').update(sqlContent).digest('hex')
+      await db.execute(
+        sql.raw(
+          `INSERT INTO "${migrationsTable}" (hash, created_at) ` +
+          `SELECT '${hash}', ${entry.when} ` +
+          `WHERE NOT EXISTS (SELECT 1 FROM "${migrationsTable}" WHERE created_at = ${entry.when})`,
+        ),
+      )
+    }
+  }
+
+  // After reconciliation, re-check status. If all pending migrations are now
+  // marked applied (by the reconciliation above), skip drizzle-kit migrate —
+  // there is nothing for it to do and it would fail on "relation already exists".
+  const statusAfter = await getMigrationStatus(db, options)
+  if (statusAfter.pending.length === 0) {
+    return { applied: statusAfter.applied.length, skipped: 0 }
+  }
+
+  const result = spawnSync(
+    'drizzle-kit',
+    ['migrate', `--config=${configPath}`],
+    { cwd: path.dirname(configPath), encoding: 'utf8' },
+  )
+  if (result.stdout) process.stdout.write(result.stdout)
+  if (result.stderr) process.stderr.write(result.stderr)
+  if (result.status !== 0) {
+    const raw = result.stderr?.trim() || result.stdout?.trim() || ''
+    const detail = raw || `drizzle-kit exited with status ${String(result.status)}`
+    // "already exists" means the migrations folder was regenerated while the DB
+    // already has the schema.  Tell the user how to recover rather than dumping
+    // the raw spinner output.
+    if (raw.includes('already exists')) {
+      throw new Error(
+        'Migration failed: a table that already exists was included in the migration.\n' +
+        'This usually means the migrations folder was deleted and regenerated.\n' +
+        'Fix: insert the pending migration\'s timestamp into the tracking table so\n' +
+        'drizzle-kit treats it as already applied, then re-run `manguito migrate`.\n' +
+        `Raw drizzle-kit output:\n${raw}`
+      )
+    }
+    throw new Error(detail)
+  }
 
   const status = await getMigrationStatus(db, options)
   return {

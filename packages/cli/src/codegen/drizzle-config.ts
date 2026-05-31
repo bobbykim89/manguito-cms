@@ -7,6 +7,7 @@ export async function generateDrizzleConfig(
   targetDir: string
 ): Promise<void> {
   const migrationsFolder = config.migrations?.folder ?? './migrations'
+  const migrationsTable = config.migrations?.table ?? '__manguito_migrations'
   const outPath = relative(resolve(targetDir), resolve(migrationsFolder)).replace(/\\/g, '/')
 
   const content = [
@@ -19,6 +20,11 @@ export async function generateDrizzleConfig(
     `  dbCredentials: {`,
     `    url: process.env.DB_URL!,`,
     `  },`,
+    `  migrations: {`,
+    `    table: '${migrationsTable}',`,
+    `    schema: 'public',`,
+    `  },`,
+    `  tablesFilter: ['!${migrationsTable}'],`,
     `})`,
   ].join('\n')
 

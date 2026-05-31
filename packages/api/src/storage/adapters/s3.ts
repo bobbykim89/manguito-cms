@@ -56,6 +56,16 @@ export function createS3Adapter(options: S3AdapterOptions): StorageAdapter {
       return `https://${bucket}.s3.${region}.amazonaws.com/${key}`
     },
 
+    async upload(key: string, data: Uint8Array, mimeType: string): Promise<void> {
+      const command = new PutObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        Body: data,
+        ContentType: mimeType,
+      })
+      await client.send(command)
+    },
+
     async delete(key: string): Promise<void> {
       const command = new DeleteObjectCommand({ Bucket: bucket, Key: key })
       await client.send(command)

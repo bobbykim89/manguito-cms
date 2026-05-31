@@ -155,10 +155,12 @@ export async function runDev(
 
   // 8. Create Hono app via createCmsApp
   const adapter = createCmsApp({
+    name: config.name,
     registry,
     db: db.getDb(),
     storage: config.storage,
     ...(config.api.prefix ? { prefix: config.api.prefix } : {}),
+    ...(config.api.media?.max_file_size ? { media: { max_file_size: config.api.media.max_file_size } } : {}),
   })
 
   // Hot-swappable fetch handler — mutated by onSchemaFileChange
@@ -295,10 +297,12 @@ async function onSchemaFileChange(args: OnSchemaFileChangeArgs): Promise<void> {
 
   // Hot-swap Hono app with updated registry
   const newAdapter = createCmsApp({
+    name: config.name,
     registry,
     db: db.getDb(),
     storage: config.storage,
     ...(config.api.prefix ? { prefix: config.api.prefix } : {}),
+    ...(config.api.media?.max_file_size ? { media: { max_file_size: config.api.media.max_file_size } } : {}),
   })
   updateFetch((req) => newAdapter.app.fetch(req))
 

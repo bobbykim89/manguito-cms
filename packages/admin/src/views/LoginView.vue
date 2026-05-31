@@ -2,10 +2,12 @@
 import { ref, computed, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { useUiStore } from '../stores/ui'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
+const uiStore = useUiStore()
 
 const email = ref('')
 const password = ref('')
@@ -99,54 +101,83 @@ async function onSubmit() {
 </script>
 
 <template>
-  <!-- Standalone layout — no AppShell/sidebar chrome -->
-  <div class="flex min-h-screen items-center justify-center bg-gray-50 px-4">
-    <div class="w-full max-w-sm">
-      <h1 class="mb-8 text-center text-2xl font-bold text-gray-900">Sign in</h1>
-
-      <form class="space-y-5" novalidate @submit.prevent="onSubmit">
-        <!-- Email -->
-        <div>
-          <label for="email" class="block text-sm font-medium text-gray-700">Email</label>
-          <input
-            id="email"
-            v-model="email"
-            type="email"
-            required
-            autocomplete="email"
-            :disabled="submitting"
-            class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:opacity-60"
-          />
+  <div class="flex min-h-screen bg-gray-900">
+    <!-- Brand panel — visible on large screens -->
+    <div class="hidden lg:flex lg:w-80 lg:shrink-0 lg:flex-col lg:items-start lg:justify-between lg:border-r lg:border-gray-800 lg:px-10 lg:py-12">
+      <div>
+        <!-- Logo mark -->
+        <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-600">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10M4 18h6" />
+          </svg>
         </div>
+        <h1 class="mt-8 text-xl font-semibold text-white">{{ uiStore.cmsName }}</h1>
+        <p class="mt-2 text-sm leading-relaxed text-gray-500">Schema-driven headless CMS — manage your content with confidence.</p>
+      </div>
+      <p class="text-xs text-gray-700">Self-hosted &amp; open source</p>
+    </div>
 
-        <!-- Password -->
-        <div>
-          <label for="password" class="block text-sm font-medium text-gray-700">Password</label>
-          <input
-            id="password"
-            v-model="password"
-            type="password"
-            required
-            autocomplete="current-password"
-            :disabled="submitting"
-            class="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:opacity-60"
-          />
+    <!-- Form area -->
+    <div class="flex flex-1 flex-col items-center justify-center px-6 py-12">
+      <!-- Mobile-only brand -->
+      <div class="mb-8 flex flex-col items-center lg:hidden">
+        <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-600">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10M4 18h6" />
+          </svg>
         </div>
+        <h1 class="mt-4 text-lg font-semibold text-white">{{ uiStore.cmsName }}</h1>
+      </div>
 
-        <!-- Inline error -->
-        <p v-if="formError" class="text-sm text-red-600" role="alert">
-          {{ formError }}
-        </p>
+      <!-- Card -->
+      <div class="w-full max-w-sm rounded-2xl bg-white px-8 py-10 shadow-2xl ring-1 ring-gray-100">
+        <h2 class="mb-1 text-lg font-semibold text-gray-900">Sign in</h2>
+        <p class="mb-7 text-sm text-gray-500">Enter your credentials to continue.</p>
 
-        <!-- Submit -->
-        <button
-          type="submit"
-          :disabled="submitDisabled"
-          class="w-full rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {{ submitting ? 'Signing in…' : 'Sign in' }}
-        </button>
-      </form>
+        <form class="space-y-5" novalidate @submit.prevent="onSubmit">
+          <!-- Email -->
+          <div>
+            <label for="email" class="block text-sm font-medium text-gray-700">Email</label>
+            <input
+              id="email"
+              v-model="email"
+              type="email"
+              required
+              autocomplete="email"
+              :disabled="submitting"
+              class="mt-1.5 block w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 transition-colors focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60"
+            />
+          </div>
+
+          <!-- Password -->
+          <div>
+            <label for="password" class="block text-sm font-medium text-gray-700">Password</label>
+            <input
+              id="password"
+              v-model="password"
+              type="password"
+              required
+              autocomplete="current-password"
+              :disabled="submitting"
+              class="mt-1.5 block w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 transition-colors focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60"
+            />
+          </div>
+
+          <!-- Inline error -->
+          <p v-if="formError" class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600" role="alert">
+            {{ formError }}
+          </p>
+
+          <!-- Submit -->
+          <button
+            type="submit"
+            :disabled="submitDisabled"
+            class="w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {{ submitting ? 'Signing in…' : 'Sign in' }}
+          </button>
+        </form>
+      </div>
     </div>
   </div>
 </template>
