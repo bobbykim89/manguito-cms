@@ -1,1 +1,0 @@
-import{H as u,r as s}from"./index-hu-lEg7v.js";const c=u("media",()=>{const t=s(new Map),n=s(!1);function a(e){t.value.clear();for(const o of e)t.value.set(o.id,o)}function r(e){t.value.set(e.id,e)}function i(e){t.value.delete(e)}return{items:t,loading:n,setItems:a,setItem:r,removeItem:i}});export{c as u};

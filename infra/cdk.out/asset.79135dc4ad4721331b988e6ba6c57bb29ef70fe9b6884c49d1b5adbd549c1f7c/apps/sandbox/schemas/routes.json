@@ -1,6 +1,0 @@
-{
-  "base_paths": [
-    { "name": "blog", "path": "/blog" },
-    { "name": "pages", "path": "/pages" }
-  ]
-}

@@ -1,9 +1,0 @@
-node_modules/
-dist/
-.manguito/
-.env
-.env.*
-!.env.example
-migrations/
-uploads/
-*.log

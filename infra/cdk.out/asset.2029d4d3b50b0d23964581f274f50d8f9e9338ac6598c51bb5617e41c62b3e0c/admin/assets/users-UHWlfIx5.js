@@ -1,1 +1,0 @@
-import{H as d,r as o}from"./index-hu-lEg7v.js";const l=d("users",()=>{const e=o([]),t=o(!1);function r(s){e.value=s}function u(s){const n=e.value.findIndex(i=>i.id===s.id);n!==-1?e.value[n]=s:e.value.push(s)}function a(s){const n=e.value.findIndex(i=>i.id===s);n!==-1&&e.value.splice(n,1)}return{users:e,loading:t,setUsers:r,setUser:u,removeUser:a}});export{l as u};
