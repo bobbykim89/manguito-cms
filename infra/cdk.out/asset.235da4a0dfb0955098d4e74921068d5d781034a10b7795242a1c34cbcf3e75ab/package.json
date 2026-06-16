@@ -1,0 +1,34 @@
+{
+  "private": true,
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "smoke": "dotenv -e .env.test -- vitest run apps/sandbox/tests",
+    "lint": "turbo run lint",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "changeset publish",
+    "db:test:up": "docker compose up -d manguito-test-db",
+    "db:test:down": "docker compose stop manguito-test-db && docker compose rm -f -v manguito-test-db",
+    "db:test:restart": "pnpm db:test:down && pnpm db:test:up",
+    "db:sandbox:up": "docker compose up -d manguito-sandbox-db",
+    "db:sandbox:down": "docker compose stop manguito-sandbox-db && docker compose rm -f -v manguito-sandbox-db",
+    "db:sandbox:restart": "pnpm db:sandbox:down && pnpm db:sandbox:up"
+  },
+  "devDependencies": {
+    "@bobbykim/manguito-cms-core": "workspace:*",
+    "@bobbykim/manguito-cms-db": "workspace:*",
+    "@bobbykim/manguito-cms-test-utils": "workspace:*",
+    "@changesets/cli": "latest",
+    "dotenv-cli": "latest",
+    "drizzle-orm": "^0.45.0",
+    "eslint": "^10.0.0",
+    "turbo": "latest",
+    "typescript": "^6.0.0",
+    "vitest": "latest"
+  }
+}

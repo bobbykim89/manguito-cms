@@ -1,0 +1,26 @@
+{
+  "name": "paragraph--link_item",
+  "label": "Paragraph Link Item",
+  "type": "paragraph-type",
+  "fields": [
+    {
+      "name": "link_item_url",
+      "label": "url",
+      "type": "text/plain",
+      "required": true
+    },
+    {
+      "name": "link_item_target",
+      "label": "Target",
+      "type": "enum",
+      "ref": "enum--link_target",
+      "required": true
+    },
+    {
+      "name": "link_item_text",
+      "label": "Text",
+      "type": "text/plain",
+      "required": true
+    }
+  ]
+}

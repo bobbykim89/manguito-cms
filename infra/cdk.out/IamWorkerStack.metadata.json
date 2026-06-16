@@ -1,0 +1,108 @@
+{
+  "/IamWorkerStack": [
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "<anonymous> (/mnt/projects/manguito-cms/infra/bin/infra.ts:26:1)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/IamWorkerStack/WorkersGroupName": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "WorkersGroupName"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "new IamWorkerStack (/mnt/projects/manguito-cms/infra/lib/iam-worker-stack.ts:126:5)",
+        "<anonymous> (/mnt/projects/manguito-cms/infra/bin/infra.ts:26:1)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/IamWorkerStack/WorkerPolicyArn": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "WorkerPolicyArn"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "new IamWorkerStack (/mnt/projects/manguito-cms/infra/lib/iam-worker-stack.ts:130:5)",
+        "<anonymous> (/mnt/projects/manguito-cms/infra/bin/infra.ts:26:1)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/IamWorkerStack/BootstrapVersion": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BootstrapVersion"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/IamWorkerStack/CheckBootstrapVersion": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CheckBootstrapVersion"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/IamWorkerStack/WorkerPolicy/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "WorkerPolicy462910EA"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new ManagedPolicy2 in aws-cdk-lib...",
+        "new IamWorkerStack (/mnt/projects/manguito-cms/infra/lib/iam-worker-stack.ts:23:26)",
+        "<anonymous> (/mnt/projects/manguito-cms/infra/bin/infra.ts:26:1)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/IamWorkerStack/WorkersGroup/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "WorkersGroup3BD92287"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Group2 in aws-cdk-lib...",
+        "new IamWorkerStack (/mnt/projects/manguito-cms/infra/lib/iam-worker-stack.ts:121:26)",
+        "<anonymous> (/mnt/projects/manguito-cms/infra/bin/infra.ts:26:1)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/IamWorkerStack/CDKMetadata/Default": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CDKMetadata"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib, node internals...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,619 @@
+{
+  "/FargateStack": [
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "<anonymous> (/mnt/projects/manguito-cms/infra/bin/infra.ts:50:3)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/FargateStack/Custom::VpcRestrictDefaultSGCustomResourceProvider": [
+    {
+      "type": "aws:cdk:is-custom-resource-handler-customResourceProvider",
+      "data": true
+    }
+  ],
+  "/FargateStack/CloudFrontUrl": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CloudFrontUrl"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "new FargateStack (/mnt/projects/manguito-cms/infra/lib/fargate-stack.ts:107:5)",
+        "<anonymous> (/mnt/projects/manguito-cms/infra/bin/infra.ts:50:3)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/FargateStack/LoadBalancerUrl": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "LoadBalancerUrl"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "new FargateStack (/mnt/projects/manguito-cms/infra/lib/fargate-stack.ts:112:5)",
+        "<anonymous> (/mnt/projects/manguito-cms/infra/bin/infra.ts:50:3)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/FargateStack/BootstrapVersion": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BootstrapVersion"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/FargateStack/CheckBootstrapVersion": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CheckBootstrapVersion"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/FargateStack/Vpc/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "Vpc8378EB38"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Vpc2 in aws-cdk-lib...",
+        "new FargateStack (/mnt/projects/manguito-cms/infra/lib/fargate-stack.ts:37:17)",
+        "<anonymous> (/mnt/projects/manguito-cms/infra/bin/infra.ts:50:3)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/FargateStack/Vpc/IGW": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcIGWD7BA715C"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Vpc2 in aws-cdk-lib...",
+        "new FargateStack (/mnt/projects/manguito-cms/infra/lib/fargate-stack.ts:37:17)",
+        "<anonymous> (/mnt/projects/manguito-cms/infra/bin/infra.ts:50:3)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/FargateStack/Vpc/VPCGW": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcVPCGWBF912B6E"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Vpc2 in aws-cdk-lib...",
+        "new FargateStack (/mnt/projects/manguito-cms/infra/lib/fargate-stack.ts:37:17)",
+        "<anonymous> (/mnt/projects/manguito-cms/infra/bin/infra.ts:50:3)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/FargateStack/Custom::VpcRestrictDefaultSGCustomResourceProvider/Role": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CustomVpcRestrictDefaultSGCustomResourceProviderRole26592FE0"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Vpc2 in aws-cdk-lib...",
+        "new FargateStack (/mnt/projects/manguito-cms/infra/lib/fargate-stack.ts:37:17)",
+        "<anonymous> (/mnt/projects/manguito-cms/infra/bin/infra.ts:50:3)",
+        "...node internals, ts-node..."
+      ]
+    }
+  ],
+  "/FargateStack/Custom::VpcRestrictDefaultSGCustomResourceProvider/Handler": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CustomVpcRestrictDefaultSGCustomResourceProviderHandlerDC833E5E"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Vpc2 in aws-cdk-lib...",
+        "new FargateStack (/mnt/projects/manguito-cms/infra/lib/fargate-stack.ts:37:17)",
+        "<anonymous> (/mnt/projects/manguito-cms/infra/bin/infra.ts:50:3)",
+        "...node internals, ts-node..."
+      ]
+    }
+  ],
+  "/FargateStack/Cluster/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ClusterEB0386A7"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Cluster2 in aws-cdk-lib...",
+        "new FargateStack (/mnt/projects/manguito-cms/infra/lib/fargate-stack.ts:49:21)",
+        "<anonymous> (/mnt/projects/manguito-cms/infra/bin/infra.ts:50:3)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/FargateStack/Service/LoadBalancerDNS": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ServiceLoadBalancerDNSEC5B149E"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new ApplicationLoadBalancedFargateService2 in aws-cdk-lib...",
+        "new FargateStack (/mnt/projects/manguito-cms/infra/lib/fargate-stack.ts:56:21)",
+        "<anonymous> (/mnt/projects/manguito-cms/infra/bin/infra.ts:50:3)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/FargateStack/Service/ServiceURL": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ServiceServiceURL250C0FB6"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new ApplicationLoadBalancedFargateService2 in aws-cdk-lib...",
+        "new FargateStack (/mnt/projects/manguito-cms/infra/lib/fargate-stack.ts:56:21)",
+        "<anonymous> (/mnt/projects/manguito-cms/infra/bin/infra.ts:50:3)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/FargateStack/Service/Service": [
+    {
+      "type": "aws:cdk:warning",
+      "data": "Enable the 'circuitBreaker' property to trigger a quicker deployment failure if tasks are failing to come start (without this setting deployments may take up to 3 hours to fail). [ack: @aws-cdk/aws-ecs:shouldUseCircuitBreaker]",
+      "trace": [
+        "Annotations.addMessage (/mnt/projects/manguito-cms/infra/node_modules/aws-cdk-lib/core/lib/annotations.js:1:2399)",
+        "Annotations.addWarningV2 (/mnt/projects/manguito-cms/infra/node_modules/aws-cdk-lib/core/lib/annotations.js:1:1087)",
+        "new BaseService2 (/mnt/projects/manguito-cms/infra/node_modules/aws-cdk-lib/aws-ecs/lib/base/base-service.js:1:13563)",
+        "new BaseService2 (/mnt/projects/manguito-cms/infra/node_modules/aws-cdk-lib/core/lib/no-box-stack-traces.js:1:345)",
+        "new FargateService2 (/mnt/projects/manguito-cms/infra/node_modules/aws-cdk-lib/aws-ecs/lib/fargate/fargate-service.js:1:6805)",
+        "new FargateService2 (/mnt/projects/manguito-cms/infra/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:855)",
+        "new ApplicationLoadBalancedFargateService2 (/mnt/projects/manguito-cms/infra/node_modules/aws-cdk-lib/aws-ecs-patterns/lib/fargate/application-load-balanced-fargate-service.js:1:6392)",
+        "new ApplicationLoadBalancedFargateService2 (/mnt/projects/manguito-cms/infra/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:855)",
+        "new FargateStack (/mnt/projects/manguito-cms/infra/lib/fargate-stack.ts:56:21)",
+        "Object.<anonymous> (/mnt/projects/manguito-cms/infra/bin/infra.ts:50:3)",
+        "Module._compile (node:internal/modules/cjs/loader:1705:14)",
+        "Module.m._compile (/mnt/projects/manguito-cms/infra/node_modules/ts-node/src/index.ts:1618:23)",
+        "node:internal/modules/cjs/loader:1838:10",
+        "Object.require.extensions.<computed> [as .ts] (/mnt/projects/manguito-cms/infra/node_modules/ts-node/src/index.ts:1621:12)",
+        "Module.load (node:internal/modules/cjs/loader:1441:32)",
+        "Function._load (node:internal/modules/cjs/loader:1263:12)",
+        "TracingChannel.traceSync (node:diagnostics_channel:328:14)",
+        "wrapModuleLoad (node:internal/modules/cjs/loader:237:24)",
+        "Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)",
+        "phase4 (/mnt/projects/manguito-cms/infra/node_modules/ts-node/src/bin.ts:649:14)",
+        "bootstrap (/mnt/projects/manguito-cms/infra/node_modules/ts-node/src/bin.ts:95:10)",
+        "main (/mnt/projects/manguito-cms/infra/node_modules/ts-node/src/bin.ts:55:10)",
+        "Object.<anonymous> (/mnt/projects/manguito-cms/infra/node_modules/ts-node/src/bin.ts:800:3)",
+        "Module._compile (node:internal/modules/cjs/loader:1705:14)",
+        "Object.<anonymous> (node:internal/modules/cjs/loader:1838:10)",
+        "Module.load (node:internal/modules/cjs/loader:1441:32)",
+        "Function._load (node:internal/modules/cjs/loader:1263:12)",
+        "TracingChannel.traceSync (node:diagnostics_channel:328:14)",
+        "wrapModuleLoad (node:internal/modules/cjs/loader:237:24)",
+        "Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)",
+        "node:internal/main/run_main_module:36:49"
+      ]
+    },
+    {
+      "type": "aws:cdk:warning",
+      "data": "minHealthyPercent has not been configured so the default value of 50% is used. The number of running tasks will decrease below the desired count during deployments etc. See https://github.com/aws/aws-cdk/issues/31705 [ack: @aws-cdk/aws-ecs:minHealthyPercent]",
+      "trace": [
+        "Annotations.addMessage (/mnt/projects/manguito-cms/infra/node_modules/aws-cdk-lib/core/lib/annotations.js:1:2399)",
+        "Annotations.addWarningV2 (/mnt/projects/manguito-cms/infra/node_modules/aws-cdk-lib/core/lib/annotations.js:1:1087)",
+        "new BaseService2 (/mnt/projects/manguito-cms/infra/node_modules/aws-cdk-lib/aws-ecs/lib/base/base-service.js:1:14478)",
+        "new BaseService2 (/mnt/projects/manguito-cms/infra/node_modules/aws-cdk-lib/core/lib/no-box-stack-traces.js:1:345)",
+        "new FargateService2 (/mnt/projects/manguito-cms/infra/node_modules/aws-cdk-lib/aws-ecs/lib/fargate/fargate-service.js:1:6805)",
+        "new FargateService2 (/mnt/projects/manguito-cms/infra/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:855)",
+        "new ApplicationLoadBalancedFargateService2 (/mnt/projects/manguito-cms/infra/node_modules/aws-cdk-lib/aws-ecs-patterns/lib/fargate/application-load-balanced-fargate-service.js:1:6392)",
+        "new ApplicationLoadBalancedFargateService2 (/mnt/projects/manguito-cms/infra/node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:855)",
+        "new FargateStack (/mnt/projects/manguito-cms/infra/lib/fargate-stack.ts:56:21)",
+        "Object.<anonymous> (/mnt/projects/manguito-cms/infra/bin/infra.ts:50:3)",
+        "Module._compile (node:internal/modules/cjs/loader:1705:14)",
+        "Module.m._compile (/mnt/projects/manguito-cms/infra/node_modules/ts-node/src/index.ts:1618:23)",
+        "node:internal/modules/cjs/loader:1838:10",
+        "Object.require.extensions.<computed> [as .ts] (/mnt/projects/manguito-cms/infra/node_modules/ts-node/src/index.ts:1621:12)",
+        "Module.load (node:internal/modules/cjs/loader:1441:32)",
+        "Function._load (node:internal/modules/cjs/loader:1263:12)",
+        "TracingChannel.traceSync (node:diagnostics_channel:328:14)",
+        "wrapModuleLoad (node:internal/modules/cjs/loader:237:24)",
+        "Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)",
+        "phase4 (/mnt/projects/manguito-cms/infra/node_modules/ts-node/src/bin.ts:649:14)",
+        "bootstrap (/mnt/projects/manguito-cms/infra/node_modules/ts-node/src/bin.ts:95:10)",
+        "main (/mnt/projects/manguito-cms/infra/node_modules/ts-node/src/bin.ts:55:10)",
+        "Object.<anonymous> (/mnt/projects/manguito-cms/infra/node_modules/ts-node/src/bin.ts:800:3)",
+        "Module._compile (node:internal/modules/cjs/loader:1705:14)",
+        "Object.<anonymous> (node:internal/modules/cjs/loader:1838:10)",
+        "Module.load (node:internal/modules/cjs/loader:1441:32)",
+        "Function._load (node:internal/modules/cjs/loader:1263:12)",
+        "TracingChannel.traceSync (node:diagnostics_channel:328:14)",
+        "wrapModuleLoad (node:internal/modules/cjs/loader:237:24)",
+        "Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)",
+        "node:internal/main/run_main_module:36:49"
+      ]
+    }
+  ],
+  "/FargateStack/Distribution/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "Distribution830FAC52"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Distribution2 in aws-cdk-lib...",
+        "new FargateStack (/mnt/projects/manguito-cms/infra/lib/fargate-stack.ts:94:26)",
+        "<anonymous> (/mnt/projects/manguito-cms/infra/bin/infra.ts:50:3)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/FargateStack/CDKMetadata/Default": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CDKMetadata"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib, node internals...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/FargateStack/Vpc/publicSubnet1/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet1Subnet2BB74ED7"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../mnt/projects/manguito-cms/infra/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:257 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/FargateStack/Vpc/publicSubnet1/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet1RouteTable15C15F8E"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../mnt/projects/manguito-cms/infra/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:257 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/FargateStack/Vpc/publicSubnet1/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet1RouteTableAssociation4E83B6E4"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../mnt/projects/manguito-cms/infra/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:257 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/FargateStack/Vpc/publicSubnet1/DefaultRoute": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet1DefaultRouteB88F9E93"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../mnt/projects/manguito-cms/infra/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:197 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...new Vpc2 in aws-cdk-lib...",
+        "new FargateStack (/mnt/projects/manguito-cms/infra/lib/fargate-stack.ts:37:17)",
+        "<anonymous> (/mnt/projects/manguito-cms/infra/bin/infra.ts:50:3)",
+        "...node internals, ts-node..."
+      ]
+    }
+  ],
+  "/FargateStack/Vpc/publicSubnet2/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet2SubnetE34B022A"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../mnt/projects/manguito-cms/infra/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:257 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/FargateStack/Vpc/publicSubnet2/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet2RouteTableC5A6DF77"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../mnt/projects/manguito-cms/infra/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:257 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/FargateStack/Vpc/publicSubnet2/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet2RouteTableAssociationCCE257FF"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../mnt/projects/manguito-cms/infra/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:257 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/FargateStack/Vpc/publicSubnet2/DefaultRoute": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet2DefaultRoute732F0BEB"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../mnt/projects/manguito-cms/infra/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:197 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...new Vpc2 in aws-cdk-lib...",
+        "new FargateStack (/mnt/projects/manguito-cms/infra/lib/fargate-stack.ts:37:17)",
+        "<anonymous> (/mnt/projects/manguito-cms/infra/bin/infra.ts:50:3)",
+        "...node internals, ts-node..."
+      ]
+    }
+  ],
+  "/FargateStack/Vpc/RestrictDefaultSecurityGroupCustomResource/Default": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcRestrictDefaultSecurityGroupCustomResourceC73DA2BE"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Vpc2 in aws-cdk-lib...",
+        "new FargateStack (/mnt/projects/manguito-cms/infra/lib/fargate-stack.ts:37:17)",
+        "<anonymous> (/mnt/projects/manguito-cms/infra/bin/infra.ts:50:3)",
+        "...node internals, ts-node..."
+      ]
+    }
+  ],
+  "/FargateStack/Service/LB/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ServiceLBE9A1ADBC"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new ApplicationLoadBalancedFargateService2 in aws-cdk-lib...",
+        "new FargateStack (/mnt/projects/manguito-cms/infra/lib/fargate-stack.ts:56:21)",
+        "<anonymous> (/mnt/projects/manguito-cms/infra/bin/infra.ts:50:3)",
+        "...node internals, ts-node..."
+      ]
+    }
+  ],
+  "/FargateStack/Service/TaskDef/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ServiceTaskDef1922A00F"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new ApplicationLoadBalancedFargateService2 in aws-cdk-lib...",
+        "new FargateStack (/mnt/projects/manguito-cms/infra/lib/fargate-stack.ts:56:21)",
+        "<anonymous> (/mnt/projects/manguito-cms/infra/bin/infra.ts:50:3)",
+        "...node internals, ts-node..."
+      ]
+    }
+  ],
+  "/FargateStack/Service/Service/Service": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "Service9571FDD8"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new ApplicationLoadBalancedFargateService2 in aws-cdk-lib...",
+        "new FargateStack (/mnt/projects/manguito-cms/infra/lib/fargate-stack.ts:56:21)",
+        "<anonymous> (/mnt/projects/manguito-cms/infra/bin/infra.ts:50:3)",
+        "...node internals, ts-node..."
+      ]
+    }
+  ],
+  "/FargateStack/Service/LB/SecurityGroup/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ServiceLBSecurityGroupF7435A5C"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new ApplicationLoadBalancedFargateService2 in aws-cdk-lib...",
+        "new FargateStack (/mnt/projects/manguito-cms/infra/lib/fargate-stack.ts:56:21)",
+        "<anonymous> (/mnt/projects/manguito-cms/infra/bin/infra.ts:50:3)"
+      ]
+    }
+  ],
+  "/FargateStack/Service/LB/SecurityGroup/to FargateStackServiceSecurityGroupDC23E73B:3000": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ServiceLBSecurityGrouptoFargateStackServiceSecurityGroupDC23E73B300043B56574"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/FargateStack/Service/LB/PublicListener/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ServiceLBPublicListener46709EAA"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/FargateStack/Service/TaskDef/TaskRole/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ServiceTaskDefTaskRole0CFE2F57"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new ApplicationLoadBalancedFargateService2 in aws-cdk-lib...",
+        "new FargateStack (/mnt/projects/manguito-cms/infra/lib/fargate-stack.ts:56:21)",
+        "<anonymous> (/mnt/projects/manguito-cms/infra/bin/infra.ts:50:3)"
+      ]
+    }
+  ],
+  "/FargateStack/Service/TaskDef/ExecutionRole/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ServiceTaskDefExecutionRole919F7BE3"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/FargateStack/Service/Service/SecurityGroup/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ServiceSecurityGroupEEA09B68"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new ApplicationLoadBalancedFargateService2 in aws-cdk-lib...",
+        "new FargateStack (/mnt/projects/manguito-cms/infra/lib/fargate-stack.ts:56:21)",
+        "<anonymous> (/mnt/projects/manguito-cms/infra/bin/infra.ts:50:3)"
+      ]
+    }
+  ],
+  "/FargateStack/Service/Service/SecurityGroup/from FargateStackServiceLBSecurityGroup75FF4ADD:3000": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ServiceSecurityGroupfromFargateStackServiceLBSecurityGroup75FF4ADD3000FEAC39F2"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/FargateStack/Service/LB/PublicListener/ECSGroup/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ServiceLBPublicListenerECSGroup0CC8688C"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new ApplicationLoadBalancedFargateService2 in aws-cdk-lib...",
+        "new FargateStack (/mnt/projects/manguito-cms/infra/lib/fargate-stack.ts:56:21)"
+      ]
+    }
+  ],
+  "/FargateStack/Service/TaskDef/TaskRole/DefaultPolicy/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ServiceTaskDefTaskRoleDefaultPolicy9CCB4F8E"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/FargateStack/Service/TaskDef/web/LogGroup/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ServiceTaskDefwebLogGroup2A898F61"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/FargateStack/Service/TaskDef/ExecutionRole/DefaultPolicy/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ServiceTaskDefExecutionRoleDefaultPolicy3073559D"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ]
+}

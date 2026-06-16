@@ -1,0 +1,31 @@
+{
+  "name": "sandbox",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "manguito dev --env .env",
+    "build": "manguito build --env .env",
+    "start": "manguito start --env .env",
+    "migrate": "manguito migrate --env .env",
+    "validate": "manguito validate --env .env",
+    "test": "dotenv -e .env.test -- vitest run",
+    "smoke": "dotenv -e ../../.env.test -- vitest run tests/smoke.test.ts",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@bobbykim/manguito-cms-admin": "workspace:*",
+    "@bobbykim/manguito-cms-api": "workspace:*",
+    "@bobbykim/manguito-cms-cli": "workspace:*",
+    "@bobbykim/manguito-cms-core": "workspace:*",
+    "@bobbykim/manguito-cms-db": "workspace:*"
+  },
+  "devDependencies": {
+    "@bobbykim/manguito-cms-test-utils": "workspace:*",
+    "@types/node": "^25.6.0",
+    "dotenv-cli": "latest",
+    "drizzle-kit": "^0.31.0",
+    "typescript": "^6.0.0",
+    "vitest": "^4.1.0"
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "name": "@bobbykim/manguito-cms-api",
+  "version": "0.0.1",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./storage": {
+      "types": "./dist/storage/index.d.ts",
+      "import": "./dist/storage/index.mjs",
+      "require": "./dist/storage/index.js"
+    },
+    "./runtime": {
+      "types": "./dist/runtime/index.d.ts",
+      "import": "./dist/runtime/index.mjs",
+      "require": "./dist/runtime/index.js"
+    },
+    "./codegen": {
+      "types": "./dist/codegen/index.d.ts",
+      "import": "./dist/codegen/index.mjs",
+      "require": "./dist/codegen/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "dotenv -e .env.test -- vitest run",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.0.0",
+    "@aws-sdk/s3-request-presigner": "^3.0.0",
+    "bcryptjs": "^2.4.3",
+    "drizzle-orm": "^0.45.0",
+    "@bobbykim/manguito-cms-core": "workspace:*",
+    "@bobbykim/manguito-cms-db": "workspace:*",
+    "@hono/node-server": "^1.13.0",
+    "@hono/zod-openapi": "^1.3.0",
+    "better-auth": "^1.6.0",
+    "hono": "^4.12.0",
+    "zod": "^4.3.0"
+  },
+  "devDependencies": {
+    "@bobbykim/manguito-cms-test-utils": "workspace:*",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^25.6.0",
+    "dotenv-cli": "latest",
+    "tsup": "^8.5.0",
+    "typescript": "^6.0.0",
+    "vitest": "^4.1.0"
+  }
+}
