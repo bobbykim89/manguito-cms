@@ -29,13 +29,13 @@ export default defineConfig({
     folder: './migrations',
   },
 
-  storage: createCloudinaryAdapter({
-    folder: 'manguito-sandbox',
-  }),
-  // storage: createS3Adapter({
-  //   bucket: process.env['S3_BUCKET'] ?? '',
-  //   region: process.env['AWS_REGION'] ?? 'us-east-1',
+  // storage: createCloudinaryAdapter({
+  //   folder: 'manguito-sandbox',
   // }),
+  storage: createS3Adapter({
+    bucket: process.env['S3_BUCKET'] ?? '',
+    region: process.env['AWS_REGION'] ?? 'us-east-1',
+  }),
   // storage: createLocalAdapter(), // for local testing
 
   server: createServer({
