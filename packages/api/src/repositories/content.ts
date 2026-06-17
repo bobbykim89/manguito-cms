@@ -10,6 +10,8 @@ import type {
   UpdateInput,
   FilterOperator,
   FilterValue,
+  ParsedField,
+  SchemaRegistry,
 } from '@bobbykim/manguito-cms-core'
 
 // ─── Relation definition types ────────────────────────────────────────────────
@@ -46,6 +48,52 @@ export type RelationDef =
 
 export type ContentRepositoryOptions = {
   relations?: Record<string, RelationDef>
+}
+
+// Derives a repository's relations map from its parsed schema fields, so
+// paragraph/reference/media fields are actually resolved by resolveRows()
+// instead of silently dropped. Junction info (many-to-many) and foreign_key
+// info (one-to-one/many-to-one) are already fully resolved by the schema
+// parser onto each field's db_column — no extra registry lookups needed
+// except for paragraph fields, which store their target table only on the
+// paragraph type itself.
+export function buildRelationsMap(
+  fields: ParsedField[],
+  registry: SchemaRegistry
+): Record<string, RelationDef> {
+  const relations: Record<string, RelationDef> = {}
+
+  for (const field of fields) {
+    if (field.field_type === 'image' || field.field_type === 'video' || field.field_type === 'file') {
+      if (!field.db_column) continue
+      relations[field.name] = { type: 'media', fk_column: field.db_column.column_name }
+    } else if (field.field_type === 'paragraph') {
+      const ref = (field.ui_component as { ref?: string }).ref
+      const pType = ref ? registry.paragraph_types[ref] : undefined
+      if (!pType) continue
+      relations[field.name] = { type: 'paragraph', table: pType.db.table_name }
+    } else if (field.field_type === 'reference') {
+      if (!field.db_column) continue
+      if (field.db_column.junction) {
+        const j = field.db_column.junction
+        relations[field.name] = {
+          type: 'junction',
+          table: j.right_table,
+          junction_table: j.table_name,
+          left_column: j.left_column,
+          right_column: j.right_column,
+        }
+      } else if (field.db_column.foreign_key) {
+        relations[field.name] = {
+          type: 'reference',
+          table: field.db_column.foreign_key.table,
+          fk_column: field.db_column.column_name,
+        }
+      }
+    }
+  }
+
+  return relations
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -253,6 +301,47 @@ export function createDrizzleContentRepository<T>(
     }
   }
 
+  // Populates paragraph/junction fields with bare ID arrays when not
+  // explicitly included — they have no column on the owning table, so
+  // without this they'd be silently absent from the response. Reference
+  // fields with a plain foreign_key already carry their bare ID as a real
+  // column from `SELECT *`, so they need no extra query here.
+  async function batchResolveBareIds(
+    rows: Record<string, unknown>[],
+    fieldName: string,
+    rel: RelationDef
+  ): Promise<void> {
+    if (rows.length === 0) return
+
+    if (rel.type === 'paragraph') {
+      const parentIds = rows.map((r) => r['id'] as string)
+      const inList = sql.join(
+        parentIds.map((id) => sql`${id}`),
+        sql`, `
+      )
+      const result = await db.execute(
+        sql`SELECT id, parent_id FROM ${sql.raw(quoteIdent(rel.table))} WHERE parent_id IN (${inList}) ORDER BY "order" ASC`
+      )
+      const byParent = groupBy(result.rows as Record<string, unknown>[], 'parent_id')
+      for (const row of rows) {
+        row[fieldName] = (byParent[row['id'] as string] ?? []).map((r) => r['id'])
+      }
+    } else if (rel.type === 'junction') {
+      const parentIds = rows.map((r) => r['id'] as string)
+      const inList = sql.join(
+        parentIds.map((id) => sql`${id}`),
+        sql`, `
+      )
+      const result = await db.execute(
+        sql`SELECT ${sql.raw(quoteIdent(rel.left_column))} AS left_id, ${sql.raw(quoteIdent(rel.right_column))} AS right_id FROM ${sql.raw(quoteIdent(rel.junction_table))} WHERE ${sql.raw(quoteIdent(rel.left_column))} IN (${inList})`
+      )
+      const byLeft = groupBy(result.rows as Record<string, unknown>[], 'left_id')
+      for (const row of rows) {
+        row[fieldName] = (byLeft[row['id'] as string] ?? []).map((r) => r['right_id'])
+      }
+    }
+  }
+
   async function resolveRows(
     rows: Record<string, unknown>[],
     include: string[],
@@ -267,10 +356,13 @@ export function createDrizzleContentRepository<T>(
       }
     }
 
-    // Always resolve media fields
+    // Always resolve media fields; for all other relations not explicitly
+    // included, populate bare IDs so the field is never silently dropped.
     for (const [fieldName, rel] of Object.entries(relations)) {
       if (rel.type === 'media') {
         await batchResolveField(rows, fieldName, rel, cache)
+      } else if (!include.includes(fieldName)) {
+        await batchResolveBareIds(rows, fieldName, rel)
       }
     }
 
@@ -335,7 +427,7 @@ export function createDrizzleContentRepository<T>(
       }
     },
 
-    async findOne(id: string): Promise<T | null> {
+    async findOne(id: string, include: string[] = []): Promise<T | null> {
       const result = await db.execute(
         sql`SELECT * FROM ${tableRaw()} WHERE id = ${id} LIMIT 1`
       )
@@ -343,11 +435,11 @@ export function createDrizzleContentRepository<T>(
 
       const rows = result.rows as Record<string, unknown>[]
       const cache = new Map<string, unknown>()
-      await resolveRows(rows, [], cache)
+      await resolveRows(rows, include, cache)
       return rows[0] as T
     },
 
-    async findBySlug(slug: string): Promise<T | null> {
+    async findBySlug(slug: string, include: string[] = []): Promise<T | null> {
       const result = await db.execute(
         sql`SELECT * FROM ${tableRaw()} WHERE slug = ${slug} LIMIT 1`
       )
@@ -355,7 +447,7 @@ export function createDrizzleContentRepository<T>(
 
       const rows = result.rows as Record<string, unknown>[]
       const cache = new Map<string, unknown>()
-      await resolveRows(rows, [], cache)
+      await resolveRows(rows, include, cache)
       return rows[0] as T
     },
 
