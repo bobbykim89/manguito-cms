@@ -8,7 +8,7 @@
     "cdk": "cdk",
     "synth": "cdk synth",
     "deploy:iam": "cdk deploy IamWorkerStack",
-    "deploy:lambda": "pnpm --filter sandbox run build && cdk deploy LambdaStack --require-approval never",
+    "deploy:lambda": "cdk deploy LambdaStack --require-approval never",
     "deploy:fargate": "cdk deploy FargateStack --require-approval never",
     "destroy:lambda": "cdk destroy LambdaStack",
     "destroy:fargate": "cdk destroy FargateStack"

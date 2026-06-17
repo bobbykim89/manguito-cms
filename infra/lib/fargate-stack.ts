@@ -61,7 +61,7 @@ export class FargateStack extends cdk.Stack {
       assignPublicIp: true,
       taskSubnets: { subnetType: ec2.SubnetType.PUBLIC },
       taskImageOptions: {
-        image: ecs.ContainerImage.fromAsset(repoRoot, { file: 'Dockerfile' }),
+        image: ecs.ContainerImage.fromAsset(repoRoot, { file: 'Dockerfile', target: 'fargate' }),
         containerPort: 3000,
         environment: {
           DB_URL: cmsEnv.DB_URL,

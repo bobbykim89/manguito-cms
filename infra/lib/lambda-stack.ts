@@ -10,12 +10,19 @@ export type LambdaStackProps = cdk.StackProps & {
 }
 
 /**
- * Deploys the sandbox app's pre-built `dist/` as a Lambda function, invoked
+ * Deploys the sandbox app as a container-image Lambda function, invoked
  * directly via a Function URL (no API Gateway — `hono/aws-lambda`'s handle()
  * is compatible with the Function URL payload format).
  *
- * Run `manguito build --env .env` in apps/sandbox before deploying — this
- * stack packages the resulting dist/ as the function code.
+ * Built from the repo-root Dockerfile's `lambda` target — `dist/handler.js`
+ * imports workspace packages directly rather than bundling them, so the
+ * function needs a real node_modules with them resolved (same reason
+ * Fargate needs the multi-stage build). A zip-based Lambda with just
+ * `pnpm deploy --prod` output was tried first but came out to ~298MB, over
+ * Lambda's 250MB unzipped limit, since this pnpm version doesn't fully
+ * exclude devDependencies under force-legacy-deploy. The `public.ecr.aws/
+ * lambda/nodejs:22` base image used by the `lambda` Docker target carries
+ * the Lambda Runtime Interface Client needed to run as a Lambda function.
  *
  * No VPC: the CMS talks to Neon (HTTP-reachable Postgres) and S3 (the AWS
  * SDK reaches it over the public S3 endpoint), so there is no private
@@ -33,14 +40,16 @@ export class LambdaStack extends cdk.Stack {
     super(scope, id, props)
 
     const { cmsEnv } = props
+    const repoRoot = path.join(__dirname, '../..')
 
-    const fn = new lambda.Function(this, 'CmsFunction', {
+    const fn = new lambda.DockerImageFunction(this, 'CmsFunction', {
       functionName: 'manguito-cms-sandbox',
       description: 'Manguito CMS sandbox — Lambda deployment test',
-      runtime: lambda.Runtime.NODEJS_22_X,
-      architecture: lambda.Architecture.ARM_64,
-      handler: 'handler.handler',
-      code: lambda.Code.fromAsset(path.join(__dirname, '../../apps/sandbox/dist')),
+      architecture: lambda.Architecture.X86_64,
+      code: lambda.DockerImageCode.fromImageAsset(repoRoot, {
+        file: 'Dockerfile',
+        target: 'lambda',
+      }),
       memorySize: 1024,
       timeout: cdk.Duration.seconds(30),
       environment: {
