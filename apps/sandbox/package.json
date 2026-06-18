@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "manguito dev --env .env",
     "build": "manguito build --env .env",
+    "build:vercel": "manguito build && rm -rf public && mkdir -p public/admin && cp -r dist/admin/. public/admin/",
     "start": "manguito start --env .env",
     "migrate": "manguito migrate --env .env",
     "validate": "manguito validate --env .env",
