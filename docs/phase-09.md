@@ -122,8 +122,8 @@ packages/cli/
 | Target | How it runs |
 |--------|-------------|
 | Traditional server | `manguito start` → Hono server listens on PORT |
-| AWS Lambda | Platform invokes `dist/handler.js` directly |
-| Vercel | Platform invokes `dist/vercel.js` directly |
+| AWS Lambda | Platform invokes `dist/handler.js` directly (via a Docker image's `CMD`, see [lambda.md](./deployment/lambda.md)) |
+| Vercel | A thin `api/index.ts` wrapper at the repo root dynamically imports `dist/vercel.js` — Vercel can't invoke it directly, since its `api/` function-discovery convention requires the entry to live at the deployed project root, not inside a workspace package's `dist/`. See [vercel.md](./deployment/vercel.md) for the full set of constraints this ran into. |
 
 `manguito start` has no knowledge of serverless targets — that is handled by which entry point the platform calls.
 
