@@ -1,11 +1,13 @@
 {
   "private": true,
+  "packageManager": "pnpm@10.32.1",
   "engines": {
     "node": ">=22.0.0"
   },
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
+    "build:packages": "pnpm --filter @bobbykim/manguito-cms-core run build && pnpm --filter @bobbykim/manguito-cms-db run build && pnpm --filter @bobbykim/manguito-cms-api run build && pnpm --filter @bobbykim/manguito-cms-admin run build && pnpm --filter @bobbykim/manguito-cms-cli run build && pnpm install --frozen-lockfile",
     "test": "turbo run test",
     "smoke": "dotenv -e .env.test -- vitest run apps/sandbox/tests",
     "lint": "turbo run lint",

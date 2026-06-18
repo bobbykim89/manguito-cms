@@ -246,7 +246,7 @@ export function registerPublicContentRoutes(
           }
         }
 
-        const item = await repo.findBySlug(slug)
+        const item = await repo.findBySlug(slug, include)
 
         if (!item || !isPublished(item)) {
           return c.json(

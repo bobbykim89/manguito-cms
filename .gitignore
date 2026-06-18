@@ -11,3 +11,6 @@ coverage/
 uploads/
 .tmp-globalsetup/
 .manguito/
+.vercel/
+apps/sandbox/public/
+.vercel

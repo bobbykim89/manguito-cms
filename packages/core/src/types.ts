@@ -79,8 +79,8 @@ export type UpdateInput<T> = Partial<Omit<T, 'id' | 'created_at' | 'updated_at'>
 
 export interface ContentRepository<T> {
   findMany(options: FindManyOptions): Promise<PaginatedResult<T>>
-  findOne(id: string): Promise<T | null>
-  findBySlug(slug: string): Promise<T | null>
+  findOne(id: string, include?: string[]): Promise<T | null>
+  findBySlug(slug: string, include?: string[]): Promise<T | null>
   create(data: CreateInput<T>): Promise<T>
   update(id: string, data: UpdateInput<T>): Promise<T | null>
   delete(id: string): Promise<void>

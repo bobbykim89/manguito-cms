@@ -18,7 +18,7 @@ import { registerAuthRoutes } from './routes/admin/auth.js'
 import { registerUserRoutes } from './routes/admin/users.js'
 import { registerConfigRoute } from './routes/admin/config.js'
 import { registerSchemaRoute } from './routes/admin/schema.js'
-import { createDrizzleContentRepository } from './repositories/content.js'
+import { createDrizzleContentRepository, buildRelationsMap } from './repositories/content.js'
 import { createMediaRepository } from './repositories/media.js'
 
 export type CreateCmsAppOptions = {
@@ -120,6 +120,30 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
   const repos = { ...contentRepos, ...taxonomyRepos }
   const mediaRepo = createMediaRepository(db)
 
+  // ── Public-only repos ───────────────────────────────────────────────────────
+  //
+  // Relation resolution (?include=, always-resolved media) is wired only for
+  // the public read API. Admin routes reuse `repos` above and must keep
+  // receiving raw foreign-key IDs back from findOne/update — the edit forms
+  // (e.g. MediaUpload.vue) expect a plain ID string, not a resolved object.
+  const publicContentRepos = Object.fromEntries(
+    Object.entries(registry.content_types).map(([typeName, ct]) => [
+      typeName,
+      createDrizzleContentRepository(db, (ct as ParsedContentType).db.table_name, {
+        relations: buildRelationsMap((ct as ParsedContentType).fields, registry),
+      }),
+    ])
+  )
+  const publicTaxonomyRepos = Object.fromEntries(
+    Object.entries(registry.taxonomy_types).map(([typeName, tt]) => [
+      typeName,
+      createDrizzleContentRepository(db, (tt as ParsedTaxonomyType).db.table_name, {
+        relations: buildRelationsMap((tt as ParsedTaxonomyType).fields, registry),
+      }),
+    ])
+  )
+  const publicRepos = { ...publicContentRepos, ...publicTaxonomyRepos }
+
   // ── Auth routes registered directly on app BEFORE the blanket use() calls ───────
   //
   // registerAuthRoutes uses full paths (/admin/api/auth/login etc.). Mounting via
@@ -175,7 +199,7 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
 
   // ── Public routes ─────────────────────────────────────────────────────────────
 
-  registerPublicContentRoutes(app, registry, repos, listRateLimit)
+  registerPublicContentRoutes(app, registry, publicRepos, listRateLimit)
   registerPublicMediaRoutes(app, mediaRepo, listRateLimit)
 
   // ── Admin routes — all registered AFTER the blanket use() so auth middleware
