@@ -119,14 +119,15 @@ function goToCreate() {
 
   <div v-else>
     <!-- Page header -->
-    <div class="mb-6 flex items-center justify-between">
-      <h1 class="text-xl font-semibold text-gray-900">{{ contentType.label }}</h1>
+    <div class="mb-[22px] flex flex-wrap items-center justify-between gap-4">
+      <h1 class="text-[26px] font-bold tracking-tight text-ink">{{ contentType.label }}</h1>
       <button
         v-if="can('content:create')"
         type="button"
-        class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+        class="inline-flex items-center gap-[7px] rounded-[11px] bg-indigo-600 px-4 py-2.5 text-[13.5px] font-semibold text-white shadow-[0_3px_10px_rgba(91,87,232,0.3)] transition-all hover:bg-indigo-700 hover:shadow-[0_6px_18px_rgba(91,87,232,0.4)]"
         @click="goToCreate"
       >
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14" /><path d="M5 12h14" /></svg>
         New {{ contentType.label }}
       </button>
     </div>
@@ -136,16 +137,16 @@ function goToCreate() {
       <div
         v-for="n in 8"
         :key="n"
-        class="h-12 animate-pulse rounded-md bg-gray-100"
+        class="h-12 animate-pulse rounded-[10px] bg-gray-100"
       />
     </div>
 
     <!-- Empty state -->
     <div
       v-else-if="items.length === 0"
-      class="rounded-lg border border-dashed border-gray-300 p-12 text-center"
+      class="rounded-[16px] border border-dashed border-gray-300 p-12 text-center"
     >
-      <p class="text-sm text-gray-500">No {{ contentType.label }} items yet.</p>
+      <p class="text-sm text-muted">No {{ contentType.label }} items yet.</p>
       <button
         v-if="can('content:create')"
         type="button"
@@ -157,33 +158,33 @@ function goToCreate() {
     </div>
 
     <!-- Table -->
-    <div v-else class="overflow-hidden rounded-lg border border-gray-200">
+    <div v-else class="overflow-hidden rounded-[16px] border border-card-border bg-white shadow-[0_1px_2px_rgba(24,24,48,0.04),0_10px_28px_rgba(24,24,48,0.04)]">
       <table class="w-full text-sm">
-        <thead class="bg-gray-50 text-xs font-medium uppercase tracking-wide text-gray-500">
-          <tr>
-            <th class="px-4 py-3 text-left">Title</th>
-            <th class="px-4 py-3 text-left">Slug</th>
-            <th class="px-4 py-3 text-left">Status</th>
-            <th class="px-4 py-3 text-left">Updated</th>
+        <thead class="text-[11.5px] font-bold uppercase tracking-[.06em] text-faint">
+          <tr class="border-b border-divider">
+            <th class="px-[22px] py-3.5 text-left">Title</th>
+            <th class="px-[22px] py-3.5 text-left">Slug</th>
+            <th class="px-[22px] py-3.5 text-left">Status</th>
+            <th class="px-[22px] py-3.5 text-left">Updated</th>
           </tr>
         </thead>
-        <tbody class="divide-y divide-gray-100">
+        <tbody class="divide-y divide-[#F4F3F9]">
           <tr
             v-for="item in items"
             :key="String(item.id)"
-            class="cursor-pointer hover:bg-gray-50"
+            class="cursor-pointer transition-colors hover:bg-[#FAFAFE]"
             @click="goToEdit(item)"
           >
-            <td class="px-4 py-3 font-medium text-gray-900">
+            <td class="px-[22px] py-4 text-[14.5px] font-semibold text-ink">
               {{ item[titleField] ?? '—' }}
             </td>
-            <td class="px-4 py-3 font-mono text-gray-500">
+            <td class="px-[22px] py-4 font-mono text-[12.5px] text-muted">
               {{ item.slug ?? '—' }}
             </td>
-            <td class="px-4 py-3">
+            <td class="px-[22px] py-4">
               <StatusBadge :published="item.published === true" />
             </td>
-            <td class="px-4 py-3 text-gray-500">
+            <td class="px-[22px] py-4 text-[13px] text-faint">
               {{ formatDate(item.updated_at) }}
             </td>
           </tr>

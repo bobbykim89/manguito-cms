@@ -19,6 +19,7 @@ import EnumSelect from '../../components/fields/EnumSelect.vue'
 import ReferenceSelect from '../../components/fields/ReferenceSelect.vue'
 import ParagraphEmbed from '../../components/fields/ParagraphEmbed.vue'
 import ConfirmDialog from '../../components/shared/ConfirmDialog.vue'
+import { useTabIndicator } from '../../composables/useTabIndicator'
 
 const route = useRoute()
 const router = useRouter()
@@ -67,6 +68,9 @@ const pendingAction = ref<(() => Promise<void>) | null>(null)
 
 // Active tab index
 const activeTabIndex = ref(0)
+const activeTabId = computed(() => tabs.value[activeTabIndex.value]?.name ?? '')
+const tabBarRef = ref<HTMLElement | null>(null)
+const { left: tabIndLeft, width: tabIndWidth } = useTabIndicator(tabBarRef, activeTabId)
 const activeTabFields = computed<ParsedField[]>(() => {
   if (tabs.value.length === 0) return allFields.value
   const tab = tabs.value[activeTabIndex.value]
@@ -393,21 +397,21 @@ const pageTitle = computed(() => {
 
   <div v-else>
     <!-- Page header -->
-    <div class="mb-6 flex items-start justify-between gap-4">
+    <div class="mb-[22px] flex flex-wrap items-start justify-between gap-4">
       <div>
-        <p class="text-xs font-medium uppercase tracking-wide text-gray-400">
+        <p class="mb-1.5 text-[11px] font-bold uppercase tracking-[.06em] text-faint">
           {{ contentType.label }}
         </p>
-        <h1 class="text-xl font-semibold text-gray-900">{{ pageTitle }}</h1>
+        <h1 class="text-[25px] font-bold tracking-tight text-ink">{{ pageTitle }}</h1>
       </div>
 
       <!-- Action bar -->
-      <div class="flex shrink-0 items-center gap-2">
+      <div class="flex shrink-0 flex-wrap items-center gap-[9px]">
         <button
           v-if="can('content:delete') && mode === 'edit'"
           type="button"
           :disabled="saving"
-          class="rounded-md px-3 py-2 text-sm font-medium text-red-600 ring-1 ring-inset ring-red-300 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+          class="inline-flex items-center gap-1.5 rounded-[10px] border border-[#F3D2D7] bg-white px-[15px] py-2.5 text-[13px] font-semibold text-[#E1495B] transition-colors hover:bg-[#FDF2F4] disabled:cursor-not-allowed disabled:opacity-50"
           @click="showDeleteConfirm = true"
         >
           Delete
@@ -418,7 +422,7 @@ const pageTitle = computed(() => {
             v-if="isPublished"
             type="button"
             :disabled="saving"
-            class="rounded-md px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            class="rounded-[10px] border border-[#E4E3EE] bg-white px-4 py-2.5 text-[13px] font-semibold text-[#3D3D52] transition-colors hover:bg-surface disabled:cursor-not-allowed disabled:opacity-50"
             @click="unpublish"
           >
             Unpublish
@@ -427,7 +431,7 @@ const pageTitle = computed(() => {
             v-else
             type="button"
             :disabled="saving"
-            class="rounded-md px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            class="rounded-[10px] border border-[#E4E3EE] bg-white px-4 py-2.5 text-[13px] font-semibold text-[#3D3D52] transition-colors hover:bg-surface disabled:cursor-not-allowed disabled:opacity-50"
             @click="publish"
           >
             Publish
@@ -436,7 +440,7 @@ const pageTitle = computed(() => {
           <button
             type="button"
             :disabled="saving"
-            class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+            class="inline-flex items-center gap-1.5 rounded-[10px] bg-indigo-600 px-4 py-2.5 text-[13px] font-semibold text-white shadow-[0_3px_10px_rgba(91,87,232,0.3)] transition-all hover:bg-indigo-700 hover:shadow-[0_6px_18px_rgba(91,87,232,0.4)] disabled:cursor-not-allowed disabled:opacity-50"
             @click="saveDraft"
           >
             {{ saving ? 'Saving…' : 'Save draft' }}
@@ -446,23 +450,23 @@ const pageTitle = computed(() => {
     </div>
 
     <!-- Slug field (hidden for singletons) -->
-    <div v-if="!isSingleton" class="mb-5 rounded-md border border-gray-200 bg-gray-50 p-4">
-      <label for="slug-field" class="block text-sm font-medium text-gray-700">
+    <div v-if="!isSingleton" class="mb-[18px] rounded-2xl border border-card-border bg-white p-5 shadow-[0_1px_2px_rgba(24,24,48,0.04),0_8px_22px_rgba(24,24,48,0.04)]">
+      <label for="slug-field" class="block text-[13px] font-semibold text-[#3D3D52]">
         Slug
         <span class="ml-0.5 text-red-500" aria-hidden="true">*</span>
       </label>
 
-      <div class="mt-1 flex items-center gap-2">
+      <div class="mt-2 flex flex-wrap items-center gap-[10px]">
         <input
           id="slug-field"
           v-model="form.slug"
           type="text"
           :disabled="saving || (isPublished && !slugUnlocked)"
           :class="[
-            'block flex-1 rounded-md border px-3 py-2 font-mono text-sm shadow-sm focus:outline-none focus:ring-2',
+            'block min-w-[180px] flex-1 rounded-[10px] border px-[13px] py-[11px] font-mono text-sm focus:outline-none focus:ring-2',
             errors.slug
               ? 'border-red-300 focus:border-red-400 focus:ring-red-200'
-              : 'border-gray-300 focus:border-indigo-400 focus:ring-indigo-200',
+              : 'border-[#E4E3EE] bg-surface focus:border-indigo-400 focus:ring-indigo-200',
             (saving || (isPublished && !slugUnlocked)) &&
               'cursor-not-allowed bg-gray-100 opacity-70',
           ]"
@@ -471,14 +475,14 @@ const pageTitle = computed(() => {
         <button
           v-if="isPublished && !slugUnlocked"
           type="button"
-          class="shrink-0 rounded-md px-3 py-2 text-sm font-medium text-gray-600 ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+          class="shrink-0 rounded-[10px] border border-[#E4E3EE] bg-white px-4 py-2.5 text-sm font-semibold text-[#3D3D52] transition-colors hover:bg-surface"
           @click="slugUnlocked = true"
         >
           Edit slug
         </button>
       </div>
 
-      <p v-if="isPublished" class="mt-1 text-xs text-amber-600">
+      <p v-if="isPublished" class="mt-[9px] text-[12.5px] text-[#D9913C]">
         Changing this slug will break existing links.
       </p>
       <p v-if="errors.slug" class="mt-1 text-sm text-red-600" role="alert">
@@ -487,21 +491,24 @@ const pageTitle = computed(() => {
     </div>
 
     <!-- Tab navigation (only when 2+ tabs) -->
-    <div v-if="tabs.length > 1" class="mb-5 flex gap-1 border-b border-gray-200">
+    <div v-if="tabs.length > 1" ref="tabBarRef" class="relative mb-[22px] flex gap-0 overflow-x-auto border-b border-card-border">
       <button
         v-for="(tab, i) in tabs"
         :key="tab.name"
+        :data-tab="tab.name"
         type="button"
         :class="[
-          'px-4 py-2 text-sm font-medium transition-colors',
-          activeTabIndex === i
-            ? 'border-b-2 border-indigo-600 text-indigo-600'
-            : 'text-gray-500 hover:text-gray-800',
+          'mr-6 whitespace-nowrap bg-none px-0.5 py-[11px] text-sm transition-colors',
+          activeTabIndex === i ? 'font-semibold text-indigo-600' : 'font-medium text-faint hover:text-[#8A8A9E]',
         ]"
         @click="activeTabIndex = i"
       >
         {{ tab.label }}
       </button>
+      <div
+        class="absolute -bottom-px h-0.5 rounded-full bg-indigo-600 transition-[left,width] duration-300"
+        :style="{ left: `${tabIndLeft}px`, width: `${tabIndWidth}px` }"
+      />
     </div>
 
     <!-- Fields -->

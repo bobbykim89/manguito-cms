@@ -7,6 +7,7 @@ import { usePermission } from '../../composables/usePermission'
 import { useNotification } from '../../composables/useNotification'
 import { useUiStore } from '../../stores/ui'
 import { useMediaStore } from '../../stores/media'
+import { useTabIndicator } from '../../composables/useTabIndicator'
 import Pagination from '../../components/shared/Pagination.vue'
 import ConfirmDialog from '../../components/shared/ConfirmDialog.vue'
 
@@ -31,6 +32,9 @@ const TABS: { value: MediaTab; label: string }[] = [
   { value: 'file', label: 'PDFs' },
   { value: 'orphaned', label: 'Orphaned' },
 ]
+
+const tabBarRef = ref<HTMLElement | null>(null)
+const { left: tabIndLeft, width: tabIndWidth } = useTabIndicator(tabBarRef, activeTab)
 
 // ── Grid data ─────────────────────────────────────────────────────────────────
 
@@ -255,8 +259,8 @@ function cancelUpload() {
 <template>
   <div>
     <!-- Page header -->
-    <div class="mb-5 flex items-center justify-between gap-4">
-      <h1 class="text-xl font-semibold text-gray-900">Media library</h1>
+    <div class="mb-[18px] flex flex-wrap items-center justify-between gap-4">
+      <h1 class="text-[26px] font-bold tracking-tight text-ink">Media library</h1>
 
       <!-- Upload button -->
       <div v-if="can('media:create')">
@@ -269,9 +273,10 @@ function cancelUpload() {
         />
         <button
           type="button"
-          class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+          class="inline-flex items-center gap-1.75 rounded-[11px] bg-indigo-600 px-4 py-2.5 text-[13.5px] font-semibold text-white shadow-[0_3px_10px_rgba(91,87,232,0.3)] transition-all hover:bg-indigo-700 hover:shadow-[0_6px_18px_rgba(91,87,232,0.4)]"
           @click="fileInputRef?.click()"
         >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="M17 8l-5-5-5 5" /><path d="M12 3v12" /></svg>
           Upload
         </button>
       </div>
@@ -334,21 +339,24 @@ function cancelUpload() {
     </div>
 
     <!-- Tab bar -->
-    <div class="mb-4 flex items-center gap-1 border-b border-gray-200">
+    <div ref="tabBarRef" class="relative mb-[22px] flex gap-0 overflow-x-auto border-b border-card-border">
       <button
         v-for="tab in TABS"
         :key="tab.value"
+        :data-tab="tab.value"
         type="button"
         :class="[
-          'px-3 py-2 text-sm font-medium transition-colors',
-          activeTab === tab.value
-            ? 'border-b-2 border-indigo-600 text-indigo-600'
-            : 'text-gray-500 hover:text-gray-800',
+          'mr-[22px] whitespace-nowrap bg-none px-0.5 py-[11px] text-sm transition-colors',
+          activeTab === tab.value ? 'font-semibold text-indigo-600' : 'font-medium text-faint hover:text-[#8A8A9E]',
         ]"
         @click="activeTab = tab.value"
       >
         {{ tab.label }}
       </button>
+      <div
+        class="absolute bottom-[-1px] h-[2px] rounded-full bg-indigo-600 transition-[left,width] duration-300"
+        :style="{ left: `${tabIndLeft}px`, width: `${tabIndWidth}px` }"
+      />
     </div>
 
     <!-- Bulk delete toolbar (orphaned tab) -->
@@ -381,16 +389,16 @@ function cancelUpload() {
       <div
         v-for="n in 12"
         :key="n"
-        class="aspect-square animate-pulse rounded-md bg-gray-100"
+        class="aspect-square animate-pulse rounded-[14px] bg-gray-100"
       />
     </div>
 
     <!-- Empty state -->
     <div
       v-else-if="items.length === 0"
-      class="rounded-lg border border-dashed border-gray-300 p-12 text-center"
+      class="rounded-2xl border border-dashed border-gray-300 p-12 text-center"
     >
-      <p class="text-sm text-gray-500">
+      <p class="text-sm text-muted">
         {{ isOrphanedTab ? 'No orphaned files.' : 'No media files yet.' }}
       </p>
     </div>
@@ -422,7 +430,7 @@ function cancelUpload() {
         <!-- Clickable item card -->
         <button
           type="button"
-          class="h-full w-full overflow-hidden rounded-md border-2 border-transparent transition-colors hover:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          class="h-full w-full overflow-hidden rounded-[14px] border border-card-border shadow-[0_1px_2px_rgba(24,24,48,0.04),0_8px_22px_rgba(24,24,48,0.05)] transition-all hover:-translate-y-[3px] hover:shadow-[0_12px_30px_rgba(24,24,48,0.12)] focus:outline-none focus:ring-2 focus:ring-indigo-500"
           :aria-label="`View ${item.alt ?? item.url.split('/').pop()}`"
           @click="goToDetail(item.id)"
         >

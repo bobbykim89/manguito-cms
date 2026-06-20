@@ -116,7 +116,7 @@ const deleteTooltip = computed(() =>
     </button>
 
     <!-- Preview -->
-    <div class="overflow-hidden rounded-lg border border-gray-200 bg-white">
+    <div class="overflow-hidden rounded-2xl border border-card-border shadow-[0_1px_2px_rgba(24,24,48,0.04),0_8px_22px_rgba(24,24,48,0.04)] bg-white">
       <img
         v-if="item.type === 'image'"
         :src="item.url"
@@ -133,7 +133,7 @@ const deleteTooltip = computed(() =>
     </div>
 
     <!-- Metadata -->
-    <div class="rounded-lg border border-gray-200 bg-white p-5">
+    <div class="rounded-2xl border border-card-border shadow-[0_1px_2px_rgba(24,24,48,0.04),0_8px_22px_rgba(24,24,48,0.04)] bg-white p-5">
       <h2 class="mb-4 text-sm font-semibold uppercase tracking-wide text-gray-500">Metadata</h2>
       <dl class="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
         <div>
@@ -166,7 +166,7 @@ const deleteTooltip = computed(() =>
     </div>
 
     <!-- Alt text -->
-    <div class="rounded-lg border border-gray-200 bg-white p-5">
+    <div class="rounded-2xl border border-card-border shadow-[0_1px_2px_rgba(24,24,48,0.04),0_8px_22px_rgba(24,24,48,0.04)] bg-white p-5">
       <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">Alt text</h2>
       <textarea
         v-model="altText"
@@ -179,7 +179,7 @@ const deleteTooltip = computed(() =>
         <button
           type="button"
           :disabled="savingAlt"
-          class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+          class="rounded-[11px] bg-indigo-600 px-4 py-2.5 text-[13.5px] font-semibold text-white shadow-[0_3px_10px_rgba(91,87,232,0.3)] transition-all hover:bg-indigo-700 hover:shadow-[0_6px_18px_rgba(91,87,232,0.4)] disabled:cursor-not-allowed disabled:opacity-50"
           @click="saveAlt"
         >
           {{ savingAlt ? 'Saving…' : 'Save alt text' }}

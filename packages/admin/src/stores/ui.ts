@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
+import { useMediaQuery } from '@vueuse/core'
 
 export type ToastVariant = 'success' | 'error' | 'warning' | 'info'
 
@@ -15,7 +16,10 @@ const DEFAULT_DURATION = 4000
 
 export const useUiStore = defineStore('ui', () => {
   const toasts = ref<Toast[]>([])
-  const sidebarOpen = ref(true)
+  // Desktop: rail collapses to icon-only width. Mobile: rail becomes a slide-in drawer instead.
+  const sidebarCollapsed = ref(false)
+  const isMobile = useMediaQuery('(max-width: 820px)')
+  const mobileNavOpen = ref(false)
   const activeModal = ref<string | null>(null)
   const maxFileSize = ref(0)
   const cmsName = ref('Manguito CMS')
@@ -49,9 +53,25 @@ export const useUiStore = defineStore('ui', () => {
     cmsName.value = name
   }
 
+  // Single entry point for the topbar toggle button — collapses the rail on desktop,
+  // opens the drawer on mobile.
+  function toggleSidebar() {
+    if (isMobile.value) {
+      mobileNavOpen.value = !mobileNavOpen.value
+    } else {
+      sidebarCollapsed.value = !sidebarCollapsed.value
+    }
+  }
+
+  function closeMobileNav() {
+    mobileNavOpen.value = false
+  }
+
   return {
     toasts,
-    sidebarOpen,
+    sidebarCollapsed,
+    isMobile,
+    mobileNavOpen,
     activeModal,
     maxFileSize,
     cmsName,
@@ -59,5 +79,7 @@ export const useUiStore = defineStore('ui', () => {
     removeToast,
     setMaxFileSize,
     setCmsName,
+    toggleSidebar,
+    closeMobileNav,
   }
 })

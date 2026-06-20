@@ -69,7 +69,7 @@ async function onSubmit() {
       <form class="space-y-5" novalidate @submit.prevent="onSubmit">
         <!-- Current password -->
         <div>
-          <label for="current-password" class="block text-sm font-medium text-gray-700">
+          <label for="current-password" class="block text-[13px] font-semibold text-[#3D3D52]">
             Current password
           </label>
           <input
@@ -85,7 +85,7 @@ async function onSubmit() {
 
         <!-- New password -->
         <div>
-          <label for="new-password" class="block text-sm font-medium text-gray-700">
+          <label for="new-password" class="block text-[13px] font-semibold text-[#3D3D52]">
             New password
           </label>
           <input
@@ -101,7 +101,7 @@ async function onSubmit() {
 
         <!-- Confirm new password -->
         <div>
-          <label for="confirm-password" class="block text-sm font-medium text-gray-700">
+          <label for="confirm-password" class="block text-[13px] font-semibold text-[#3D3D52]">
             Confirm new password
           </label>
           <input

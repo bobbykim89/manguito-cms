@@ -60,7 +60,7 @@ function isActive(name: string, attrs?: Record<string, unknown>) {
 
 <template>
   <div>
-    <span class="block text-sm font-medium text-gray-700">
+    <span class="block text-[13px] font-semibold text-[#3D3D52]">
       {{ field.label }}
       <span v-if="field.required" class="ml-0.5 text-red-500" aria-hidden="true">*</span>
     </span>

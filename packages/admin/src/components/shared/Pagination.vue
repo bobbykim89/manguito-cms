@@ -47,7 +47,7 @@ function go(p: number) {
   >
     <button
       type="button"
-      class="rounded px-2.5 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+      class="rounded-md px-2.5 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
       :disabled="page === 1"
       aria-label="Previous page"
       @click="go(page - 1)"
@@ -69,7 +69,7 @@ function go(p: number) {
         :aria-label="`Page ${item}`"
         :aria-current="item === page ? 'page' : undefined"
         :class="[
-          'min-w-8 rounded px-2.5 py-1.5 text-sm font-medium',
+          'min-w-8 rounded-md px-2.5 py-1.5 text-sm font-medium',
           item === page
             ? 'bg-indigo-600 text-white'
             : 'text-gray-600 hover:bg-gray-100',
@@ -82,7 +82,7 @@ function go(p: number) {
 
     <button
       type="button"
-      class="rounded px-2.5 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+      class="rounded-md px-2.5 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
       :disabled="page === totalPages"
       aria-label="Next page"
       @click="go(page + 1)"

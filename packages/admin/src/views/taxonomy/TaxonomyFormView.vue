@@ -224,7 +224,7 @@ const pageTitle = computed(() => {
         <p class="text-xs font-medium uppercase tracking-wide text-gray-400">
           {{ taxonomyType.label }}
         </p>
-        <h1 class="text-xl font-semibold text-gray-900">{{ pageTitle }}</h1>
+        <h1 class="text-[26px] font-bold tracking-tight text-ink">{{ pageTitle }}</h1>
       </div>
 
       <!-- Action bar -->
@@ -243,7 +243,7 @@ const pageTitle = computed(() => {
           v-if="isEdit ? can('taxonomy:edit') : can('taxonomy:create')"
           type="button"
           :disabled="saving"
-          class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+          class="rounded-[11px] bg-indigo-600 px-4 py-2.5 text-[13.5px] font-semibold text-white shadow-[0_3px_10px_rgba(91,87,232,0.3)] transition-all hover:bg-indigo-700 hover:shadow-[0_6px_18px_rgba(91,87,232,0.4)] disabled:cursor-not-allowed disabled:opacity-50"
           @click="onSave"
         >
           {{ saving ? 'Saving…' : 'Save' }}
