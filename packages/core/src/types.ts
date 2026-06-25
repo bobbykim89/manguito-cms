@@ -64,6 +64,9 @@ export type FindManyOptions = {
   filters?: Record<string, FilterValue>
   sort_by?: 'title' | 'created_at' | 'updated_at'
   sort_order?: 'asc' | 'desc'
+  // Free-text search — `columns` are raw DB column names (resolved by the caller,
+  // e.g. the text/plain fields of a content/taxonomy type), OR'd together.
+  search?: { term: string; columns: string[] }
 }
 
 export type FindAllOptions = {

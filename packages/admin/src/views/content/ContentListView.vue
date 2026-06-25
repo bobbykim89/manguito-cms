@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useDebounceFn } from '@vueuse/core'
 import { useApiClient } from '../../composables/useApiClient'
 import { usePermission } from '../../composables/usePermission'
 import { useSchemaStore } from '../../stores/schema'
@@ -28,6 +29,7 @@ const items = ref<Record<string, unknown>[]>([])
 const total = ref(0)
 const page = ref(1)
 const loading = ref(false)
+const search = ref('')
 
 function formatDate(val: unknown): string {
   if (typeof val !== 'string' || !val) return '—'
@@ -40,16 +42,22 @@ function formatDate(val: unknown): string {
 
 async function loadPage(p: number) {
   loading.value = true
-  const cached = contentStore.getPage(type.value, p, DEFAULT_PAGE_SIZE)
-  if (cached) {
-    items.value = cached as Record<string, unknown>[]
-    total.value = contentStore.total
-    loading.value = false
-    return
+
+  const term = search.value.trim()
+  // Search has no place in the page cache's key — bypass it and hit the API directly.
+  if (term === '') {
+    const cached = contentStore.getPage(type.value, p, DEFAULT_PAGE_SIZE)
+    if (cached) {
+      items.value = cached as Record<string, unknown>[]
+      total.value = contentStore.total
+      loading.value = false
+      return
+    }
   }
 
+  const searchParam = term !== '' ? `&search=${encodeURIComponent(term)}` : ''
   const res = await api.get<Record<string, unknown>[]>(
-    `/content/${type.value}?page=${p}&per_page=${DEFAULT_PAGE_SIZE}`
+    `/content/${type.value}?page=${p}&per_page=${DEFAULT_PAGE_SIZE}${searchParam}`
   )
   loading.value = false
 
@@ -57,10 +65,17 @@ async function loadPage(p: number) {
     items.value = res.data
     const raw = res as unknown as { meta?: { total: number } }
     total.value = raw.meta?.total ?? res.data.length
-    contentStore.total = total.value
-    contentStore.setPage(type.value, p, DEFAULT_PAGE_SIZE, res.data)
+    if (term === '') {
+      contentStore.total = total.value
+      contentStore.setPage(type.value, p, DEFAULT_PAGE_SIZE, res.data)
+    }
   }
 }
+
+const onSearchInput = useDebounceFn(() => {
+  page.value = 1
+  void loadPage(1)
+}, 300)
 
 async function handleSingletonRedirect() {
   const res = await api.get<Record<string, unknown>[]>(`/content/${type.value}`)
@@ -132,6 +147,20 @@ function goToCreate() {
       </button>
     </div>
 
+    <!-- Search -->
+    <div class="mb-4 flex h-[38px] items-center gap-2 rounded-[10px] border border-card-border bg-[#FBFBFD] px-[11px] text-[13px] transition-colors focus-within:border-indigo-400">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-faint">
+        <path d="M21 21l-4.3-4.3" /><path d="M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z" />
+      </svg>
+      <input
+        v-model="search"
+        type="text"
+        :placeholder="`Search ${contentType.label.toLowerCase()}…`"
+        class="w-full bg-transparent text-ink outline-none placeholder:text-faint"
+        @input="onSearchInput"
+      />
+    </div>
+
     <!-- Loading skeleton -->
     <div v-if="loading" class="space-y-2">
       <div
@@ -146,9 +175,11 @@ function goToCreate() {
       v-else-if="items.length === 0"
       class="rounded-[16px] border border-dashed border-gray-300 p-12 text-center"
     >
-      <p class="text-sm text-muted">No {{ contentType.label }} items yet.</p>
+      <p class="text-sm text-muted">
+        {{ search.trim() !== '' ? `No results for “${search.trim()}”.` : `No ${contentType.label} items yet.` }}
+      </p>
       <button
-        v-if="can('content:create')"
+        v-if="can('content:create') && search.trim() === ''"
         type="button"
         class="mt-3 text-sm font-medium text-indigo-600 hover:text-indigo-800"
         @click="goToCreate"

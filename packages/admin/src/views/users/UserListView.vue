@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useApiClient } from '../../composables/useApiClient'
 import { usePermission } from '../../composables/usePermission'
@@ -10,6 +10,15 @@ const router = useRouter()
 const api = useApiClient()
 const { can } = usePermission()
 const usersStore = useUsersStore()
+
+const search = ref('')
+
+// Full list is already loaded eagerly (no pagination on this endpoint) — filter client-side.
+const filteredUsers = computed(() => {
+  const term = search.value.trim().toLowerCase()
+  if (term === '') return usersStore.users
+  return usersStore.users.filter(u => u.email.toLowerCase().includes(term))
+})
 
 function formatDate(val: string | unknown): string {
   if (typeof val !== 'string' || !val) return '—'
@@ -56,16 +65,40 @@ function goToCreate() {
       <div v-for="n in 5" :key="n" class="h-12 animate-pulse rounded-[10px] bg-gray-100" />
     </div>
 
+    <!-- Search -->
+    <div
+      v-else-if="usersStore.users.length > 0"
+      class="mb-4 flex h-9.5 items-center gap-2 rounded-[10px] border border-card-border bg-[#FBFBFD] px-2.75 text-[13px] transition-colors focus-within:border-indigo-400"
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-faint">
+        <path d="M21 21l-4.3-4.3" /><path d="M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z" />
+      </svg>
+      <input
+        v-model="search"
+        type="text"
+        placeholder="Search users…"
+        class="w-full bg-transparent text-ink outline-none placeholder:text-faint"
+      />
+    </div>
+
     <!-- Empty -->
     <div
-      v-else-if="usersStore.users.length === 0"
+      v-if="!usersStore.loading && usersStore.users.length === 0"
       class="rounded-2xl border border-dashed border-gray-300 p-12 text-center text-sm text-muted"
     >
       No users found.
     </div>
 
+    <!-- No search results -->
+    <div
+      v-else-if="!usersStore.loading && filteredUsers.length === 0"
+      class="rounded-2xl border border-dashed border-gray-300 p-12 text-center text-sm text-muted"
+    >
+      No results for “{{ search.trim() }}”.
+    </div>
+
     <!-- Table -->
-    <div v-else class="overflow-hidden rounded-2xl border border-card-border bg-white shadow-[0_1px_2px_rgba(24,24,48,0.04),0_10px_28px_rgba(24,24,48,0.04)]">
+    <div v-else-if="!usersStore.loading" class="overflow-hidden rounded-2xl border border-card-border bg-white shadow-[0_1px_2px_rgba(24,24,48,0.04),0_10px_28px_rgba(24,24,48,0.04)]">
       <table class="w-full text-sm">
         <thead class="text-[11.5px] font-bold uppercase tracking-[.06em] text-faint">
           <tr class="border-b border-divider">
@@ -76,7 +109,7 @@ function goToCreate() {
         </thead>
         <tbody class="divide-y divide-[#F4F3F9]">
           <tr
-            v-for="user in usersStore.users"
+            v-for="user in filteredUsers"
             :key="user.id"
             class="cursor-pointer transition-colors hover:bg-[#FAFAFE]"
             @click="goToEdit(user)"
