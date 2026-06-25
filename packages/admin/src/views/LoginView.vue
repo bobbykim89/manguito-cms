@@ -101,43 +101,47 @@ async function onSubmit() {
 </script>
 
 <template>
-  <div class="flex min-h-screen bg-gray-900">
+  <div class="flex min-h-screen bg-surface">
     <!-- Brand panel — visible on large screens -->
-    <div class="hidden lg:flex lg:w-80 lg:shrink-0 lg:flex-col lg:items-start lg:justify-between lg:border-r lg:border-gray-800 lg:px-10 lg:py-12">
+    <div
+      class="hidden lg:flex lg:w-80 lg:shrink-0 lg:flex-col lg:items-start lg:justify-between bg-gradient-to-br from-[#1C1C30] to-[#121220] px-10 py-12 text-white"
+    >
       <div>
         <!-- Logo mark -->
-        <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-600">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10M4 18h6" />
+        <div class="flex h-[42px] w-[42px] items-center justify-center rounded-[13px] bg-gradient-to-br from-[#6D5EF0] to-indigo-600 shadow-[0_6px_18px_rgba(91,87,232,0.5)]">
+          <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.1" stroke-linecap="round" aria-hidden="true">
+            <path d="M4 7h16" /><path d="M4 12h10" /><path d="M4 17h13" />
           </svg>
         </div>
-        <h1 class="mt-8 text-xl font-semibold text-white">{{ uiStore.cmsName }}</h1>
-        <p class="mt-2 text-sm leading-relaxed text-gray-500">Schema-driven headless CMS — manage your content with confidence.</p>
+        <h1 class="mt-8 text-[28px] font-bold leading-tight tracking-tight">{{ uiStore.cmsName }}</h1>
+        <p class="mt-3.5 max-w-[300px] text-[15px] leading-relaxed text-white/60">
+          Schema-driven headless CMS — manage your content with confidence.
+        </p>
       </div>
-      <p class="text-xs text-gray-700">Self-hosted &amp; open source</p>
+      <p class="text-xs text-white/40">Self-hosted &amp; open source</p>
     </div>
 
     <!-- Form area -->
     <div class="flex flex-1 flex-col items-center justify-center px-6 py-12">
       <!-- Mobile-only brand -->
       <div class="mb-8 flex flex-col items-center lg:hidden">
-        <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-600">
+        <div class="flex h-10 w-10 items-center justify-center rounded-[11px] bg-gradient-to-br from-[#6D5EF0] to-indigo-600 shadow-[0_4px_12px_rgba(91,87,232,0.36)]">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10M4 18h6" />
           </svg>
         </div>
-        <h1 class="mt-4 text-lg font-semibold text-white">{{ uiStore.cmsName }}</h1>
+        <h1 class="mt-4 text-lg font-bold text-ink">{{ uiStore.cmsName }}</h1>
       </div>
 
       <!-- Card -->
-      <div class="w-full max-w-sm rounded-2xl bg-white px-8 py-10 shadow-2xl ring-1 ring-gray-100">
-        <h2 class="mb-1 text-lg font-semibold text-gray-900">Sign in</h2>
-        <p class="mb-7 text-sm text-gray-500">Enter your credentials to continue.</p>
+      <div class="w-full max-w-sm rounded-[20px] border border-card-border bg-white px-8 py-10 shadow-[0_10px_40px_rgba(24,24,48,0.1)]">
+        <h2 class="mb-1 text-[21px] font-bold tracking-tight text-ink">Sign in</h2>
+        <p class="mb-6 text-sm text-muted">Enter your credentials to continue.</p>
 
-        <form class="space-y-5" novalidate @submit.prevent="onSubmit">
+        <form class="space-y-[18px]" novalidate @submit.prevent="onSubmit">
           <!-- Email -->
           <div>
-            <label for="email" class="block text-sm font-medium text-gray-700">Email</label>
+            <label for="email" class="block text-[13px] font-semibold text-[#3D3D52]">Email</label>
             <input
               id="email"
               v-model="email"
@@ -145,13 +149,13 @@ async function onSubmit() {
               required
               autocomplete="email"
               :disabled="submitting"
-              class="mt-1.5 block w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 transition-colors focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60"
+              class="mt-[7px] block w-full rounded-[11px] border border-[#E4E3EE] bg-[#FBFBFD] px-3.5 py-3 text-sm text-ink placeholder-faint transition-colors focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-[3px] focus:ring-indigo-50 disabled:cursor-not-allowed disabled:opacity-60"
             />
           </div>
 
           <!-- Password -->
           <div>
-            <label for="password" class="block text-sm font-medium text-gray-700">Password</label>
+            <label for="password" class="block text-[13px] font-semibold text-[#3D3D52]">Password</label>
             <input
               id="password"
               v-model="password"
@@ -159,12 +163,12 @@ async function onSubmit() {
               required
               autocomplete="current-password"
               :disabled="submitting"
-              class="mt-1.5 block w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-900 placeholder-gray-400 transition-colors focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60"
+              class="mt-[7px] block w-full rounded-[11px] border border-[#E4E3EE] bg-[#FBFBFD] px-3.5 py-3 text-sm text-ink placeholder-faint transition-colors focus:border-indigo-400 focus:bg-white focus:outline-none focus:ring-[3px] focus:ring-indigo-50 disabled:cursor-not-allowed disabled:opacity-60"
             />
           </div>
 
           <!-- Inline error -->
-          <p v-if="formError" class="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600" role="alert">
+          <p v-if="formError" class="rounded-[10px] bg-red-50 px-3 py-2 text-sm text-red-600" role="alert">
             {{ formError }}
           </p>
 
@@ -172,7 +176,7 @@ async function onSubmit() {
           <button
             type="submit"
             :disabled="submitDisabled"
-            class="w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            class="w-full rounded-[11px] bg-indigo-600 px-4 py-[13px] text-sm font-semibold text-white shadow-[0_4px_14px_rgba(91,87,232,0.34)] transition-colors hover:bg-indigo-700 hover:shadow-[0_8px_22px_rgba(91,87,232,0.44)] focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {{ submitting ? 'Signing in…' : 'Sign in' }}
           </button>

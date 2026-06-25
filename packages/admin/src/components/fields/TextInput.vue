@@ -54,7 +54,7 @@ function onInput(event: Event) {
   <div>
     <label
       :for="field.name"
-      class="block text-sm font-medium text-gray-700"
+      class="block text-[13px] font-semibold text-[#3D3D52]"
     >
       {{ field.label }}
       <span v-if="field.required" class="ml-0.5 text-red-500" aria-hidden="true">*</span>
@@ -68,10 +68,10 @@ function onInput(event: Event) {
         :disabled="disabled"
         :placeholder="field.label"
         :class="[
-          'block w-full rounded-md border px-3 py-2 text-sm shadow-sm focus:outline-none focus:ring-2',
+          'block w-full rounded-[11px] border px-3.5 py-3 text-sm focus:outline-none focus:ring-[3px]',
           error
             ? 'border-red-300 focus:border-red-400 focus:ring-red-200'
-            : 'border-gray-300 focus:border-indigo-400 focus:ring-indigo-200',
+              : 'border-[#E4E3EE] bg-[#FBFBFD] focus:border-indigo-400 focus:bg-white focus:ring-indigo-50',
           disabled && 'cursor-not-allowed bg-gray-50 opacity-60',
         ]"
         @input="onInput"

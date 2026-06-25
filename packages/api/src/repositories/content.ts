@@ -125,12 +125,19 @@ function quoteField(name: string): string {
 
 function buildConditions(
   published_only: boolean | undefined,
-  filters: Record<string, FilterValue> | undefined
+  filters: Record<string, FilterValue> | undefined,
+  search: { term: string; columns: string[] } | undefined
 ): SQL[] {
   const conds: SQL[] = []
 
   if (published_only) {
     conds.push(sql`published = true`)
+  }
+
+  if (search && search.term.trim() !== '' && search.columns.length > 0) {
+    const pattern = `%${search.term.trim()}%`
+    const orConds = search.columns.map((col) => sql`${sql.raw(quoteField(col))} ILIKE ${pattern}`)
+    conds.push(sql`(${sql.join(orConds, sql` OR `)})`)
   }
 
   if (filters) {
@@ -387,6 +394,7 @@ export function createDrizzleContentRepository<T>(
         filters,
         sort_by = 'created_at',
         sort_order = 'asc',
+        search,
       } = opts
 
       if (!SORTABLE_FIELDS.has(sort_by as string)) {
@@ -394,7 +402,7 @@ export function createDrizzleContentRepository<T>(
       }
 
       const offset = (page - 1) * per_page
-      const conds = buildConditions(published_only, filters)
+      const conds = buildConditions(published_only, filters, search)
       const where = whereFragment(conds)
       const sortCol = sql.raw(quoteIdent(sort_by))
       const sortDir = sql.raw(sort_order === 'desc' ? 'DESC' : 'ASC')
@@ -496,7 +504,7 @@ export function createDrizzleContentRepository<T>(
 
     async findAll(opts: FindAllOptions = {}): Promise<T[]> {
       const { include = [], published_only } = opts
-      const conds = buildConditions(published_only, undefined)
+      const conds = buildConditions(published_only, undefined, undefined)
       const where = whereFragment(conds)
 
       const result = await db.execute(

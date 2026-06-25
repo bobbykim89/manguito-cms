@@ -62,7 +62,7 @@ async function onSave() {
 <template>
   <div class="max-w-lg">
     <div class="mb-6">
-      <h1 class="text-xl font-semibold text-gray-900">
+      <h1 class="text-[26px] font-bold tracking-tight text-ink">
         {{ contentType?.label ?? type }} — Settings
       </h1>
       <p class="mt-1 text-sm text-gray-500">
@@ -77,7 +77,7 @@ async function onSave() {
 
     <form v-else class="space-y-4" @submit.prevent="onSave">
       <div>
-        <label for="base-path" class="block text-sm font-medium text-gray-700">
+        <label for="base-path" class="block text-[13px] font-semibold text-[#3D3D52]">
           Base path
         </label>
 
@@ -113,7 +113,7 @@ async function onSave() {
       <button
         type="submit"
         :disabled="saving || !selectedPath.trim()"
-        class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+        class="rounded-[11px] bg-indigo-600 px-4 py-2.5 text-[13.5px] font-semibold text-white shadow-[0_3px_10px_rgba(91,87,232,0.3)] transition-all hover:bg-indigo-700 hover:shadow-[0_6px_18px_rgba(91,87,232,0.4)] disabled:cursor-not-allowed disabled:opacity-50"
       >
         {{ saving ? 'Saving…' : 'Save' }}
       </button>

@@ -164,7 +164,7 @@ const pageTitle = computed(() => isEdit.value ? (email.value || 'Edit user') : '
   <div v-else class="mx-auto max-w-lg">
     <!-- Header -->
     <div class="mb-6 flex items-start justify-between gap-4">
-      <h1 class="text-xl font-semibold text-gray-900">{{ pageTitle }}</h1>
+      <h1 class="text-[26px] font-bold tracking-tight text-ink">{{ pageTitle }}</h1>
 
       <div class="flex shrink-0 items-center gap-2">
         <!-- Reset password -->
@@ -172,7 +172,7 @@ const pageTitle = computed(() => isEdit.value ? (email.value || 'Edit user') : '
           v-if="can('users:edit') && isEdit && !isOwnProfile"
           type="button"
           :disabled="resetting"
-          class="rounded-md px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+          class="rounded-md px-3 py-2 text-[13px] font-semibold text-[#3D3D52] ring-1 ring-inset ring-gray-300 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
           @click="doResetPassword"
         >
           {{ resetting ? 'Resetting…' : 'Reset password' }}
@@ -247,7 +247,7 @@ const pageTitle = computed(() => isEdit.value ? (email.value || 'Edit user') : '
     <form class="space-y-5" novalidate @submit.prevent="onSubmit">
       <!-- Email -->
       <div>
-        <label for="user-email" class="block text-sm font-medium text-gray-700">Email</label>
+        <label for="user-email" class="block text-[13px] font-semibold text-[#3D3D52]">Email</label>
         <input
           id="user-email"
           v-model="email"
@@ -261,7 +261,7 @@ const pageTitle = computed(() => isEdit.value ? (email.value || 'Edit user') : '
 
       <!-- Role picker — hidden for own profile to prevent self-demotion -->
       <div v-if="!isOwnProfile">
-        <label for="user-role" class="block text-sm font-medium text-gray-700">Role</label>
+        <label for="user-role" class="block text-[13px] font-semibold text-[#3D3D52]">Role</label>
         <select
           id="user-role"
           v-model="selectedRole"

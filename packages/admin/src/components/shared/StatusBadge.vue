@@ -5,8 +5,8 @@ defineProps<{ published: boolean }>()
 <template>
   <span
     :class="[
-      'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
-      published ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600',
+      'inline-flex items-center rounded-full px-[11px] py-1 text-xs font-semibold',
+      published ? 'bg-[#E7F6EC] text-[#1E8E4E]' : 'bg-[#FBF1DF] text-[#B5790E]',
     ]"
   >
     {{ published ? 'Published' : 'Draft' }}

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useDebounceFn } from '@vueuse/core'
 import { useApiClient } from '../../composables/useApiClient'
 import { usePermission } from '../../composables/usePermission'
 import { useSchemaStore } from '../../stores/schema'
@@ -26,6 +27,7 @@ const items = ref<Record<string, unknown>[]>([])
 const total = ref(0)
 const page = ref(1)
 const loading = ref(false)
+const search = ref('')
 
 function formatDate(val: unknown): string {
   if (typeof val !== 'string' || !val) return '—'
@@ -38,16 +40,21 @@ function formatDate(val: unknown): string {
 
 async function loadPage(p: number) {
   loading.value = true
-  const cached = taxonomyStore.getPage(type.value, p, DEFAULT_PAGE_SIZE)
-  if (cached) {
-    items.value = cached as Record<string, unknown>[]
-    total.value = taxonomyStore.total
-    loading.value = false
-    return
+
+  const term = search.value.trim()
+  if (term === '') {
+    const cached = taxonomyStore.getPage(type.value, p, DEFAULT_PAGE_SIZE)
+    if (cached) {
+      items.value = cached as Record<string, unknown>[]
+      total.value = taxonomyStore.total
+      loading.value = false
+      return
+    }
   }
 
+  const searchParam = term !== '' ? `&search=${encodeURIComponent(term)}` : ''
   const res = await api.get<Record<string, unknown>[]>(
-    `/taxonomy/${type.value}?page=${p}&per_page=${DEFAULT_PAGE_SIZE}`
+    `/taxonomy/${type.value}?page=${p}&per_page=${DEFAULT_PAGE_SIZE}${searchParam}`
   )
   loading.value = false
 
@@ -55,10 +62,17 @@ async function loadPage(p: number) {
     items.value = res.data
     const raw = res as unknown as { meta?: { total: number } }
     total.value = raw.meta?.total ?? res.data.length
-    taxonomyStore.total = total.value
-    taxonomyStore.setPage(type.value, p, DEFAULT_PAGE_SIZE, res.data)
+    if (term === '') {
+      taxonomyStore.total = total.value
+      taxonomyStore.setPage(type.value, p, DEFAULT_PAGE_SIZE, res.data)
+    }
   }
 }
+
+const onSearchInput = useDebounceFn(() => {
+  page.value = 1
+  void loadPage(1)
+}, 300)
 
 onMounted(() => { void loadPage(page.value) })
 
@@ -88,18 +102,33 @@ function goToCreate() {
 <template>
   <div>
     <!-- Page header -->
-    <div class="mb-6 flex items-center justify-between">
-      <h1 class="text-xl font-semibold text-gray-900">
+    <div class="mb-5.5 flex flex-wrap items-center justify-between gap-4">
+      <h1 class="text-[26px] font-bold tracking-tight text-ink">
         {{ taxonomyType?.label ?? type }}
       </h1>
       <button
         v-if="can('taxonomy:create')"
         type="button"
-        class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+        class="inline-flex items-center gap-1.75 rounded-[11px] bg-indigo-600 px-4 py-2.5 text-[13.5px] font-semibold text-white shadow-[0_3px_10px_rgba(91,87,232,0.3)] transition-all hover:bg-indigo-700 hover:shadow-[0_6px_18px_rgba(91,87,232,0.4)]"
         @click="goToCreate"
       >
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14" /><path d="M5 12h14" /></svg>
         New {{ taxonomyType?.label ?? 'Term' }}
       </button>
+    </div>
+
+    <!-- Search -->
+    <div class="mb-4 flex h-9.5 items-center gap-2 rounded-[10px] border border-card-border bg-[#FBFBFD] px-2.75 text-[13px] transition-colors focus-within:border-indigo-400">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-faint">
+        <path d="M21 21l-4.3-4.3" /><path d="M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z" />
+      </svg>
+      <input
+        v-model="search"
+        type="text"
+        placeholder="Search terms…"
+        class="w-full bg-transparent text-ink outline-none placeholder:text-faint"
+        @input="onSearchInput"
+      />
     </div>
 
     <!-- Loading skeleton -->
@@ -107,18 +136,20 @@ function goToCreate() {
       <div
         v-for="n in 6"
         :key="n"
-        class="h-12 animate-pulse rounded-md bg-gray-100"
+        class="h-12 animate-pulse rounded-[10px] bg-gray-100"
       />
     </div>
 
     <!-- Empty state -->
     <div
       v-else-if="items.length === 0"
-      class="rounded-lg border border-dashed border-gray-300 p-12 text-center"
+      class="rounded-2xl border border-dashed border-gray-300 p-12 text-center"
     >
-      <p class="text-sm text-gray-500">No terms yet.</p>
+      <p class="text-sm text-muted">
+        {{ search.trim() !== '' ? `No results for “${search.trim()}”.` : 'No terms yet.' }}
+      </p>
       <button
-        v-if="can('taxonomy:create')"
+        v-if="can('taxonomy:create') && search.trim() === ''"
         type="button"
         class="mt-3 text-sm font-medium text-indigo-600 hover:text-indigo-800"
         @click="goToCreate"
@@ -128,25 +159,25 @@ function goToCreate() {
     </div>
 
     <!-- Table -->
-    <div v-else class="overflow-hidden rounded-lg border border-gray-200">
+    <div v-else class="overflow-hidden rounded-2xl border border-card-border bg-white shadow-[0_1px_2px_rgba(24,24,48,0.04),0_10px_28px_rgba(24,24,48,0.04)]">
       <table class="w-full text-sm">
-        <thead class="bg-gray-50 text-xs font-medium uppercase tracking-wide text-gray-500">
-          <tr>
-            <th class="px-4 py-3 text-left">Name</th>
-            <th class="px-4 py-3 text-left">Updated</th>
+        <thead class="text-[11.5px] font-bold uppercase tracking-[.06em] text-faint">
+          <tr class="border-b border-divider">
+            <th class="px-5.5 py-3.5 text-left">Name</th>
+            <th class="px-5.5 py-3.5 text-left">Updated</th>
           </tr>
         </thead>
-        <tbody class="divide-y divide-gray-100">
+        <tbody class="divide-y divide-[#F4F3F9]">
           <tr
             v-for="item in items"
             :key="String(item.id)"
-            class="cursor-pointer hover:bg-gray-50"
+            class="cursor-pointer transition-colors hover:bg-[#FAFAFE]"
             @click="goToEdit(item)"
           >
-            <td class="px-4 py-3 font-medium text-gray-900">
+            <td class="px-5.5 py-4 text-[14.5px] font-semibold text-ink">
               {{ item[titleField] ?? '—' }}
             </td>
-            <td class="px-4 py-3 text-gray-500">
+            <td class="px-5.5 py-4 text-[13px] text-faint">
               {{ formatDate(item.updated_at) }}
             </td>
           </tr>

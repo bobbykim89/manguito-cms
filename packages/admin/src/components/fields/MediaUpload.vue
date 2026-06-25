@@ -270,7 +270,7 @@ onMounted(async () => {
 
 <template>
   <div>
-    <label class="block text-sm font-medium text-gray-700">
+    <label class="block text-[13px] font-semibold text-[#3D3D52]">
       {{ field.label }}
       <span v-if="field.required" class="ml-0.5 text-red-500" aria-hidden="true">*</span>
     </label>
@@ -355,7 +355,7 @@ onMounted(async () => {
       v-else-if="uploadPhase === 'alt-collect'"
       class="mt-1 rounded-md border border-gray-200 p-3"
     >
-      <p class="mb-2 truncate text-sm font-medium text-gray-700">
+      <p class="mb-2 truncate text-[13px] font-semibold text-[#3D3D52]">
         {{ pendingFile?.name }}
       </p>
       <label :for="`${field.name}-alt-pre`" class="block text-xs text-gray-600">

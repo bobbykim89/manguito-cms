@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, flushPromises } from '@vue/test-utils'
 import type { ParsedField } from '@bobbykim/manguito-cms-core'
 import RichTextEditor from '../RichTextEditor.vue'
 
@@ -41,5 +41,41 @@ describe('RichTextEditor', () => {
     buttons.forEach(btn => {
       expect(btn.attributes('disabled')).toBeDefined()
     })
+  })
+
+  it('sizes the nested .ProseMirror element itself, not just the outer wrapper, so clicks in empty space focus the editor', async () => {
+    const wrapper = mount(RichTextEditor, { props: { field: makeField(), modelValue: '' } })
+    await flushPromises()
+    const contentWrapper = wrapper.find('.ProseMirror').element.parentElement!
+    expect(Array.from(contentWrapper.classList)).toContain('[&_.ProseMirror]:min-h-32')
+    expect(Array.from(contentWrapper.classList)).toContain('[&_.ProseMirror]:cursor-text')
+  })
+
+  it('link button toggles the link popover, and Cancel closes it', async () => {
+    const wrapper = mount(RichTextEditor, { props: { field: makeField(), modelValue: '' } })
+    const linkButton = wrapper.findAll('button').find(b => b.text() === 'Link')
+    expect(linkButton).toBeTruthy()
+
+    expect(wrapper.text()).not.toContain('CSS class')
+
+    await linkButton!.trigger('click')
+    expect(wrapper.text()).toContain('CSS class')
+    expect(wrapper.find('input[placeholder="https://example.com"]').exists()).toBe(true)
+    expect(wrapper.find('select').exists()).toBe(true)
+
+    const cancelButton = wrapper.findAll('button').find(b => b.text() === 'Cancel')
+    await cancelButton!.trigger('click')
+    expect(wrapper.text()).not.toContain('CSS class')
+  })
+
+  it('link button is disabled (no popover) when the field is disabled', async () => {
+    const wrapper = mount(RichTextEditor, {
+      props: { field: makeField(), modelValue: '', disabled: true },
+    })
+    const linkButton = wrapper.findAll('button').find(b => b.text() === 'Link')
+    expect(linkButton!.attributes('disabled')).toBeDefined()
+
+    await linkButton!.trigger('click')
+    expect(wrapper.text()).not.toContain('CSS class')
   })
 })

@@ -58,6 +58,42 @@ const BLOG_TYPE: ParsedContentType = {
   },
 }
 
+const MEDIA_TYPE: ParsedContentType = {
+  schema_type: 'content-type',
+  name: 'page-with-image',
+  label: 'Page With Image',
+  source_file: 'page-with-image.yml',
+  only_one: false,
+  default_base_path: 'page-with-image',
+  system_fields: [
+    { name: 'id', db_type: 'uuid', primary_key: true, nullable: false },
+    { name: 'slug', db_type: 'varchar', nullable: false },
+    { name: 'published', db_type: 'boolean', default: 'false', nullable: false },
+    { name: 'created_at', db_type: 'timestamp', nullable: false },
+    { name: 'updated_at', db_type: 'timestamp', nullable: false },
+  ],
+  fields: [
+    {
+      name: 'hero_image',
+      label: 'Hero Image',
+      field_type: 'image',
+      required: false,
+      nullable: true,
+      order: 0,
+      validation: {},
+      db_column: { column_name: 'hero_image', column_type: 'uuid', nullable: true },
+      ui_component: { component: 'media-upload' },
+    },
+  ],
+  ui: { tabs: [] },
+  db: { table_name: 'content--page_with_image', junction_tables: [] },
+  api: {
+    default_base_path: 'page-with-image',
+    http_methods: ['GET', 'POST', 'PATCH', 'DELETE'],
+    item_path: '/api/page-with-image/:slug',
+  },
+}
+
 const SINGLETON_TYPE: ParsedContentType = {
   schema_type: 'content-type',
   name: 'home-page',
@@ -127,6 +163,7 @@ describe('admin content routes', () => {
   let app: Hono
   let mockBlogRepo: ContentRepository<unknown>
   let mockSingletonRepo: ContentRepository<unknown>
+  let mockMediaTypeRepo: ContentRepository<unknown>
   let mockMediaRepo: MediaRepository
 
   const registry: SchemaRegistry = {
@@ -136,6 +173,7 @@ describe('admin content routes', () => {
     content_types: {
       'blog-post': BLOG_TYPE,
       'home-page': SINGLETON_TYPE,
+      'page-with-image': MEDIA_TYPE,
     },
     paragraph_types: {},
     taxonomy_types: {},
@@ -146,11 +184,13 @@ describe('admin content routes', () => {
   beforeEach(() => {
     mockBlogRepo = makeMockRepo()
     mockSingletonRepo = makeMockRepo()
+    mockMediaTypeRepo = makeMockRepo()
     mockMediaRepo = makeMockMediaRepo()
     app = new Hono()
     registerAdminContentRoutes(app, registry, {
       'blog-post': mockBlogRepo,
       'home-page': mockSingletonRepo,
+      'page-with-image': mockMediaTypeRepo,
     }, mockMediaRepo)
   })
 
@@ -221,6 +261,161 @@ describe('admin content routes', () => {
       const body = await res.json() as { ok: boolean; error: { code: string } }
       expect(body.ok).toBe(false)
       expect(body.error.code).toBe('SLUG_CONFLICT')
+    })
+  })
+
+  describe('GET — search', () => {
+    it('passes the search term, text/plain columns, and slug through to repo.findMany', async () => {
+      const res = await app.request('/admin/api/content/blog-post?search=hello')
+
+      expect(res.status).toBe(200)
+      expect(mockBlogRepo.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          search: { term: 'hello', columns: ['blog_title', 'blog_meta_title', 'slug'] },
+        })
+      )
+    })
+
+    it('omits search from findMany options when the param is absent', async () => {
+      const res = await app.request('/admin/api/content/blog-post')
+
+      expect(res.status).toBe(200)
+      const callArgs = (mockBlogRepo.findMany as ReturnType<typeof vi.fn>).mock.calls[0]![0]
+      expect(callArgs.search).toBeUndefined()
+    })
+
+    it('omits slug for singleton types, which have no slug column', async () => {
+      const res = await app.request('/admin/api/content/home-page?search=hello')
+
+      expect(res.status).toBe(200)
+      const callArgs = (mockSingletonRepo.findMany as ReturnType<typeof vi.fn>).mock.calls[0]![0]
+      expect(callArgs.search).toBeUndefined()
+    })
+  })
+
+  describe('media reference counting — top-level image field', () => {
+    it('POST with an image set increments that media id', async () => {
+      ;(mockMediaTypeRepo.create as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'item-1',
+        slug: 'page-1',
+        hero_image: 'media-a',
+      })
+
+      const res = await app.request('/admin/api/content/page-with-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug: 'page-1', hero_image: 'media-a' }),
+      })
+
+      expect(res.status).toBe(201)
+      expect(mockMediaRepo.incrementReferenceCount).toHaveBeenCalledWith(['media-a'])
+      expect(mockMediaRepo.decrementReferenceCount).not.toHaveBeenCalled()
+    })
+
+    it('POST with no image set does not touch reference counts', async () => {
+      ;(mockMediaTypeRepo.create as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'item-1',
+        slug: 'page-1',
+        hero_image: null,
+      })
+
+      const res = await app.request('/admin/api/content/page-with-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug: 'page-1' }),
+      })
+
+      expect(res.status).toBe(201)
+      expect(mockMediaRepo.incrementReferenceCount).not.toHaveBeenCalled()
+      expect(mockMediaRepo.decrementReferenceCount).not.toHaveBeenCalled()
+    })
+
+    it('PATCH replacing the image decrements the old id and increments the new one', async () => {
+      ;(mockMediaTypeRepo.findOne as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'item-1',
+        slug: 'page-1',
+        hero_image: 'media-old',
+      })
+      ;(mockMediaTypeRepo.update as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'item-1',
+        hero_image: 'media-new',
+      })
+
+      const res = await app.request('/admin/api/content/page-with-image/item-1', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hero_image: 'media-new' }),
+      })
+
+      expect(res.status).toBe(200)
+      expect(mockMediaRepo.decrementReferenceCount).toHaveBeenCalledWith(['media-old'])
+      expect(mockMediaRepo.incrementReferenceCount).toHaveBeenCalledWith(['media-new'])
+    })
+
+    it('PATCH resending the same image id is a no-op for reference counts', async () => {
+      ;(mockMediaTypeRepo.findOne as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'item-1',
+        slug: 'page-1',
+        hero_image: 'media-a',
+      })
+      ;(mockMediaTypeRepo.update as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'item-1',
+        hero_image: 'media-a',
+      })
+
+      const res = await app.request('/admin/api/content/page-with-image/item-1', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hero_image: 'media-a' }),
+      })
+
+      expect(res.status).toBe(200)
+      expect(mockMediaRepo.incrementReferenceCount).not.toHaveBeenCalled()
+      expect(mockMediaRepo.decrementReferenceCount).not.toHaveBeenCalled()
+    })
+
+    it('PATCH clearing the image only decrements the old id', async () => {
+      ;(mockMediaTypeRepo.findOne as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'item-1',
+        slug: 'page-1',
+        hero_image: 'media-old',
+      })
+      ;(mockMediaTypeRepo.update as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'item-1',
+        hero_image: null,
+      })
+
+      const res = await app.request('/admin/api/content/page-with-image/item-1', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hero_image: null }),
+      })
+
+      expect(res.status).toBe(200)
+      expect(mockMediaRepo.decrementReferenceCount).toHaveBeenCalledWith(['media-old'])
+      expect(mockMediaRepo.incrementReferenceCount).not.toHaveBeenCalled()
+    })
+
+    it('PATCH not touching the image field does not change reference counts', async () => {
+      ;(mockMediaTypeRepo.findOne as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'item-1',
+        slug: 'page-1',
+        hero_image: 'media-a',
+      })
+      ;(mockMediaTypeRepo.update as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'item-1',
+        slug: 'page-1-renamed',
+      })
+
+      const res = await app.request('/admin/api/content/page-with-image/item-1', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug: 'page-1-renamed' }),
+      })
+
+      expect(res.status).toBe(200)
+      expect(mockMediaRepo.incrementReferenceCount).not.toHaveBeenCalled()
+      expect(mockMediaRepo.decrementReferenceCount).not.toHaveBeenCalled()
     })
   })
 

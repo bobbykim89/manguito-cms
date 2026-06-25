@@ -1,1 +1,46 @@
 @import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  /* Accent (purple) replaces the default Tailwind indigo scale used across the app */
+  --color-indigo-50: #eeedfb;
+  --color-indigo-100: #eeedfb;
+  --color-indigo-200: #d6d5e6;
+  --color-indigo-300: #b8b6e0;
+  --color-indigo-400: #8d87e8;
+  --color-indigo-500: #6d5ef0;
+  --color-indigo-600: #5b57e8;
+  --color-indigo-700: #4b47d6;
+  --color-indigo-800: #3d3ab0;
+  --color-indigo-900: #2f2c8a;
+
+  --color-surface: #f6f6fa;
+  --color-card-border: #ecebf3;
+  --color-divider: #f0eff5;
+  --color-ink: #23233a;
+  --color-muted: #8a8a9e;
+  --color-faint: #a2a2b6;
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Thin scrollbar — keeps a long sidebar nav list (many content/taxonomy types) from feeling heavy */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #dedde9;
+  border-radius: 8px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #c9c8da;
+  background-clip: content-box;
+}
