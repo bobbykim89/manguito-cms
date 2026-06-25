@@ -42,16 +42,5 @@ const uiStore = useUiStore()
     </div>
 
     <div class="flex-1" />
-
-    <!-- Decorative search box — no search backend wired up yet -->
-    <div
-      v-if="!uiStore.isMobile"
-      class="flex h-[38px] cursor-text items-center gap-2 rounded-[10px] border border-card-border bg-[#FBFBFD] px-[11px] text-[13px] text-faint transition-colors hover:border-[#D6D5E6]"
-    >
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M21 21l-4.3-4.3" /><path d="M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z" />
-      </svg>
-      <span class="whitespace-nowrap">Search…</span>
-    </div>
   </header>
 </template>

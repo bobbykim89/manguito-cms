@@ -93,25 +93,30 @@ function userInitial(): string {
             <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
           </svg>
         </button>
-        <template v-if="collapsed || contentOpen">
-          <RouterLink
-            v-for="type in contentTypeList"
-            :key="type.name"
-            :to="`${adminPrefix}/content/${type.name}`"
-            :class="[
-              'my-0.5 flex items-center rounded-[10px] text-sm font-medium text-[#4A4A60] transition-colors hover:bg-[#F3F2F8]',
-              collapsed ? 'justify-center px-0 py-[11px]' : 'gap-3 px-3 py-2.5',
-            ]"
-            active-class="!bg-indigo-50 !text-indigo-600 !font-semibold"
-          >
-            <span class="flex shrink-0">
-              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M14 3v4a2 2 0 0 0 2 2h4" /><path d="M5 3h9l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" /><path d="M9 13h6" /><path d="M9 17h5" />
-              </svg>
-            </span>
-            <span v-if="!collapsed" class="overflow-hidden whitespace-nowrap">{{ type.label }}</span>
-          </RouterLink>
-        </template>
+        <div
+          class="grid transition-[grid-template-rows] duration-300 ease-in-out"
+          :style="{ gridTemplateRows: (collapsed || contentOpen) ? '1fr' : '0fr' }"
+        >
+          <div class="min-h-0 overflow-hidden">
+            <RouterLink
+              v-for="type in contentTypeList"
+              :key="type.name"
+              :to="`${adminPrefix}/content/${type.name}`"
+              :class="[
+                'my-0.5 flex items-center rounded-[10px] text-sm font-medium text-[#4A4A60] transition-colors hover:bg-[#F3F2F8]',
+                collapsed ? 'justify-center px-0 py-[11px]' : 'gap-3 px-3 py-2.5',
+              ]"
+              active-class="!bg-indigo-50 !text-indigo-600 !font-semibold"
+            >
+              <span class="flex shrink-0">
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14 3v4a2 2 0 0 0 2 2h4" /><path d="M5 3h9l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" /><path d="M9 13h6" /><path d="M9 17h5" />
+                </svg>
+              </span>
+              <span v-if="!collapsed" class="overflow-hidden whitespace-nowrap">{{ type.label }}</span>
+            </RouterLink>
+          </div>
+        </div>
       </div>
 
       <!-- Taxonomy group -->
@@ -135,25 +140,30 @@ function userInitial(): string {
             <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
           </svg>
         </button>
-        <template v-if="collapsed || taxonomyOpen">
-          <RouterLink
-            v-for="type in taxonomyTypeList"
-            :key="type.name"
-            :to="`${adminPrefix}/taxonomy/${type.name}`"
-            :class="[
-              'my-0.5 flex items-center rounded-[10px] text-sm font-medium text-[#4A4A60] transition-colors hover:bg-[#F3F2F8]',
-              collapsed ? 'justify-center px-0 py-[11px]' : 'gap-3 px-3 py-2.5',
-            ]"
-            active-class="!bg-indigo-50 !text-indigo-600 !font-semibold"
-          >
-            <span class="flex shrink-0">
-              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8z" /><path d="M7 7h.01" />
-              </svg>
-            </span>
-            <span v-if="!collapsed" class="overflow-hidden whitespace-nowrap">{{ type.label }}</span>
-          </RouterLink>
-        </template>
+        <div
+          class="grid transition-[grid-template-rows] duration-300 ease-in-out"
+          :style="{ gridTemplateRows: (collapsed || taxonomyOpen) ? '1fr' : '0fr' }"
+        >
+          <div class="min-h-0 overflow-hidden">
+            <RouterLink
+              v-for="type in taxonomyTypeList"
+              :key="type.name"
+              :to="`${adminPrefix}/taxonomy/${type.name}`"
+              :class="[
+                'my-0.5 flex items-center rounded-[10px] text-sm font-medium text-[#4A4A60] transition-colors hover:bg-[#F3F2F8]',
+                collapsed ? 'justify-center px-0 py-[11px]' : 'gap-3 px-3 py-2.5',
+              ]"
+              active-class="!bg-indigo-50 !text-indigo-600 !font-semibold"
+            >
+              <span class="flex shrink-0">
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8z" /><path d="M7 7h.01" />
+                </svg>
+              </span>
+              <span v-if="!collapsed" class="overflow-hidden whitespace-nowrap">{{ type.label }}</span>
+            </RouterLink>
+          </div>
+        </div>
       </div>
 
       <div class="my-3.5 mx-2.5 h-px bg-divider" />
