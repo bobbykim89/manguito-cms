@@ -47,7 +47,6 @@
     "@bobbykim/manguito-cms-db": "workspace:*",
     "@hono/node-server": "^1.13.0",
     "@hono/zod-openapi": "^1.3.0",
-    "better-auth": "^1.6.0",
     "hono": "^4.12.0",
     "zod": "^4.3.0"
   },
