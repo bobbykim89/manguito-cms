@@ -24,7 +24,7 @@ function makeMongoAdapter(): ManguitoConfig['db'] {
 function makeStorageAdapter(): ManguitoConfig['storage'] {
   return {
     type: 'local',
-    upload: async () => ({ key: '', url: '' }),
+    upload: async () => {},
     delete: async () => {},
     getUrl: () => '',
     getPresignedUploadUrl: async () => ({ upload_url: '', key: '', expires_at: 0 }),
