@@ -63,3 +63,11 @@ _Avoid_: direct upload, proxied upload
 **Orphaned media**:
 A media row with `reference_count = 0` — referenced by no content and eligible for cleanup.
 _Avoid_: unused media, dangling file
+
+**Media reference tracking**:
+The module that reconciles `media.reference_count` on every content write. It counts **content items**, not reference slots: a media id referenced many times by one item counts once, and a move between slots in one write is a no-op.
+_Avoid_: ref counting, usage tracking
+
+**Media delta**:
+The `{ added, removed }` set of media ids a single content write gains and loses, computed for top-level fields and supplied by paragraph persistence, then merged and applied as one reconciliation.
+_Avoid_: media diff, change set
