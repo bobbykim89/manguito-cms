@@ -27,6 +27,14 @@ _Avoid_: option set, choice list
 **Field**:
 One typed value on a schema. Authored inside tabs but emitted flat; the type determines its DB column and admin UI component.
 
+**Field type registry**:
+The single internal table mapping each field type to its **field builder**. The one place a field type's DB-column, UI-component, and validation behaviour is defined.
+_Avoid_: type map, field map, schema for fields
+
+**Field builder**:
+A pure function `(raw, ctx) => { validation, db_column, ui_component }` that turns one authored field of a given type into its parsed parts. The parser dispatches to the builder for the field's type rather than branching per type.
+_Avoid_: field handler, mapper, transformer
+
 **System field**:
 A field auto-injected by the parser (`id`, `created_at`, `slug`, `parent_id`, …). Authors never write these in schema files.
 _Avoid_: built-in field, meta field

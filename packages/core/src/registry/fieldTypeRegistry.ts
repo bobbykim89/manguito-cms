@@ -1,203 +1,267 @@
 import type { DbColumn, FieldType, FieldValidation, UiComponent } from './types'
+import type {
+  RawField,
+  RawTextField,
+  RawTextRichField,
+  RawIntegerField,
+  RawFloatField,
+  RawBooleanField,
+  RawDateField,
+  RawImageField,
+  RawVideoField,
+  RawFileField,
+  RawEnumField,
+  RawParagraphField,
+  RawReferenceField,
+} from '../parser/validators'
 
-// ─── Registry Entry ───────────────────────────────────────────────────────────
+// ─── Build context and result ─────────────────────────────────────────────────
 
-// db_column is null for field types that produce no column on the owning table.
-// Currently only 'paragraph' — its association is stored on the paragraph table
-// via the parent_id / parent_type / parent_field system fields.
-//
-// For 'reference', the entry below is the FK template (one-to-one / one-to-many).
-// The parser detects rel === 'many-to-many' and writes db_column.junction instead.
-//
-// ui_component values for 'enum', 'paragraph', and 'reference' are templates.
-// Fields that require runtime values (ref, rel, options) are filled in by the
-// parser from the specific field definition — empty string / empty array here
-// acts as a clear sentinel that the parser must populate.
-
-export type FieldTypeRegistryEntry = {
-  db_column: DbColumn | null
-  ui_component: UiComponent
-  validation_defaults: Partial<FieldValidation>
+// Everything a field builder needs beyond the raw field itself.
+// ownerTableName is required to name a many-to-many junction table.
+export type FieldBuildContext = {
+  ownerTableName: string
 }
 
-export type FieldTypeRegistry = Record<FieldType, FieldTypeRegistryEntry>
+// The three parsed parts a builder produces for one field. The parser wraps this
+// with name/label/field_type/required/nullable/order to form a ParsedField.
+export type BuiltField = {
+  validation: FieldValidation
+  db_column: DbColumn | null
+  ui_component: UiComponent
+}
+
+// A builder is a pure function from one raw field of a given type to its parts.
+// Each entry is typed to its own raw variant — no defensive narrowing inside.
+type RawByType = {
+  'text/plain': RawTextField
+  'text/rich': RawTextRichField
+  integer: RawIntegerField
+  float: RawFloatField
+  boolean: RawBooleanField
+  date: RawDateField
+  image: RawImageField
+  video: RawVideoField
+  file: RawFileField
+  enum: RawEnumField
+  paragraph: RawParagraphField
+  reference: RawReferenceField
+}
+
+export type FieldBuilder<T extends FieldType> = (
+  raw: RawByType[T],
+  ctx: FieldBuildContext
+) => BuiltField
+
+export type FieldTypeRegistry = { [T in FieldType]: FieldBuilder<T> }
+
+// The discriminant-erased shape used at the single dispatch site. The registry is
+// keyed by the same field type the raw field carries, so the lookup is sound by
+// construction even though TypeScript cannot correlate the two across the union.
+export type AnyFieldBuilder = (raw: RawField, ctx: FieldBuildContext) => BuiltField
+
+// ─── Shared naming helper ─────────────────────────────────────────────────────
+
+// "content--blog_post" → "content_blog_post". Used by the reference builder for
+// the FK / junction target table, and by the per-schema-type parsers for their
+// own table names.
+export function machineNameToTableName(machineName: string): string {
+  return machineName.replace('--', '_')
+}
+
+// ─── Media mime constants ─────────────────────────────────────────────────────
+
+// Specific types for server-side validation (FieldValidation.allowed_mime_types).
+const MEDIA_ALLOWED_MIME: Record<'image' | 'video' | 'file', string[]> = {
+  image: ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml'],
+  video: ['video/mp4', 'video/webm', 'video/quicktime'],
+  file: ['application/pdf'],
+}
+
+// Wildcards for the HTML <input accept> attribute (UiComponent.accepted_mime_types).
+const MEDIA_UI_MIME: Record<'image' | 'video' | 'file', string[]> = {
+  image: ['image/*'],
+  video: ['video/*'],
+  file: ['application/pdf'],
+}
+
+// "2MB" → 2097152, "512KB" → 524288. Returns 0 for unrecognised input.
+function parseMaxSize(str: string): number {
+  const m = /^(\d+(?:\.\d+)?)\s*(B|KB|MB|GB)$/i.exec(str)
+  if (!m) return 0
+  const value = parseFloat(m[1]!)
+  switch (m[2]!.toUpperCase()) {
+    case 'B':  return Math.round(value)
+    case 'KB': return Math.round(value * 1_024)
+    case 'MB': return Math.round(value * 1_048_576)
+    case 'GB': return Math.round(value * 1_073_741_824)
+    default:   return 0
+  }
+}
+
+// Shared builder for the three media field types — identical but for mime lists.
+function buildMediaField(raw: RawImageField | RawVideoField | RawFileField): BuiltField {
+  const mediaType = raw.type
+  const maxSizeBytes = raw.max_size ? parseMaxSize(raw.max_size) : undefined
+  return {
+    validation: {
+      required: raw.required,
+      ...(maxSizeBytes !== undefined && { max_size: maxSizeBytes }),
+      allowed_mime_types: MEDIA_ALLOWED_MIME[mediaType],
+    },
+    db_column: {
+      column_name: raw.name,
+      column_type: 'uuid',
+      nullable: !raw.required,
+      foreign_key: { table: 'media', column: 'id', on_delete: 'SET NULL' },
+    },
+    ui_component: {
+      component: 'file-upload',
+      accepted_mime_types: MEDIA_UI_MIME[mediaType],
+    },
+  }
+}
 
 // ─── Registry ─────────────────────────────────────────────────────────────────
+//
+// One builder per field type. Each turns a single authored field into its
+// { validation, db_column, ui_component } parts. The parser dispatches here
+// rather than branching per type; adding a field type means adding one entry.
 
 export const fieldTypeRegistry: FieldTypeRegistry = {
-  // ── Primitive fields ────────────────────────────────────────────────────────
+  // ── Primitives ──────────────────────────────────────────────────────────────
 
-  'text/plain': {
-    db_column: {
-      column_name: '',
-      column_type: 'varchar',
-      nullable: true,
+  'text/plain': (raw) => ({
+    validation: {
+      required: raw.required,
+      ...(raw.limit !== undefined && { limit: raw.limit }),
+      ...(raw.pattern !== undefined && { pattern: raw.pattern }),
     },
+    db_column: { column_name: raw.name, column_type: 'varchar', nullable: !raw.required },
     ui_component: { component: 'text-input' },
-    validation_defaults: {},
-  },
+  }),
 
-  'text/rich': {
-    db_column: {
-      column_name: '',
-      column_type: 'text',
-      nullable: true,
-    },
+  'text/rich': (raw) => ({
+    validation: { required: raw.required },
+    db_column: { column_name: raw.name, column_type: 'text', nullable: !raw.required },
     ui_component: { component: 'rich-text-editor' },
-    validation_defaults: {},
-  },
+  }),
 
-  integer: {
-    db_column: {
-      column_name: '',
-      column_type: 'integer',
-      nullable: true,
+  integer: (raw) => ({
+    validation: {
+      required: raw.required,
+      ...(raw.min !== undefined && { min: raw.min }),
+      ...(raw.max !== undefined && { max: raw.max }),
     },
+    db_column: { column_name: raw.name, column_type: 'integer', nullable: !raw.required },
     ui_component: { component: 'number-input', step: 1 },
-    validation_defaults: {},
-  },
+  }),
 
-  float: {
-    db_column: {
-      column_name: '',
-      column_type: 'decimal',
-      nullable: true,
+  float: (raw) => ({
+    validation: {
+      required: raw.required,
+      ...(raw.min !== undefined && { min: raw.min }),
+      ...(raw.max !== undefined && { max: raw.max }),
     },
+    db_column: { column_name: raw.name, column_type: 'decimal', nullable: !raw.required },
     ui_component: { component: 'number-input', step: 0.01 },
-    validation_defaults: {},
-  },
+  }),
 
-  boolean: {
-    // Boolean columns are always NOT NULL — false is the natural empty value, not NULL.
-    db_column: {
-      column_name: '',
-      column_type: 'boolean',
-      nullable: false,
-    },
+  // Boolean columns are always NOT NULL — false is the natural empty value, not NULL.
+  boolean: (raw) => ({
+    validation: { required: raw.required },
+    db_column: { column_name: raw.name, column_type: 'boolean', nullable: false },
     ui_component: { component: 'checkbox' },
-    validation_defaults: { required: false },
-  },
+  }),
 
-  date: {
-    db_column: {
-      column_name: '',
-      column_type: 'timestamp',
-      nullable: true,
-    },
+  date: (raw) => ({
+    validation: { required: raw.required },
+    db_column: { column_name: raw.name, column_type: 'timestamp', nullable: !raw.required },
     ui_component: { component: 'date-picker' },
-    validation_defaults: {},
-  },
+  }),
 
-  // ── Media fields — FK → media.id, SET NULL on delete ────────────────────────
+  // ── Media — FK → media.id, SET NULL on delete ───────────────────────────────
 
-  image: {
-    db_column: {
-      column_name: '',
-      column_type: 'uuid',
-      nullable: true,
-      foreign_key: {
-        table: 'media',
-        column: 'id',
-        on_delete: 'SET NULL',
-      },
-    },
-    ui_component: {
-      component: 'file-upload',
-      accepted_mime_types: ['image/*'],
-    },
-    validation_defaults: {},
-  },
-
-  video: {
-    db_column: {
-      column_name: '',
-      column_type: 'uuid',
-      nullable: true,
-      foreign_key: {
-        table: 'media',
-        column: 'id',
-        on_delete: 'SET NULL',
-      },
-    },
-    ui_component: {
-      component: 'file-upload',
-      accepted_mime_types: ['video/*'],
-    },
-    validation_defaults: {},
-  },
-
-  file: {
-    db_column: {
-      column_name: '',
-      column_type: 'uuid',
-      nullable: true,
-      foreign_key: {
-        table: 'media',
-        column: 'id',
-        on_delete: 'SET NULL',
-      },
-    },
-    ui_component: {
-      component: 'file-upload',
-      accepted_mime_types: ['application/pdf'],
-    },
-    validation_defaults: {},
-  },
+  image: (raw) => buildMediaField(raw),
+  video: (raw) => buildMediaField(raw),
+  file: (raw) => buildMediaField(raw),
 
   // ── Enum — varchar + check constraint ───────────────────────────────────────
-  // check_constraint and options are empty here; the parser inlines allowed_values
-  // from the resolved enum definition (standalone ref or inline values array).
-
-  enum: {
-    db_column: {
-      column_name: '',
-      column_type: 'varchar',
-      nullable: true,
-      check_constraint: [],
-    },
-    ui_component: {
-      component: 'select',
-      options: [],
-    },
-    validation_defaults: { allowed_values: [] },
+  //
+  // Inline enum: values are present on the field and fully resolved here.
+  // Ref enum: values live in another schema not yet available, so allowed_values
+  // and check_constraint stay empty and enum_ref is stashed in ui_component for
+  // resolveEnumReferences() to fill once the full registry is assembled.
+  enum: (raw) => {
+    const allowedValues = raw.values ?? []
+    return {
+      validation: { required: raw.required, allowed_values: allowedValues },
+      db_column: {
+        column_name: raw.name,
+        column_type: 'varchar',
+        nullable: !raw.required,
+        check_constraint: allowedValues,
+      },
+      ui_component: {
+        component: 'select',
+        options: allowedValues,
+        ...(raw.ref !== undefined && { enum_ref: raw.ref }),
+      },
+    }
   },
 
-  // ── Paragraph — no column on the owning content table ───────────────────────
-  // The association lives entirely on the paragraph table via system fields:
-  //   parent_id (uuid), parent_type (varchar), parent_field (varchar), order (integer)
-  // ref and rel are template sentinels; the parser populates them from the field def.
-
-  paragraph: {
+  // ── Paragraph — no column on the owning table ───────────────────────────────
+  // The association lives on the paragraph table via parent_id/parent_type/
+  // parent_field/order system fields.
+  paragraph: (raw) => ({
+    validation: {
+      required: raw.required,
+      ...(raw.max !== undefined && { max_items: raw.max }),
+    },
     db_column: null,
     ui_component: {
       component: 'paragraph-embed',
-      ref: '',
-      rel: 'one-to-many',
+      ref: raw.ref,
+      rel: raw.rel,
+      ...(raw.max !== undefined && { max: raw.max }),
     },
-    validation_defaults: {},
-  },
+  }),
 
-  // ── Reference — FK template for one-to-one / one-to-many ────────────────────
-  // For many-to-many the parser discards this template and writes db_column.junction.
-  // foreign_key.table is empty here; the parser resolves it from the target schema's
-  // table name at parse time. ref and rel are populated from the field definition.
+  // ── Reference — FK column, or a junction table for many-to-many ─────────────
+  reference: (raw, ctx) => {
+    const targetTableName = machineNameToTableName(raw.target)
+    const validation: FieldValidation = {
+      required: raw.required,
+      ...(raw.max !== undefined && { max_items: raw.max }),
+    }
 
-  reference: {
-    db_column: {
-      column_name: '',
-      column_type: 'uuid',
-      nullable: true,
-      foreign_key: {
-        table: '',
-        column: 'id',
-        on_delete: 'SET NULL',
-      },
-    },
-    ui_component: {
-      component: 'typeahead-select',
-      ref: '',
-      rel: 'one-to-one',
-    },
-    validation_defaults: {},
+    const db_column: DbColumn =
+      raw.rel === 'many-to-many'
+        ? {
+            // No FK column — the junction table owns the association.
+            column_name: '',
+            column_type: 'uuid',
+            nullable: !raw.required,
+            junction: {
+              table_name: `junction_${ctx.ownerTableName}_${raw.name}`,
+              left_column: 'left_id',
+              right_column: 'right_id',
+              right_table: targetTableName,
+              order_column: false,
+            },
+          }
+        : {
+            // FK column on the owning table. References are independent → SET NULL.
+            column_name: raw.name,
+            column_type: 'uuid',
+            nullable: !raw.required,
+            foreign_key: { table: targetTableName, column: 'id', on_delete: 'SET NULL' },
+          }
+
+    return {
+      validation,
+      db_column,
+      ui_component: { component: 'typeahead-select', ref: raw.target, rel: raw.rel },
+    }
   },
 }
