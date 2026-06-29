@@ -3,9 +3,10 @@ import type { MediaRepository, ParsedField } from '@bobbykim/manguito-cms-core'
 // ─── Media reference tracking ─────────────────────────────────────────────────
 //
 // Reconciles media.reference_count on a content write. reference_count counts
-// *content items* that reference a media row (see CONTEXT.md "Orphaned media"),
-// not reference slots — so a media id used by several fields/paragraphs of one
-// item counts once, and an id moved between slots in one write is a no-op.
+// *content items* that reference a media row (see CONTEXT.md "Orphaned media"
+// and docs/adr/api/0007), not reference slots — so a media id used by several
+// fields/paragraphs of one item counts once, and an id moved between slots in
+// one write is a no-op.
 //
 // A write produces a MediaDelta of the ids it gains and loses. Top-level field
 // deltas are computed here (pure); paragraph deltas are produced by the paragraph
