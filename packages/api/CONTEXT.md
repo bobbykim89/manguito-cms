@@ -32,6 +32,10 @@ _Avoid_: batcher, cache layer
 The `?include=` query parameter that expands a relation from IDs to full nested objects. Media is always fully resolved regardless.
 _Avoid_: expand, populate, with
 
+**Relation persistence**:
+Writing a content item's paragraph and junction relations to their child/junction tables (delete + reinsert). Owned by the relation module; each persist/delete reports its [[media-delta]] for the caller to reconcile. Distinct from relation *resolution* (the read side, still in the repository).
+_Avoid_: relation save, sync relations
+
 ### Auth
 
 **auth_token / refresh_token**:

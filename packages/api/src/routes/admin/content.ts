@@ -1,4 +1,3 @@
-import crypto from 'node:crypto'
 import { sql } from 'drizzle-orm'
 import type { Hono } from 'hono'
 import type {
@@ -7,7 +6,6 @@ import type {
   FilterValue,
   FilterOperator,
   ParsedField,
-  ParsedParagraphType,
 } from '@bobbykim/manguito-cms-core'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import {
@@ -16,6 +14,11 @@ import {
   applyMediaReferenceDelta,
   type MediaDelta,
 } from '../../media-references.js'
+import {
+  persistParagraphField,
+  deleteParagraphField,
+  persistJunctionField,
+} from '../../relations.js'
 import { requireAuth, requirePermission as requirePermissionShim } from '../../middleware/auth.js'
 import type { createPermissionMiddleware } from '../../middleware/permission.js'
 import type { ContentRepos } from '../content.js'
@@ -32,119 +35,6 @@ async function lookupBasePathId(db: DrizzlePostgresInstance, pathOrName: string)
     sql`SELECT id FROM base_paths WHERE path = ${pathOrName} OR name = ${pathOrName} LIMIT 1`
   )
   return (r.rows[0] as { id: string } | undefined)?.id ?? null
-}
-
-// Paragraph rows are saved on a separate child table, with their own image/video/file
-// columns (e.g. a "photo card" paragraph block embeds an image) — these need the same
-// media reference-count bookkeeping as top-level content fields, just one level down.
-function paragraphMediaFieldNames(pType: ParsedParagraphType): Set<string> {
-  return new Set(
-    pType.fields
-      .filter((f) => f.field_type === 'image' || f.field_type === 'video' || f.field_type === 'file')
-      .map((f) => f.name)
-  )
-}
-
-async function fetchParagraphMediaIds(
-  db: DrizzlePostgresInstance,
-  pType: ParsedParagraphType,
-  itemId: string,
-  fieldName: string,
-): Promise<string[]> {
-  const mediaColumns = pType.fields
-    .filter((f) => f.field_type === 'image' || f.field_type === 'video' || f.field_type === 'file')
-    .map((f) => f.db_column!.column_name)
-  if (mediaColumns.length === 0) return []
-
-  const tbl = sql.raw(quoteIdent(pType.db.table_name))
-  const cols = sql.join(mediaColumns.map((c) => sql.raw(quoteIdent(c))), sql`, `)
-  const result = await db.execute(
-    sql`SELECT ${cols} FROM ${tbl} WHERE parent_id = ${itemId} AND parent_field = ${fieldName}`
-  )
-
-  const ids: string[] = []
-  for (const row of result.rows as Record<string, unknown>[]) {
-    for (const col of mediaColumns) {
-      const v = row[col]
-      if (typeof v === 'string' && v !== '') ids.push(v)
-    }
-  }
-  return ids
-}
-
-// Deletes all paragraph rows for one field of one parent item (used when the parent
-// itself is being deleted — paragraph rows have no FK/cascade back to their parent,
-// so without this they'd be left behind forever). Returns the media ids that were
-// referenced by the deleted rows, so the caller can decrement them.
-async function deleteParagraphRowsForField(
-  db: DrizzlePostgresInstance,
-  itemId: string,
-  fieldName: string,
-  pType: ParsedParagraphType,
-): Promise<string[]> {
-  const removedMediaIds = await fetchParagraphMediaIds(db, pType, itemId, fieldName)
-  const tbl = sql.raw(quoteIdent(pType.db.table_name))
-  await db.execute(sql`DELETE FROM ${tbl} WHERE parent_id = ${itemId} AND parent_field = ${fieldName}`)
-  return removedMediaIds
-}
-
-async function saveParagraphField(
-  db: DrizzlePostgresInstance,
-  itemId: string,
-  parentType: string,
-  fieldName: string,
-  pType: ParsedParagraphType,
-  items: unknown[],
-): Promise<{ removedMediaIds: string[]; addedMediaIds: string[] }> {
-  const removedMediaIds = await fetchParagraphMediaIds(db, pType, itemId, fieldName)
-
-  const tbl = sql.raw(quoteIdent(pType.db.table_name))
-  await db.execute(sql`DELETE FROM ${tbl} WHERE parent_id = ${itemId} AND parent_field = ${fieldName}`)
-
-  const mediaFieldNames = paragraphMediaFieldNames(pType)
-  const addedMediaIds: string[] = []
-
-  for (let i = 0; i < items.length; i++) {
-    const pItem = items[i] as Record<string, unknown>
-    const data: Record<string, unknown> = {
-      id: crypto.randomUUID(),
-      parent_id: itemId,
-      parent_type: parentType,
-      parent_field: fieldName,
-      order: i,
-      created_at: new Date(),
-      updated_at: new Date(),
-    }
-    for (const pf of pType.fields) {
-      if (!pf.db_column || pf.db_column.junction) continue
-      data[pf.db_column.column_name] = pItem[pf.name] ?? null
-    }
-    const cols = sql.join(Object.keys(data).map((k) => sql.raw(quoteIdent(k))), sql`, `)
-    const vals = sql.join(Object.values(data).map((v) => sql`${v}`), sql`, `)
-    await db.execute(sql`INSERT INTO ${tbl} (${cols}) VALUES (${vals})`)
-
-    for (const name of mediaFieldNames) {
-      const val = pItem[name]
-      if (typeof val === 'string' && val !== '') addedMediaIds.push(val)
-    }
-  }
-
-  return { removedMediaIds, addedMediaIds }
-}
-
-async function saveJunctionField(
-  db: DrizzlePostgresInstance,
-  itemId: string,
-  junction: { table_name: string; left_column: string; right_column: string },
-  relatedIds: string[],
-): Promise<void> {
-  const tbl = sql.raw(quoteIdent(junction.table_name))
-  const left = sql.raw(quoteIdent(junction.left_column))
-  const right = sql.raw(quoteIdent(junction.right_column))
-  await db.execute(sql`DELETE FROM ${tbl} WHERE ${left} = ${itemId}`)
-  for (const rid of relatedIds) {
-    await db.execute(sql`INSERT INTO ${tbl} (${left}, ${right}) VALUES (${itemId}, ${rid})`)
-  }
 }
 
 // ─── Shared query-param helpers ───────────────────────────────────────────────
@@ -593,15 +483,14 @@ export function registerAdminContentRoutes(
             const pType = registry.paragraph_types[comp.ref]
             if (!pType) continue
             const items = Array.isArray(body[f.name]) ? (body[f.name] as unknown[]) : []
-            const { addedMediaIds, removedMediaIds } = await saveParagraphField(db, itemId, contentType.db.table_name, f.name, pType, items)
-            mediaDeltas.push({ added: addedMediaIds, removed: removedMediaIds })
+            mediaDeltas.push(await persistParagraphField(db, itemId, contentType.db.table_name, f.name, pType, items))
           }
           for (const f of junctionFields) {
             const junction = f.db_column!.junction!
             const relatedIds = Array.isArray(body[f.name])
               ? (body[f.name] as unknown[]).filter((v): v is string => typeof v === 'string')
               : []
-            await saveJunctionField(db, itemId, junction, relatedIds)
+            await persistJunctionField(db, itemId, junction, relatedIds)
           }
         }
 
@@ -735,15 +624,14 @@ export function registerAdminContentRoutes(
             const pType = registry.paragraph_types[comp.ref]
             if (!pType) continue
             const items = Array.isArray(body[f.name]) ? (body[f.name] as unknown[]) : []
-            const { removedMediaIds, addedMediaIds } = await saveParagraphField(db, id, contentType.db.table_name, f.name, pType, items)
-            mediaDeltas.push({ added: addedMediaIds, removed: removedMediaIds })
+            mediaDeltas.push(await persistParagraphField(db, id, contentType.db.table_name, f.name, pType, items))
           }
           for (const f of patchJunctionFields) {
             const junction = f.db_column!.junction!
             const relatedIds = Array.isArray(body[f.name])
               ? (body[f.name] as unknown[]).filter((v): v is string => typeof v === 'string')
               : []
-            await saveJunctionField(db, id, junction, relatedIds)
+            await persistJunctionField(db, id, junction, relatedIds)
           }
         }
 
@@ -782,8 +670,7 @@ export function registerAdminContentRoutes(
             if (comp.component !== 'paragraph-embed' || !comp.ref) continue
             const pType = registry.paragraph_types[comp.ref]
             if (!pType) continue
-            const removed = await deleteParagraphRowsForField(db, id, f.name, pType)
-            mediaDeltas.push({ added: [], removed })
+            mediaDeltas.push(await deleteParagraphField(db, id, f.name, pType))
           }
         }
 
@@ -930,8 +817,7 @@ export function registerAdminContentRoutes(
             const pType = registry.paragraph_types[comp.ref]
             if (!pType) continue
             const items = Array.isArray(body[f.name]) ? (body[f.name] as unknown[]) : []
-            const { addedMediaIds, removedMediaIds } = await saveParagraphField(db, taxItemId, taxonomyType.db.table_name, f.name, pType, items)
-            mediaDeltas.push({ added: addedMediaIds, removed: removedMediaIds })
+            mediaDeltas.push(await persistParagraphField(db, taxItemId, taxonomyType.db.table_name, f.name, pType, items))
           }
         }
 
@@ -1013,8 +899,7 @@ export function registerAdminContentRoutes(
             const pType = registry.paragraph_types[comp.ref]
             if (!pType) continue
             const items = Array.isArray(body[f.name]) ? (body[f.name] as unknown[]) : []
-            const { removedMediaIds, addedMediaIds } = await saveParagraphField(db, id, taxonomyType.db.table_name, f.name, pType, items)
-            mediaDeltas.push({ added: addedMediaIds, removed: removedMediaIds })
+            mediaDeltas.push(await persistParagraphField(db, id, taxonomyType.db.table_name, f.name, pType, items))
           }
         }
 
@@ -1051,8 +936,7 @@ export function registerAdminContentRoutes(
             if (comp.component !== 'paragraph-embed' || !comp.ref) continue
             const pType = registry.paragraph_types[comp.ref]
             if (!pType) continue
-            const removed = await deleteParagraphRowsForField(db, id, f.name, pType)
-            mediaDeltas.push({ added: [], removed })
+            mediaDeltas.push(await deleteParagraphField(db, id, f.name, pType))
           }
         }
 
