@@ -56,10 +56,10 @@ If the project name was provided as a CLI argument, it is used as the default fo
 │   ├── content-types/
 │   │   └── blog-post.json         ← simple example with a few fields
 │   ├── paragraph-types/           ← empty directory (gitkeep)
-│   └── taxonomy-types/
-│       └── tag.json               ← simple example
-├── roles.json                     ← default five-role hierarchy (rarely needs customising)
-├── routes.json                    ← one placeholder base path as example
+│   ├── taxonomy-types/
+│   │   └── tag.json               ← simple example
+│   ├── roles.json                 ← default five-role hierarchy (rarely needs customising)
+│   └── routes.json                ← one placeholder base path as example
 ├── .env.example                   ← DB_URL + storage-specific vars as placeholders
 ├── .gitignore                     ← node_modules/, dist/, .manguito/, .env*
 ├── package.json                   ← scripts + manguito-cms dependency
@@ -69,24 +69,74 @@ If the project name was provided as a CLI argument, it is used as the default fo
 
 ### `roles.json` — Default Five-Role Hierarchy
 
-Scaffolded with the standard Manguito role set. Most projects will not need to modify this.
+Scaffolded with the standard Manguito role set. Most projects will not need to
+modify this. Roles live under a top-level `roles` key, each carries a `label` and
+a `hierarchy_level`, and permissions are explicit `target:action` strings — no
+wildcards (see `phase-02-roles-and-auth-design.md`).
 
 ```json
-[
-  { "name": "admin",   "hierarchy_level": 1, "permissions": ["*"] },
-  { "name": "manager", "hierarchy_level": 2, "permissions": ["content.*", "media.*", "taxonomy.*", "users.read"] },
-  { "name": "editor",  "hierarchy_level": 3, "permissions": ["content.*", "media.*", "taxonomy.*"] },
-  { "name": "writer",  "hierarchy_level": 4, "permissions": ["content.create", "content.read", "media.upload"] },
-  { "name": "viewer",  "hierarchy_level": 5, "permissions": ["content.read", "media.read"] }
-]
+{
+  "roles": [
+    {
+      "name": "admin",
+      "label": "Administrator",
+      "hierarchy_level": 1,
+      "permissions": [
+        "content:read", "content:create", "content:edit", "content:delete",
+        "media:read", "media:create", "media:edit", "media:delete",
+        "taxonomy:read", "taxonomy:create", "taxonomy:edit", "taxonomy:delete",
+        "users:read", "users:create", "users:edit", "users:delete",
+        "roles:read"
+      ]
+    },
+    {
+      "name": "manager",
+      "label": "Manager",
+      "hierarchy_level": 2,
+      "permissions": [
+        "content:read", "content:create", "content:edit", "content:delete",
+        "media:read", "media:create", "media:edit", "media:delete",
+        "taxonomy:read", "taxonomy:create", "taxonomy:edit", "taxonomy:delete",
+        "users:read"
+      ]
+    },
+    {
+      "name": "editor",
+      "label": "Editor",
+      "hierarchy_level": 3,
+      "permissions": [
+        "content:read", "content:create", "content:edit", "content:delete",
+        "media:read", "media:create", "media:edit", "media:delete",
+        "taxonomy:read", "taxonomy:create", "taxonomy:edit", "taxonomy:delete"
+      ]
+    },
+    {
+      "name": "writer",
+      "label": "Writer",
+      "hierarchy_level": 4,
+      "permissions": ["content:read", "content:create", "media:read", "media:create"]
+    },
+    {
+      "name": "viewer",
+      "label": "Viewer",
+      "hierarchy_level": 5,
+      "permissions": ["content:read", "media:read"]
+    }
+  ]
+}
 ```
 
 ### `routes.json` — Placeholder Base Path
 
+Base paths live under a top-level `base_paths` key; each is a `name` plus the URL
+`path` it maps to.
+
 ```json
-[
-  { "base_path": "posts", "content_type": "blog_post", "published_only": true }
-]
+{
+  "base_paths": [
+    { "name": "posts", "path": "/posts" }
+  ]
+}
 ```
 
 Developer modifies or removes this as their project requires.
