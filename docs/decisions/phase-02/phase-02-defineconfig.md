@@ -44,7 +44,6 @@ export default defineConfig({
       paragraph_types: 'paragraph-types',
       taxonomy_types: 'taxonomy-types',
       enum_types: 'enum-types',
-      roles: 'roles',
     }
   },
 
@@ -152,7 +151,6 @@ type SchemaFolders = {
   paragraph_types: string
   taxonomy_types: string
   enum_types: string
-  roles: string
 }
 
 type ResolvedSchemaConfig = {
@@ -170,9 +168,8 @@ type ResolvedSchemaConfig = {
 | `folders.paragraph_types` | `'paragraph-types'` |
 | `folders.taxonomy_types` | `'taxonomy-types'` |
 | `folders.enum_types` | `'enum-types'` |
-| `folders.roles` | `'roles'` |
 
-`routes.json` lives at `{base_path}/routes.json` — filename is fixed, not configurable.
+`roles.json` and `routes.json` live at `{base_path}/roles.json` and `{base_path}/routes.json` — fixed filenames at the schema root, not configurable folders.
 
 **Config-time validation:**
 
@@ -515,7 +512,6 @@ function resolveSchemaConfig(config?: SchemaConfig): ResolvedSchemaConfig {
       paragraph_types: config?.folders?.paragraph_types ?? 'paragraph-types',
       taxonomy_types: config?.folders?.taxonomy_types ?? 'taxonomy-types',
       enum_types: config?.folders?.enum_types ?? 'enum-types',
-      roles: config?.folders?.roles ?? 'roles',
     }
   }
 }

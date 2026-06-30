@@ -71,7 +71,6 @@ describe('defineConfig — schema config', () => {
     expect(resolved.schema.folders.paragraph_types).toBe('paragraph-types')
     expect(resolved.schema.folders.taxonomy_types).toBe('taxonomy-types')
     expect(resolved.schema.folders.enum_types).toBe('enum-types')
-    expect(resolved.schema.folders.roles).toBe('roles')
   })
 
   it('overrides base_path when provided', () => {
@@ -94,7 +93,6 @@ describe('defineConfig — schema config', () => {
     expect(resolved.schema.folders.enum_types).toBe('my-enums')
     expect(resolved.schema.folders.paragraph_types).toBe('paragraph-types')
     expect(resolved.schema.folders.taxonomy_types).toBe('taxonomy-types')
-    expect(resolved.schema.folders.roles).toBe('roles')
   })
 
   it('accepts an empty schema object — all defaults apply', () => {

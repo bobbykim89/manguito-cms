@@ -1,11 +1,12 @@
 // ─── Schema Config ────────────────────────────────────────────────────────────
 
+// The four schema-type folders walked by the parser. roles.json and routes.json
+// are not folders — they are fixed files read directly from base_path.
 export type SchemaFolders = {
   content_types: string
   paragraph_types: string
   taxonomy_types: string
   enum_types: string
-  roles: string
 }
 
 export type SchemaConfig = {

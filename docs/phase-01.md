@@ -453,8 +453,7 @@ schemas/
 │   └── card-accordion.json
 ├── taxonomy-types/
 │   └── tag.json
-└── roles/
-    └── roles.json
+└── roles.json
 ```
 
 ---
@@ -541,8 +540,7 @@ manguito-cms/
 │       ├── schemas/
 │       │   ├── content-types/
 │       │   │   └── example-page.json
-│       │   └── roles/
-│       │       └── roles.json
+│       │   └── roles.json
 │       ├── manguito.config.ts
 │       ├── .env.example
 │       └── package.json         # private, workspace:* deps, ESM only

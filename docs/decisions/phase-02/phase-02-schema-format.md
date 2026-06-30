@@ -28,16 +28,15 @@ Schema files live under a configurable base path (default `./schemas`). Subdirec
 ```
 schemas/
 ├── routes.json                  ← fixed filename, not configurable
+├── roles.json                   ← fixed filename, not configurable
 ├── content-types/               ← default folder name, configurable
 │   └── content--blog_post.json
 ├── paragraph-types/
 │   └── paragraph--photo_card.json
 ├── taxonomy-types/
 │   └── taxonomy--daily_post.json
-├── enum-types/
-│   └── enum--link_target.json
-└── roles/
-    └── roles.json
+└── enum-types/
+    └── enum--link_target.json
 ```
 
 `routes.json` is always at the base path root with a fixed filename. It is created automatically by `manguito init` and defines the valid base paths for content types.

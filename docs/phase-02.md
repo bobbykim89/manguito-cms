@@ -95,7 +95,6 @@ export default defineConfig({
       paragraph_types: 'paragraph-types',
       taxonomy_types: 'taxonomy-types',
       enum_types: 'enum-types',
-      roles: 'roles',
     }
   },
   db: createPostgresAdapter(),       // required
