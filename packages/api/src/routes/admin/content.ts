@@ -4,9 +4,15 @@ import type {
   SchemaRegistry,
   MediaRepository,
   FilterValue,
-  FilterOperator,
   ParsedField,
 } from '@bobbykim/manguito-cms-core'
+import {
+  SORTABLE_FIELDS,
+  RELATION_FIELD_TYPES,
+  parsePagination,
+  parseInclude,
+  parseFilters,
+} from '../query-params.js'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import {
   topLevelMediaDelta,
@@ -39,72 +45,7 @@ async function lookupBasePathId(db: DrizzlePostgresInstance, pathOrName: string)
 
 // ─── Shared query-param helpers ───────────────────────────────────────────────
 
-const SORTABLE_FIELDS = new Set<string>(['title', 'created_at', 'updated_at'])
-
-const RELATION_FIELD_TYPES = new Set([
-  'paragraph',
-  'reference',
-  'image',
-  'video',
-  'file',
-])
-
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
-
-function parsePagination(
-  pageStr: string | undefined,
-  perPageStr: string | undefined
-): { ok: true; page: number; per_page: number } | { ok: false } {
-  const page = pageStr !== undefined ? Number(pageStr) : 1
-  const per_page = perPageStr !== undefined ? Number(perPageStr) : 10
-
-  if (!Number.isInteger(page) || page < 1) return { ok: false }
-  if (!Number.isInteger(per_page) || per_page < 1 || per_page > 100) return { ok: false }
-  return { ok: true, page, per_page }
-}
-
-function parseInclude(includeParam: string | undefined): string[] {
-  if (!includeParam) return []
-  return includeParam
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
-}
-
-function parseFilters(
-  url: string,
-  validFields: Set<string>
-): { ok: true; filters: Record<string, FilterValue> } | { ok: false; invalidField: string } {
-  const { searchParams } = new URL(url)
-  const filters: Record<string, FilterValue> = {}
-
-  for (const [key, value] of searchParams.entries()) {
-    const simpleMatch = /^filter\[([^\]]+)\]$/.exec(key)
-    const opMatch = /^filter\[([^\]]+)\]\[([^\]]+)\]$/.exec(key)
-
-    if (simpleMatch) {
-      const field = simpleMatch[1]!
-      if (!validFields.has(field)) return { ok: false, invalidField: field }
-      const existing = filters[field]
-      if (existing !== undefined) {
-        filters[field] = Array.isArray(existing)
-          ? [...existing, value]
-          : [existing as string | number | boolean, value]
-      } else {
-        filters[field] = value
-      }
-    } else if (opMatch) {
-      const field = opMatch[1]!
-      const operator = opMatch[2]!
-      if (!validFields.has(field)) return { ok: false, invalidField: field }
-      if (!['gt', 'gte', 'lt', 'lte'].includes(operator)) continue
-      const existing = (filters[field] as FilterOperator | undefined) ?? {}
-      filters[field] = { ...(existing as FilterOperator), [operator]: value }
-    }
-  }
-
-  return { ok: true, filters }
-}
 
 // ─── Validation helpers ───────────────────────────────────────────────────────
 
