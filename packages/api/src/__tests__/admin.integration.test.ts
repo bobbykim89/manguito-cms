@@ -63,7 +63,7 @@ const BLOG_TYPE: ParsedContentType = {
   api: {
     default_base_path: BASE_PATH,
     http_methods: ['GET', 'POST', 'PATCH', 'DELETE'],
-    item_path: `/admin/api/${BASE_PATH}/:id`,
+    item_path: `/admin/api/content/${BASE_PATH}/:id`,
   },
 }
 
@@ -224,7 +224,7 @@ describe('admin content routes — integration', () => {
         ('draft-1', false, 'Draft One')
     `))
 
-    const res = await app.request(`/admin/api/${BASE_PATH}`, withAuth())
+    const res = await app.request(`/admin/api/content/${BASE_PATH}`, withAuth())
     expect(res.status).toBe(200)
 
     const body = await res.json() as {
@@ -249,7 +249,7 @@ describe('admin content routes — integration', () => {
     `))
     const id = (result.rows[0] as { id: string }).id
 
-    const res = await app.request(`/admin/api/${BASE_PATH}/${id}`, withAuth({
+    const res = await app.request(`/admin/api/content/${BASE_PATH}/${id}`, withAuth({
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ published: true }),
@@ -278,7 +278,7 @@ describe('admin content routes — integration', () => {
     `))
     const id = (result.rows[0] as { id: string }).id
 
-    const res = await app.request(`/admin/api/${BASE_PATH}/${id}`, withAuth({
+    const res = await app.request(`/admin/api/content/${BASE_PATH}/${id}`, withAuth({
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ published: false, blog_title: '' }),
