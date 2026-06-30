@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { createAPIAdapter } from '../app'
+import { createCmsApp } from '../app'
 import type { StorageAdapter, SchemaRegistry, ParsedRole } from '@bobbykim/manguito-cms-core'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 
@@ -14,7 +14,7 @@ const SYSTEM_ROLES: ParsedRole[] = [
 
 const mockStorage: StorageAdapter = {
   type: 'local',
-  upload: async () => ({ key: '', url: '' }),
+  upload: async () => {},
   delete: async () => {},
   getUrl: () => '',
   getPresignedUploadUrl: async () => ({ upload_url: '', key: '', expires_at: 0 }),
@@ -33,10 +33,10 @@ const mockRegistry: SchemaRegistry = {
 
 const mockDb = {} as unknown as DrizzlePostgresInstance
 
-describe('createAPIAdapter', () => {
+describe('createCmsApp', () => {
   it('throws on missing storage with correct message', () => {
     expect(() =>
-      createAPIAdapter({
+      createCmsApp({
         storage: undefined as unknown as StorageAdapter,
         registry: mockRegistry,
         db: mockDb,
@@ -45,7 +45,7 @@ describe('createAPIAdapter', () => {
   })
 
   it('succeeds with storage provided', () => {
-    const adapter = createAPIAdapter({
+    const adapter = createCmsApp({
       storage: mockStorage,
       registry: mockRegistry,
       db: mockDb,

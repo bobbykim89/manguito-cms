@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm'
 import { createPostgresAdapter } from '@bobbykim/manguito-cms-db'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import type { SchemaRegistry, ParsedContentType, ParsedRole } from '@bobbykim/manguito-cms-core'
-import { createAPIAdapter } from '../app'
+import { createCmsApp } from '../app'
 import { createLocalAdapter } from '../storage/adapters/local'
 import { signToken } from '../auth/jwt'
 
@@ -195,7 +195,7 @@ beforeEach(async () => {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function makeApp() {
-  const { app } = createAPIAdapter({
+  const { app } = createCmsApp({
     storage: createLocalAdapter(),
     registry: TEST_REGISTRY,
     db,

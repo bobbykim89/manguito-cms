@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm'
 import { createPostgresAdapter } from '@bobbykim/manguito-cms-db'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import type { SchemaRegistry, ParsedContentType, ParsedRole } from '@bobbykim/manguito-cms-core'
-import { createAPIAdapter } from '../app'
+import { createCmsApp } from '../app'
 import { createLocalAdapter } from '../storage/adapters/local'
 
 const DB_URL = process.env['DB_URL']
@@ -109,7 +109,7 @@ beforeEach(async () => {
 
 // Each test gets a fresh app so the rate-limit sliding window is reset.
 function makeApp() {
-  const { app } = createAPIAdapter({
+  const { app } = createCmsApp({
     storage: createLocalAdapter(),
     registry: TEST_REGISTRY,
     db,

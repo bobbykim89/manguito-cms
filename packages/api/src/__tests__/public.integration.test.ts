@@ -4,7 +4,7 @@ import { sql } from 'drizzle-orm'
 import { createPostgresAdapter } from '@bobbykim/manguito-cms-db'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import type { SchemaRegistry, ParsedContentType, ParsedRole } from '@bobbykim/manguito-cms-core'
-import { createAPIAdapter } from '../app'
+import { createCmsApp } from '../app'
 import { createLocalAdapter } from '../storage/adapters/local'
 import { createDrizzleContentRepository } from '../repositories/content'
 import { registerPublicContentRoutes } from '../routes/content'
@@ -55,7 +55,7 @@ const BLOG_TYPE: ParsedContentType = {
       order: 1,
       validation: { required: false },
       db_column: { column_name: 'category_id', column_type: 'uuid', nullable: true },
-      ui_component: { component: 'reference-select' },
+      ui_component: { component: 'typeahead-select', ref: 'taxonomy--category', rel: 'one-to-one' },
     },
   ],
   ui: { tabs: [] },
@@ -132,7 +132,7 @@ beforeEach(async () => {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function makeApp() {
-  const { app } = createAPIAdapter({
+  const { app } = createCmsApp({
     storage: createLocalAdapter(),
     registry: TEST_REGISTRY,
     db,
@@ -213,7 +213,7 @@ describe('public content routes — integration', () => {
 
   it('GET /api/{base_path} with ?include=<relation> returns expanded relation', async () => {
     // Uses registerPublicContentRoutes directly with a repo that has relations configured,
-    // since createAPIAdapter does not yet wire relation options to content repos.
+    // since createCmsApp does not yet wire relation options to content repos.
     const catResult = await db.execute(sql.raw(`
       INSERT INTO "${CATEGORY_TABLE}" (name, published)
       VALUES ('Technology', true)
