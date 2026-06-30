@@ -7,7 +7,7 @@
 
 ## Roles Schema
 
-Roles are defined in `schemas/roles/roles.json`. They are schema-defined only — no runtime role creation through the admin panel. This keeps roles version-controlled alongside the rest of the system configuration.
+Roles are defined in `schemas/roles.json`. They are schema-defined only — no runtime role creation through the admin panel. This keeps roles version-controlled alongside the rest of the system configuration.
 
 ```json
 {

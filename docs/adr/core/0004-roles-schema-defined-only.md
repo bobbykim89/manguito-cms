@@ -4,7 +4,7 @@ status: accepted
 
 # Roles are schema-defined only; each user has exactly one role
 
-Roles are defined in `schemas/roles/roles.json`, parsed and seeded to the DB, and are read-only in the admin panel — there is no runtime role creation, editing, or deletion through the UI or API (`roles:create`/`roles:edit`/`roles:delete` are not valid permissions; only `roles:read` exists). Each user is assigned exactly one role, not a set. Both choices trade UI flexibility for safety: roles stay version-controlled alongside the rest of the system configuration, and the permission model has no escalation surface at runtime.
+Roles are defined in `schemas/roles.json`, parsed and seeded to the DB, and are read-only in the admin panel — there is no runtime role creation, editing, or deletion through the UI or API (`roles:create`/`roles:edit`/`roles:delete` are not valid permissions; only `roles:read` exists). Each user is assigned exactly one role, not a set. Both choices trade UI flexibility for safety: roles stay version-controlled alongside the rest of the system configuration, and the permission model has no escalation surface at runtime.
 
 ## Considered Options
 

@@ -123,7 +123,7 @@ All adapter factory functions follow the same pattern — options are optional w
 
 See full detail: [phase-02-roles-and-auth-design.md](./decisions/phase-02/phase-02-roles-and-auth-design.md)
 
-Roles are defined in `schemas/roles/roles.json` and parsed into `ParsedRoles`. They are schema-defined only — no runtime role creation through the admin panel. Five default system roles ship with every project:
+Roles are defined in `schemas/roles.json` and parsed into `ParsedRoles`. They are schema-defined only — no runtime role creation through the admin panel. Five default system roles ship with every project:
 
 | Role | Hierarchy level | Notable permissions |
 | ---- | --------------- | ------------------- |
@@ -192,7 +192,7 @@ Parser output must be serializable plain objects at all times. This is enforced 
 - [ ] Implement JSON and YAML file loader
 - [ ] Implement schema directory walker respecting config folder names
 - [ ] Parse and validate `routes.json`
-- [ ] Parse and validate `roles/roles.json`
+- [ ] Parse and validate `roles.json`
 - [ ] Implement system field injection per schema type
 - [ ] Implement tab stripping — produce flat fields array alongside UiMeta tabs
 - [ ] Implement enum reference resolution — inline standalone enum values

@@ -340,9 +340,9 @@ The `code` field allows clients to handle specific error types programmatically 
 
 | Concern             | Library                           |
 | ------------------- | --------------------------------- |
-| CLI framework       | citty                             |
-| Interactive prompts | clack                             |
-| Template engine     | handlebars (for `init` templates) |
+| CLI framework       | commander                         |
+| Interactive prompts | @inquirer/prompts                 |
+| Template engine     | none (`{{var}}` string substitution) |
 
 The CLI owns the `manguito` binary and the full dev/build/start lifecycle. It reads `manguito.config.ts` and orchestrates all other packages. It is the last package built since it depends on all others being stable, but it is scaffolded as an empty package in Phase 1 so the dependency graph is established.
 
@@ -745,7 +745,7 @@ Test: Vitest throughout
 API: Hono + @hono/zod-openapi
 DB: Drizzle ORM + Postgres (Neon for serverless)
 Admin: Vue 3 + Vite + Tailwind (custom components)
-CLI: citty + clack
+CLI: commander + @inquirer/prompts
 
 ## Coding conventions
 
