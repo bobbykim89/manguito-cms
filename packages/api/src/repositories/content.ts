@@ -33,6 +33,9 @@ export type JunctionRelationDef = {
   junction_table: string
   left_column: string
   right_column: string
+  // Only ordered junctions have an "order" column (db codegen emits it only when
+  // order_column is true) — the resolver must not ORDER BY it otherwise.
+  order_column: boolean
 }
 
 export type MediaRelationDef = {
@@ -82,6 +85,7 @@ export function buildRelationsMap(
           junction_table: j.table_name,
           left_column: j.left_column,
           right_column: j.right_column,
+          order_column: j.order_column,
         }
       } else if (field.db_column.foreign_key) {
         relations[field.name] = {
@@ -254,8 +258,9 @@ export function createDrizzleContentRepository<T>(
         parentIds.map((id) => sql`${id}`),
         sql`, `
       )
+      const orderBy = rel.order_column ? sql` ORDER BY "order" ASC` : sql``
       const junctionResult = await db.execute(
-        sql`SELECT * FROM ${sql.raw(quoteIdent(rel.junction_table))} WHERE ${sql.raw(quoteIdent(rel.left_column))} IN (${inList}) ORDER BY "order" ASC`
+        sql`SELECT * FROM ${sql.raw(quoteIdent(rel.junction_table))} WHERE ${sql.raw(quoteIdent(rel.left_column))} IN (${inList})${orderBy}`
       )
       const jRows = junctionResult.rows as Record<string, unknown>[]
       const rightIds = [...new Set(jRows.map((r) => r[rel.right_column] as string))]
