@@ -317,7 +317,12 @@ export function registerAdminContentRoutes(
           )
         }
 
-        // Resolve paragraph and junction fields so the edit form loads real data
+        // Resolve paragraph and junction fields so the edit form loads real data.
+        // This deliberately does NOT reuse the relation module's resolvers: the
+        // edit read scopes paragraph rows by parent_id AND parent_field, whereas
+        // resolveRelationField scopes by parent_id only. Two paragraph fields of
+        // the same paragraph type would be mixed by the resolver — so the more
+        // precise per-field read stays here on purpose.
         if (db) {
           const row = item as Record<string, unknown>
           for (const f of contentType.fields) {

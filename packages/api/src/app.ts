@@ -18,7 +18,8 @@ import { registerAuthRoutes } from './routes/admin/auth.js'
 import { registerUserRoutes } from './routes/admin/users.js'
 import { registerConfigRoute } from './routes/admin/config.js'
 import { registerSchemaRoute } from './routes/admin/schema.js'
-import { createDrizzleContentRepository, buildRelationsMap } from './repositories/content.js'
+import { createDrizzleContentRepository } from './repositories/content.js'
+import { buildRelationsMap } from './relations.js'
 import { createMediaRepository } from './repositories/media.js'
 
 export type CreateCmsAppOptions = {
