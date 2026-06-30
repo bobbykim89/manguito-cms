@@ -334,7 +334,7 @@ The `code` field allows clients to handle specific error types programmatically 
 | Framework  | Vue 3 (Composition API) |
 | Build tool | Vite                    |
 | Styling    | Tailwind CSS            |
-| Components | shadcn-vue              |
+| Components | Custom (Tailwind)       |
 
 #### CLI — `@bobbykim/manguito-cms-cli`
 
@@ -509,7 +509,7 @@ manguito-cms/
 │   │
 │   ├── admin/
 │   │   ├── src/
-│   │   │   ├── components/      # shadcn-vue + custom components
+│   │   │   ├── components/      # custom Tailwind components
 │   │   │   ├── views/           # Page-level components
 │   │   │   ├── composables/     # Vue composables
 │   │   │   └── main.ts
@@ -744,7 +744,7 @@ Build: tsup (packages), Vite (admin only)
 Test: Vitest throughout
 API: Hono + @hono/zod-openapi
 DB: Drizzle ORM + Postgres (Neon for serverless)
-Admin: Vue 3 + Vite + Tailwind + shadcn-vue
+Admin: Vue 3 + Vite + Tailwind (custom components)
 CLI: citty + clack
 
 ## Coding conventions

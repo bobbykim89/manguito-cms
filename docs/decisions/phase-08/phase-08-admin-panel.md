@@ -11,7 +11,7 @@
 | Framework | Vue 3 (Composition API) | Already decided in Phase 1 |
 | Build tool | Vite | Already decided in Phase 1 |
 | Styling | Tailwind CSS | Already decided in Phase 1 |
-| Components | shadcn-vue | Already decided in Phase 1 |
+| Components | Custom (Tailwind) | Built in-house — shadcn-vue was planned but not adopted |
 | State management | Pinia | Standard Vue 3 ecosystem |
 | Routing | vue-router | Standard Vue 3 ecosystem |
 | Rich text editor | `@tiptap/vue-3` | Justified — building WYSIWYG from scratch is complex and security-sensitive |

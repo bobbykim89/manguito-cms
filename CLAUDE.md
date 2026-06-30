@@ -8,7 +8,7 @@ Architectural decisions are recorded as ADRs in docs/adr/ (cross-cutting at the 
 
 ## Current phase
 
-Phase 9 — CLI — `init`, `dev`, `build`, `start`, `validate` commands
+Phase 10 — Deployment — Lambda, Neon, CI/CD pipeline
 
 ## Completed phases
 
@@ -20,6 +20,7 @@ Phase 5 — REST API layer — route generation, request/response contracts.
 Phase 6 — Auth module — JWT, roles, route protection
 Phase 7 — Testing — unit, integration, smoke tests
 Phase 8 — Admin panel — Vue 3, auto-generated forms
+Phase 9 — CLI — init, dev, build, start, validate commands
 
 ## Packages
 
@@ -37,7 +38,7 @@ Build: tsup (packages), Vite (admin only)
 Test: Vitest throughout
 API: Hono + @hono/zod-openapi
 DB: Drizzle ORM + Postgres (Neon for serverless)
-Admin: Vue 3 + Vite + Tailwind + shadcn-vue
+Admin: Vue 3 + Vite + Tailwind (custom components)
 CLI: commander + @inquirer/prompts
 
 ## Coding conventions

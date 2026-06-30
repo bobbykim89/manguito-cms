@@ -145,7 +145,7 @@ manguito validate         # parse and validate all schemas, report errors
 - REST API with auto-generated CRUD endpoints per content type
 - Role-based auth: Admin, Editor, Writer, Tester
 - Storage adapters: local filesystem, AWS S3, Cloudinary
-- Minimalist admin panel (Vue 3 + Tailwind + shadcn-vue)
+- Minimalist admin panel (Vue 3 + Tailwind)
 - Serverless deployment target (AWS Lambda) and traditional server mode
 - Unit and integration test suite
 
