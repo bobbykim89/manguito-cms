@@ -6,8 +6,29 @@ import { sql } from 'drizzle-orm'
 import type { MigrationResult, MigrationStatus } from '@bobbykim/manguito-cms-core'
 import type { DrizzlePostgresInstance, MigrationRunnerOptions } from '../types'
 
+// drizzle-kit is invoked as a bare command resolved via PATH, but these calls
+// run with `cwd` set to the generated config's directory — which has no
+// node_modules of its own. Package managers put `node_modules/.bin` on PATH as
+// a *relative* entry (`./node_modules/.bin`), which stops resolving once the
+// child process's cwd changes. Resolve any relative PATH entries against the
+// original working directory (and prepend the project-local bin) so the bare
+// `drizzle-kit` command is found regardless of the child's cwd.
+function resolvedPathEnv(): NodeJS.ProcessEnv {
+  const root = process.cwd()
+  const localBin = path.join(root, 'node_modules', '.bin')
+  const existing = (process.env.PATH ?? '')
+    .split(path.delimiter)
+    .filter(Boolean)
+    .map((entry) => (path.isAbsolute(entry) ? entry : path.resolve(root, entry)))
+  return { ...process.env, PATH: [localBin, ...existing].join(path.delimiter) }
+}
+
 export async function runDevMigration(configPath: string): Promise<void> {
-  execSync(`drizzle-kit push --config=${configPath}`, { stdio: 'inherit', cwd: path.dirname(configPath) })
+  execSync(`drizzle-kit push --config=${configPath}`, {
+    stdio: 'inherit',
+    cwd: path.dirname(configPath),
+    env: resolvedPathEnv(),
+  })
 }
 
 export async function generateMigration(
@@ -22,7 +43,11 @@ export async function generateMigration(
     // folder doesn't exist yet — no prior migrations
   }
 
-  execSync(`drizzle-kit generate --config=${configPath}`, { stdio: 'inherit', cwd: path.dirname(configPath) })
+  execSync(`drizzle-kit generate --config=${configPath}`, {
+    stdio: 'inherit',
+    cwd: path.dirname(configPath),
+    env: resolvedPathEnv(),
+  })
 
   let afterFiles: string[] = []
   try {
@@ -127,7 +152,7 @@ export async function applyMigrations(
       // terminal in real time — capturing stdout/stderr swallows ANSI overwrites
       // and hides the actual error message.
       stdio: 'inherit',
-      env: { ...process.env, NODE_NO_WARNINGS: '1' },
+      env: { ...resolvedPathEnv(), NODE_NO_WARNINGS: '1' },
     },
   )
   if (result.error) {
