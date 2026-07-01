@@ -34,7 +34,7 @@ Phase 3 — DrizzleContentRepository, PostgresAdapter
 Phase 4 — scanMigrationFiles (used by CLI, not API)
 
 Phase 5 — adds:
-  createAPIAdapter()         ← wires db + storage + routes into Hono app
+  createCmsApp()             ← wires db + storage + routes into Hono app
   Content routes             ← /api/* and /admin/api/* generated from SchemaRegistry
   Media routes               ← /api/media/* and /admin/api/media/*
   Storage adapters           ← local, S3, Cloudinary
@@ -51,7 +51,7 @@ Phase 9 — CLI orchestrates manguito dev / build / start
 
 ```
 packages/api/src/
-├── app.ts                      ← createAPIAdapter
+├── app.ts                      ← createCmsApp
 ├── routes/
 │   ├── content.ts              ← public content routes
 │   ├── media.ts                ← public media routes
@@ -84,7 +84,7 @@ packages/api/src/
 
 Entry points:
 ```
-@bobbykim/manguito-cms-api            ← createAPIAdapter
+@bobbykim/manguito-cms-api            ← createCmsApp + createAPIAdapter
 @bobbykim/manguito-cms-api/storage    ← createLocalAdapter, createS3Adapter, createCloudinaryAdapter
 @bobbykim/manguito-cms-api/runtime    ← createServer, createLambdaHandler, createVercelHandler
 ```
@@ -124,7 +124,7 @@ GET    /admin/api/config                   — internal — admin panel config o
 - Routes never interact with Drizzle directly — always through `ContentRepository<T>` interface
 - `DrizzleContentRepository` is injected at startup — the api package has no direct Drizzle dependency
 - Public `/api/*` routes always hardcode `published_only: true` — no query param can override
-- `storage` in `createAPIAdapter` is required with no fallback — hard startup error if missing
+- `storage` in `createCmsApp` is required with no fallback — hard startup error if missing
 - Codegen output (`.manguito/` and `dist/generated/`) is gitignored — CLI owns writes, api reads
 - Media fields (`image`, `video`, `file`) are always fully resolved in API responses regardless of `?include=`
 
@@ -138,7 +138,7 @@ GET    /admin/api/config                   — internal — admin panel config o
 - [ ] Add all three entry points to `package.json` exports field
 
 ### Core — see [phase-05-package-structure.md](./phase-05-package-structure.md)
-- [ ] `createAPIAdapter` — accepts `db`, `storage`, `registry`, `config`, `rateLimit`
+- [ ] `createCmsApp` — accepts `db`, `storage`, `registry`, `media`, `rateLimit`
 - [ ] `DrizzleContentRepository` injected via db adapter — api never imports from db directly
 - [ ] `ContentRepository<T>` interface consumed from `@bobbykim/manguito-cms-core`
 
@@ -194,7 +194,7 @@ GET    /admin/api/config                   — internal — admin panel config o
 - [ ] Authenticated requests fully exempt
 - [ ] Auth middleware runs before rate limiter
 - [ ] `429` response with `Retry-After` and `X-RateLimit-*` headers
-- [ ] Configurable via `createAPIAdapter({ rateLimit: { findAll: { ... } } })`
+- [ ] Configurable via `createCmsApp({ rateLimit: { findAll: { ... } } })`
 
 ### Media Endpoints — see [phase-05-media-endpoints.md](./phase-05-media-endpoints.md)
 - [ ] All uploads use presigned URL flow — no direct upload endpoints
@@ -215,7 +215,7 @@ GET    /admin/api/config                   — internal — admin panel config o
 ## Tests
 
 ### Unit
-- [ ] `createAPIAdapter` — throws on missing `storage`
+- [ ] `createCmsApp` — throws on missing `storage`
 - [ ] Public route handler — `published_only: true` always applied
 - [ ] `PATCH published: true` — returns `422` when required fields empty
 - [ ] `PATCH published: false` — succeeds regardless of field state
@@ -242,7 +242,7 @@ GET    /admin/api/config                   — internal — admin panel config o
 
 - [ ] Read all detail docs linked in the Decisions Made table before implementing
 - [ ] The api package must not import `DrizzleContentRepository` directly — only `ContentRepository<T>` from core
-- [ ] `storage` is required in `createAPIAdapter` — fail hard at startup, never silently default
+- [ ] `storage` is required in `createCmsApp` — fail hard at startup, never silently default
 - [ ] CMS server must never handle binary file data — all uploads go through presigned URL flow
 - [ ] Public routes must hardcode `published_only: true` — never accept it as a query param
 - [ ] Slug validation and uniqueness are server-side responsibilities — do not rely on client

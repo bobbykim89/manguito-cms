@@ -147,7 +147,7 @@ packages/api/src/
 - [ ] Throws with clear error message on empty roles array
 - [ ] Throws with clear error message if any `is_system: true` role is missing
 - [ ] Throws with clear error message on duplicate `hierarchy_level`
-- [ ] Registry built once inside `createAPIAdapter()` — closed over by all middleware factories
+- [ ] Registry built once inside `createCmsApp()` — closed over by all middleware factories
 - [ ] Registry is never rebuilt mid-run
 
 ### Auth Middleware — see [phase-06-auth-middleware.md](./decisions/phase-06/phase-06-auth-middleware.md)
