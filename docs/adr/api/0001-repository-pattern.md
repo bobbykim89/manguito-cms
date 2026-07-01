@@ -4,7 +4,7 @@ status: accepted
 
 # ORM-agnostic routes via a ContentRepository interface injected into the API
 
-Route handlers never touch the ORM. They depend on the `ContentRepository<T>` interface defined in `@bobbykim/manguito-cms-core`; the concrete Drizzle implementation — `createDrizzleContentRepository` — lives in `@bobbykim/manguito-cms-api` (`src/repositories/content.ts`) and imports only the `DrizzlePostgresInstance` *type* from `@bobbykim/manguito-cms-db`. `createAPIAdapter` constructs the repositories from the injected db adapter and hands each handler a `ContentRepository<T>`, so no route imports Drizzle. This keeps the API layer ORM-agnostic: swapping Postgres for another store is a new repository implementation behind the same interface, not a rewrite of every handler.
+Route handlers never touch the ORM. They depend on the `ContentRepository<T>` interface defined in `@bobbykim/manguito-cms-core`; the concrete Drizzle implementation — `createDrizzleContentRepository` — lives in `@bobbykim/manguito-cms-api` (`src/repositories/content.ts`) and imports only the `DrizzlePostgresInstance` *type* from `@bobbykim/manguito-cms-db`. `createCmsApp` constructs the repositories from the injected db adapter and hands each handler a `ContentRepository<T>`, so no route imports Drizzle. This keeps the API layer ORM-agnostic: swapping Postgres for another store is a new repository implementation behind the same interface, not a rewrite of every handler.
 
 ## Considered Options
 

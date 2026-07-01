@@ -15,4 +15,4 @@ Rate limiting is implemented as in-process Hono middleware with no external depe
 ## Consequences
 
 - **Known limitation:** in-process state resets on every serverless cold start, so on Lambda/Vercel the limit is per-instance, not global. Accepted for v1.
-- Rate-limit middleware runs *after* auth middleware so authenticated requests can be exempted before the limiter sees them. Limits are configurable via `createAPIAdapter({ rateLimit: { findAll: {...} } })`.
+- Rate-limit middleware runs *after* auth middleware so authenticated requests can be exempted before the limiter sees them. Limits are configurable via `createCmsApp({ rateLimit: { findAll: {...} } })`.
