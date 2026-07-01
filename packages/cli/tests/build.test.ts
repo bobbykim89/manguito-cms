@@ -22,11 +22,12 @@ vi.mock('@bobbykim/manguito-cms-core', () => ({
 vi.mock('../src/codegen/registry.js', () => ({ generateSchemaRegistry: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('../src/codegen/routes.js', () => ({ generateRoutes: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('../src/codegen/forms.js', () => ({ generateForms: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('../src/codegen/server-entries.js', () => ({ generateServerEntries: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('vite', () => ({ build: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('tsup', () => ({ build: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>()
-  return { ...actual, mkdirSync: vi.fn() }
+  return { ...actual, mkdirSync: vi.fn(), writeFileSync: vi.fn() }
 })
 
 import { runBuild } from '../src/commands/build.js'
@@ -63,7 +64,9 @@ describe('runBuild', () => {
     vi.mocked(loadSchemaFile).mockReturnValue({ ok: true, value: '{}' })
     vi.mocked(parseRoles).mockReturnValue({ ok: true, value: [] } as never)
     vi.mocked(parseRoutes).mockReturnValue({ ok: true, value: [] } as never)
-    vi.mocked(buildSchemaRegistry).mockReturnValue({} as never)
+    vi.mocked(buildSchemaRegistry).mockReturnValue({
+      content_types: {}, paragraph_types: {}, taxonomy_types: {}, enum_types: {},
+    } as never)
     vi.mocked(generateSchemaRegistry).mockResolvedValue(undefined)
     vi.mocked(generateRoutes).mockResolvedValue(undefined)
     vi.mocked(generateForms).mockResolvedValue(undefined)

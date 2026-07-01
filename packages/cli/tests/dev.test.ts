@@ -15,7 +15,7 @@ vi.mock('@bobbykim/manguito-cms-db', () => ({
   createPostgresAdapter: vi.fn(),
 }))
 vi.mock('@bobbykim/manguito-cms-api', () => ({
-  createAPIAdapter: vi.fn().mockReturnValue({ app: { fetch: vi.fn() } }),
+  createCmsApp: vi.fn().mockReturnValue({ app: { fetch: vi.fn() } }),
 }))
 vi.mock('@bobbykim/manguito-cms-core', () => ({
   walkSchemaDirectory: vi.fn().mockReturnValue({ ok: true, value: [] }),
@@ -57,7 +57,7 @@ import { connectDb } from '../src/utils/db.js'
 import { resolveConfig } from '../src/utils/config.js'
 import { createPromptAdapter } from '../src/utils/prompt.js'
 import { walkSchemaDirectory, parseRoles, parseRoutes, buildSchemaRegistry, loadSchemaFile } from '@bobbykim/manguito-cms-core'
-import { createAPIAdapter } from '@bobbykim/manguito-cms-api'
+import { createCmsApp } from '@bobbykim/manguito-cms-api'
 import { createServer as createViteServer } from 'vite'
 import { createServer as httpCreateServer } from 'node:http'
 import { generateDrizzleConfig } from '../src/codegen/drizzle-config.js'
@@ -114,7 +114,7 @@ describe('runDev', () => {
     vi.mocked(generateRoutes).mockResolvedValue(undefined)
     vi.mocked(generateForms).mockResolvedValue(undefined)
     vi.mocked(generateNav).mockResolvedValue(undefined)
-    vi.mocked(createAPIAdapter).mockReturnValue({ app: { fetch: vi.fn() } } as never)
+    vi.mocked(createCmsApp).mockReturnValue({ app: { fetch: vi.fn() } } as never)
     vi.mocked(createViteServer).mockResolvedValue({ middlewares: vi.fn() } as never)
     vi.mocked(httpCreateServer).mockReturnValue({ listen: vi.fn() } as never)
     vi.mocked(fsWatch).mockReturnValue({
@@ -146,7 +146,7 @@ describe('runDev', () => {
     expect(generateRoutes).toHaveBeenCalled()
     expect(generateForms).toHaveBeenCalled()
     expect(generateNav).toHaveBeenCalled()
-    expect(createAPIAdapter).toHaveBeenCalled()
+    expect(createCmsApp).toHaveBeenCalled()
     expect(createViteServer).toHaveBeenCalled()
     expect(httpCreateServer).toHaveBeenCalled()
   })
