@@ -3,7 +3,8 @@
     {
       "name": "admin",
       "label": "Administrator",
-      "hierarchy_level": 1,
+      "is_system": true,
+      "hierarchy_level": 0,
       "permissions": [
         "content:read",   "content:create",   "content:edit",   "content:delete",
         "media:read",     "media:create",     "media:edit",     "media:delete",
@@ -15,7 +16,8 @@
     {
       "name": "manager",
       "label": "Manager",
-      "hierarchy_level": 2,
+      "is_system": true,
+      "hierarchy_level": 1,
       "permissions": [
         "content:read",   "content:create",   "content:edit",   "content:delete",
         "media:read",     "media:create",     "media:edit",     "media:delete",
@@ -26,7 +28,8 @@
     {
       "name": "editor",
       "label": "Editor",
-      "hierarchy_level": 3,
+      "is_system": true,
+      "hierarchy_level": 2,
       "permissions": [
         "content:read",   "content:create",   "content:edit",   "content:delete",
         "media:read",     "media:create",     "media:edit",     "media:delete",
@@ -36,7 +39,8 @@
     {
       "name": "writer",
       "label": "Writer",
-      "hierarchy_level": 4,
+      "is_system": true,
+      "hierarchy_level": 3,
       "permissions": [
         "content:read",  "content:create",
         "media:read",    "media:create"
@@ -45,7 +49,8 @@
     {
       "name": "viewer",
       "label": "Viewer",
-      "hierarchy_level": 5,
+      "is_system": true,
+      "hierarchy_level": 4,
       "permissions": [
         "content:read",
         "media:read"

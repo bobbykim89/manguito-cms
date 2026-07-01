@@ -69,10 +69,13 @@ If the project name was provided as a CLI argument, it is used as the default fo
 
 ### `roles.json` — Default Five-Role Hierarchy
 
-Scaffolded with the standard Manguito role set. Most projects will not need to
-modify this. Roles live under a top-level `roles` key, each carries a `label` and
-a `hierarchy_level`, and permissions are explicit `target:action` strings — no
-wildcards (see `phase-02-roles-and-auth-design.md`).
+Scaffolded with the standard Manguito role set — most projects won't modify it.
+Roles live under a top-level `roles` key. Each role carries a `label`,
+`is_system: true` (these are the built-in system roles), a unique
+`hierarchy_level` (`0` = highest privilege), and explicit `target:action`
+permissions — no wildcards (see `phase-02-roles-and-auth-design.md`). The five
+roles are `admin` (0), `manager` (1), `editor` (2), `writer` (3) and `viewer`
+(4), each a permission superset of the one below it. `admin` in full:
 
 ```json
 {
@@ -80,7 +83,8 @@ wildcards (see `phase-02-roles-and-auth-design.md`).
     {
       "name": "admin",
       "label": "Administrator",
-      "hierarchy_level": 1,
+      "is_system": true,
+      "hierarchy_level": 0,
       "permissions": [
         "content:read", "content:create", "content:edit", "content:delete",
         "media:read", "media:create", "media:edit", "media:delete",
@@ -88,39 +92,6 @@ wildcards (see `phase-02-roles-and-auth-design.md`).
         "users:read", "users:create", "users:edit", "users:delete",
         "roles:read"
       ]
-    },
-    {
-      "name": "manager",
-      "label": "Manager",
-      "hierarchy_level": 2,
-      "permissions": [
-        "content:read", "content:create", "content:edit", "content:delete",
-        "media:read", "media:create", "media:edit", "media:delete",
-        "taxonomy:read", "taxonomy:create", "taxonomy:edit", "taxonomy:delete",
-        "users:read"
-      ]
-    },
-    {
-      "name": "editor",
-      "label": "Editor",
-      "hierarchy_level": 3,
-      "permissions": [
-        "content:read", "content:create", "content:edit", "content:delete",
-        "media:read", "media:create", "media:edit", "media:delete",
-        "taxonomy:read", "taxonomy:create", "taxonomy:edit", "taxonomy:delete"
-      ]
-    },
-    {
-      "name": "writer",
-      "label": "Writer",
-      "hierarchy_level": 4,
-      "permissions": ["content:read", "content:create", "media:read", "media:create"]
-    },
-    {
-      "name": "viewer",
-      "label": "Viewer",
-      "hierarchy_level": 5,
-      "permissions": ["content:read", "media:read"]
     }
   ]
 }
