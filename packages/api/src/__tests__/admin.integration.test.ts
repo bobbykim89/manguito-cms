@@ -327,8 +327,8 @@ describe('admin media routes — integration', () => {
 
     // Insert a media row directly — local adapter ignores missing files on delete
     const insertResult = await db.execute(sql.raw(`
-      INSERT INTO media (url, mime_type, file_size, reference_count)
-      VALUES ('http://localhost:3000/uploads/image/to-delete.png', 'image/png', 1024, 0)
+      INSERT INTO media (type, url, mime_type, file_size, reference_count)
+      VALUES ('image', 'http://localhost:3000/uploads/image/to-delete.png', 'image/png', 1024, 0)
       RETURNING id
     `))
     const id = (insertResult.rows[0] as { id: string }).id
@@ -348,8 +348,8 @@ describe('admin media routes — integration', () => {
     const app = makeApp()
 
     const insertResult = await db.execute(sql.raw(`
-      INSERT INTO media (url, mime_type, file_size, reference_count)
-      VALUES ('http://localhost:3000/uploads/image/in-use.png', 'image/png', 512, 1)
+      INSERT INTO media (type, url, mime_type, file_size, reference_count)
+      VALUES ('image', 'http://localhost:3000/uploads/image/in-use.png', 'image/png', 512, 1)
       RETURNING id
     `))
     const id = (insertResult.rows[0] as { id: string }).id
