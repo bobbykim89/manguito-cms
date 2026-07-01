@@ -174,8 +174,11 @@ describe('ContentFormView rendering', () => {
 
 describe('navigation guards', () => {
   it('unauthenticated navigation to /admin/content/:type redirects to /admin/login', async () => {
-    // Fresh Pinia with no authenticated user
+    // Fresh Pinia with no authenticated user. The file-level beforeEach
+    // persists an editor to localStorage via setUser, which the auth store
+    // re-hydrates on init — clear it so this navigation is truly unauthenticated.
     setActivePinia(createPinia())
+    localStorage.clear()
 
     const router = createTestRouter()
     await router.push(`${ADMIN}/content/content--blog_post`)
