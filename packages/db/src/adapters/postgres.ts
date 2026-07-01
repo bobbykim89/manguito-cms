@@ -41,6 +41,7 @@ export function createPostgresAdapter(
   }
 
   let db: DrizzlePostgresInstance | null = null
+  let pool: Pool | null = null
   let connected = false
 
   return {
@@ -51,7 +52,7 @@ export function createPostgresAdapter(
         const sqlClient = neon(url)
         db = drizzleNeon(sqlClient)
       } else {
-        const pool = new Pool({
+        pool = new Pool({
           connectionString: url,
           max: poolConfig.max,
           idleTimeoutMillis: poolConfig.idle_timeout * 1000,
@@ -65,6 +66,14 @@ export function createPostgresAdapter(
     },
 
     async disconnect(): Promise<void> {
+      // Close the pool so idle connections are released — otherwise the process
+      // hangs on exit and the backend connections linger (which breaks, e.g.,
+      // DROP DATABASE on the connected database). Neon's HTTP client is
+      // stateless and needs no teardown.
+      if (pool) {
+        await pool.end()
+        pool = null
+      }
       db = null
       connected = false
     },
