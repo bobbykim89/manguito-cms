@@ -10,7 +10,6 @@
     "start": "manguito start --env .env",
     "migrate": "manguito migrate --env .env",
     "validate": "manguito validate --env .env",
-    "test": "dotenv -e .env.test -- vitest run",
     "create:superuser": "manguito createsuperuser --env .env",
     "smoke": "dotenv -e ../../.env.test -- vitest run tests/smoke.test.ts",
     "lint": "eslint ."
