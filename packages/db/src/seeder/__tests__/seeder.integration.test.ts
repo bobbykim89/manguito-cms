@@ -20,6 +20,18 @@ if (!DB_URL) {
   throw new Error('DB_URL must be set in .env.test before running integration tests')
 }
 
+function withDatabase(url: string, dbName: string): string {
+  const parsed = new URL(url)
+  parsed.pathname = `/${dbName}`
+  return parsed.toString()
+}
+
+// This suite runs in a dedicated database (see beforeAll). ADMIN_URL points at
+// the always-present `postgres` database to CREATE/DROP the throwaway one.
+const SEEDER_DB = 'manguito_test_seeder'
+const ADMIN_URL = withDatabase(DB_URL, 'postgres')
+const SEEDER_URL = withDatabase(DB_URL, SEEDER_DB)
+
 // ─── Temp directory for drizzle config + schema ───────────────────────────────
 
 const TMP_DIR = path.resolve(__dirname, '..', '..', '..', 'tests', '.tmp-seeder')
@@ -44,16 +56,17 @@ const ROLES_TWO: ParsedRoles = {
       label: 'Administrator',
       is_system: true,
       hierarchy_level: 1,
-      permissions: ['*'],
+      permissions: ['content:read'],
     },
     {
       name: 'editor',
       label: 'Editor',
+      is_system: false,
       hierarchy_level: 2,
-      permissions: ['content:read', 'content:write'],
+      permissions: ['content:read', 'content:edit'],
     },
   ],
-  valid_permissions: ['*', 'content:read', 'content:write'],
+  valid_permissions: ['content:read', 'content:edit'],
 }
 
 const ROLES_ONE: ParsedRoles = {
@@ -63,7 +76,7 @@ const ROLES_ONE: ParsedRoles = {
       label: 'Administrator',
       is_system: true,
       hierarchy_level: 1,
-      permissions: ['*'],
+      permissions: ['content:read'],
     },
   ],
   valid_permissions: ['*'],
@@ -117,10 +130,24 @@ const BASE_REGISTRY = makeRegistry(ROLES_TWO, ROUTES_TWO)
 // ─── Suite setup ──────────────────────────────────────────────────────────────
 
 let db: DrizzlePostgresInstance
-const adapter = createPostgresAdapter({ url: DB_URL })
+const adapter = createPostgresAdapter({ url: SEEDER_URL })
 
 beforeAll(async () => {
-  // Write drizzle config and generated schema to temp directory
+  // seedSystemTables' schema is applied with `drizzle-kit push`, which
+  // reconciles the target database to match the schema *exactly* — dropping any
+  // table not in it. Run against a dedicated, freshly-created database so it
+  // never touches the shared `public` schema that globalSetup and the other
+  // integration files depend on.
+  const admin = createPostgresAdapter({ url: ADMIN_URL })
+  await admin.connect()
+  await admin.getDb().execute(sql.raw(`DROP DATABASE IF EXISTS ${SEEDER_DB} WITH (FORCE)`))
+  await admin.getDb().execute(sql.raw(`CREATE DATABASE ${SEEDER_DB}`))
+  await admin.disconnect()
+
+  // Write drizzle config and generated schema to temp directory. The config
+  // reads SEEDER_DB_URL (set here, inherited by the drizzle-kit child process)
+  // so push targets the dedicated database rather than the shared one.
+  process.env['SEEDER_DB_URL'] = SEEDER_URL
   mkdirSync(TMP_DIR, { recursive: true })
   writeFileSync(SCHEMA_PATH, generateSchemaFile(BASE_REGISTRY))
   writeFileSync(
@@ -130,12 +157,13 @@ beforeAll(async () => {
       'export default defineConfig({',
       `  schema: './schema.ts',`,
       "  dialect: 'postgresql',",
-      "  dbCredentials: { url: process.env['DB_URL']! },",
+      "  dbCredentials: { url: process.env['SEEDER_DB_URL']! },",
       '})',
     ].join('\n'),
   )
 
-  // Push schema to test DB (creates all tables)
+  // Push schema to the dedicated DB (creates all tables against an empty DB, so
+  // there is nothing to reconcile and no interactive prompt).
   await runDevMigration(CONFIG_PATH)
 
   await adapter.connect()
@@ -144,6 +172,10 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await adapter.disconnect()
+  const admin = createPostgresAdapter({ url: ADMIN_URL })
+  await admin.connect()
+  await admin.getDb().execute(sql.raw(`DROP DATABASE IF EXISTS ${SEEDER_DB} WITH (FORCE)`))
+  await admin.disconnect()
   rmSync(TMP_DIR, { recursive: true, force: true })
 })
 
