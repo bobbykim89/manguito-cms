@@ -21,7 +21,7 @@ _Avoid_: wrapper, response object
 ### Data access
 
 **Repository**:
-The `ContentRepository<T>` abstraction route handlers use instead of the ORM. Interface in core, Drizzle implementation in db, injected at startup.
+The `ContentRepository<T>` abstraction route handlers use instead of the ORM. Interface in core; the Drizzle implementation (`createDrizzleContentRepository`) lives in this api package and imports only the `DrizzlePostgresInstance` type from db; injected at startup.
 _Avoid_: DAO, model, store, service
 
 **Dataloader**:

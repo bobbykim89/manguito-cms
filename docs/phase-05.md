@@ -30,7 +30,7 @@ This phase builds `@bobbykim/manguito-cms-api` — the HTTP layer that exposes c
 
 ```
 Phase 2 — SchemaRegistry produced by parser
-Phase 3 — DrizzleContentRepository, PostgresAdapter
+Phase 3 — PostgresAdapter, Drizzle schema codegen
 Phase 4 — scanMigrationFiles (used by CLI, not API)
 
 Phase 5 — adds:
@@ -59,7 +59,7 @@ packages/api/src/
 │       ├── content.ts          ← admin content routes
 │       └── media.ts            ← admin media routes
 ├── repositories/
-│   ├── content.ts              ← wraps DrizzleContentRepository
+│   ├── content.ts              ← createDrizzleContentRepository (concrete repository)
 │   └── media.ts
 ├── middleware/
 │   ├── auth.ts
@@ -121,8 +121,8 @@ GET    /admin/api/config                   — internal — admin panel config o
 
 ## Key Architectural Rules
 
-- Routes never interact with Drizzle directly — always through `ContentRepository<T>` interface
-- `DrizzleContentRepository` is injected at startup — the api package has no direct Drizzle dependency
+- Routes never interact with Drizzle directly — always through the `ContentRepository<T>` interface
+- `createDrizzleContentRepository` lives in the api package (`src/repositories/content.ts`) and imports only the `DrizzlePostgresInstance` *type* from db — the API layer has no `drizzle-orm` runtime dependency (see [ADR api/0001](adr/api/0001-repository-pattern.md))
 - Public `/api/*` routes always hardcode `published_only: true` — no query param can override
 - `storage` in `createCmsApp` is required with no fallback — hard startup error if missing
 - Codegen output (`.manguito/` and `dist/generated/`) is gitignored — CLI owns writes, api reads
@@ -139,7 +139,7 @@ GET    /admin/api/config                   — internal — admin panel config o
 
 ### Core — see [phase-05-package-structure.md](./phase-05-package-structure.md)
 - [ ] `createCmsApp` — accepts `db`, `storage`, `registry`, `media`, `rateLimit`
-- [ ] `DrizzleContentRepository` injected via db adapter — api never imports from db directly
+- [ ] `createDrizzleContentRepository` constructed from the injected `db` adapter — the api layer imports only the `DrizzlePostgresInstance` type from db
 - [ ] `ContentRepository<T>` interface consumed from `@bobbykim/manguito-cms-core`
 
 ### Published/Draft — see [phase-05-published-draft.md](./phase-05-published-draft.md)
@@ -241,7 +241,7 @@ GET    /admin/api/config                   — internal — admin panel config o
 ## Claude Code Checklist
 
 - [ ] Read all detail docs linked in the Decisions Made table before implementing
-- [ ] The api package must not import `DrizzleContentRepository` directly — only `ContentRepository<T>` from core
+- [ ] Route handlers use only the `ContentRepository<T>` interface from core — the concrete `createDrizzleContentRepository` is constructed in `createCmsApp` and injected into handlers
 - [ ] `storage` is required in `createCmsApp` — fail hard at startup, never silently default
 - [ ] CMS server must never handle binary file data — all uploads go through presigned URL flow
 - [ ] Public routes must hardcode `published_only: true` — never accept it as a query param
