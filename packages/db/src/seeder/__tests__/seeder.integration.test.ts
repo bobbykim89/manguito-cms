@@ -82,6 +82,19 @@ const ROLES_ONE: ParsedRoles = {
   valid_permissions: ['*'],
 }
 
+const ROLES_EDITOR_ONLY: ParsedRoles = {
+  roles: [
+    {
+      name: 'editor',
+      label: 'Editor',
+      is_system: false,
+      hierarchy_level: 2,
+      permissions: ['content:read', 'content:edit'],
+    },
+  ],
+  valid_permissions: ['content:read', 'content:edit'],
+}
+
 const ROUTES_TWO: ParsedRoutes = {
   base_paths: [
     { name: 'blog', path: '/blog' },
@@ -310,6 +323,30 @@ describe('seedSystemTables — delete blocked', () => {
     expect(caughtError!.message).toContain('SEEDER_BASE_PATH_IN_USE')
     expect(caughtError!.message).toContain('content_test_article')
     expect(caughtError!.message).toContain('pages')
+  })
+
+  it('throws SEEDER_SYSTEM_ROLE when a role marked is_system is removed from config', async () => {
+    // BASE_REGISTRY seeds admin (is_system: true) and editor (is_system: false),
+    // with no users assigned. Removing admin from the config must be blocked by
+    // the is_system guard even though nothing references it.
+    await seedSystemTables(db, BASE_REGISTRY)
+
+    let caughtError: Error | null = null
+    try {
+      await seedSystemTables(db, makeRegistry(ROLES_EDITOR_ONLY, ROUTES_TWO))
+    } catch (e) {
+      caughtError = e as Error
+    }
+
+    expect(caughtError).not.toBeNull()
+    expect(caughtError!.message).toContain('SEEDER_SYSTEM_ROLE')
+    expect(caughtError!.message).toContain('admin')
+
+    // The protected role must still be present — nothing was deleted.
+    const rows = await db.execute(
+      sql.raw("SELECT COUNT(*) AS count FROM roles WHERE name = 'admin'"),
+    )
+    expect(parseInt((rows.rows[0] as { count: string }).count, 10)).toBe(1)
   })
 })
 
