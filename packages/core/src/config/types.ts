@@ -43,13 +43,18 @@ export type MigrationStatus = {
   applied: string[]
 }
 
+// Migration orchestration is not an adapter responsibility: it needs the
+// generated drizzle config path + migrations folder, which the CLI produces at
+// build time. It runs through the standalone runDevMigration / generateMigration
+// / applyMigrations / getMigrationStatus functions in @bobbykim/manguito-cms-db,
+// which take those paths as arguments. The adapter is connection + introspection
+// only. (MigrationResult / MigrationStatus below are the return types of those
+// standalone functions.)
 export interface DbAdapter {
   readonly type: 'postgres' | 'mongodb'
   connect(): Promise<void>
   disconnect(): Promise<void>
   isConnected(): boolean
-  runMigrations(): Promise<MigrationResult>
-  getMigrationStatus(): Promise<MigrationStatus>
   getTableNames(): Promise<string[]>
   tableExists(name: string): Promise<boolean>
 }

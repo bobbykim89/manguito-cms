@@ -10,8 +10,6 @@ function makePostgresAdapter(): ManguitoConfig['db'] {
     connect: async () => {},
     disconnect: async () => {},
     isConnected: () => false,
-    runMigrations: async () => ({ applied: 0, skipped: 0 }),
-    getMigrationStatus: async () => ({ applied: [], pending: [] }),
     getTableNames: async () => [],
     tableExists: async () => false,
   }

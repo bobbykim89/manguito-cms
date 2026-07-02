@@ -70,14 +70,14 @@ packages/db/src/
 
 > **Audit (2026-07-02):** Verified every item against the implementation. Two
 > divergences from the original plan (neither a runtime bug):
-> 1. **Adapter migration methods are stubs.** The `DbAdapter` interface (core)
->    declares `runMigrations()` and `getMigrationStatus()`, but `PostgresAdapter`
->    implements them as throw-stubs ("wired by CLI in Phase 9"). Nothing calls
->    them — migrations run through the standalone `runDevMigration` /
->    `generateMigration` / `applyMigrations` / `getMigrationStatus` functions,
->    which are implemented and tested. The two interface methods are dead;
->    follow-up: either delegate to the standalone functions or drop them from
->    `DbAdapter`.
+> 1. **Adapter migration methods were dead stubs — now removed.** `DbAdapter`
+>    declared `runMigrations()` / `getMigrationStatus()`, but `PostgresAdapter`
+>    threw "wired by CLI in Phase 9" for both and nothing called them (they can't
+>    delegate — the standalone functions need the CLI-generated config path +
+>    migrations folder). Resolved: both were dropped from the `DbAdapter`
+>    interface and the adapter. Migrations run only through the standalone
+>    `runDevMigration` / `generateMigration` / `applyMigrations` /
+>    `getMigrationStatus` functions.
 > 2. **`DrizzlePostgresInstance` is exported.** The plan said not to export it,
 >    but the api layer imports the type (`relations.ts`, `repositories/*.ts`,
 >    routes), so it is — and must be — part of the db package's public surface.
@@ -104,8 +104,8 @@ packages/db/src/
 - [x] `getDb()` — throws if called before `connect()`
 - [x] `tableExists()` — queries `information_schema.tables`
 - [x] `getTableNames()` — queries `information_schema.tables`
-- [ ] `runMigrations()` — **stub only**: throws "wired by CLI in Phase 9" (see audit note). Migrations run via the standalone functions below, not this method.
-- [ ] `getMigrationStatus()` — **stub only**: throws (see audit note). The real one is the standalone `getMigrationStatus()` under Migrations.
+- [x] ~~`runMigrations()`~~ — **removed from `DbAdapter`** (see audit note): migration orchestration is a CLI concern via the standalone functions, not an adapter method.
+- [x] ~~`getMigrationStatus()`~~ — **removed from `DbAdapter`** (see audit note): the real one is the standalone `getMigrationStatus()` under Migrations.
 
 ### Codegen — see [phase-03-codegen.md](./decisions/phase-03/phase-03-codegen.md)
 - [x] `generateSchemaFile()` — pure function, returns complete schema.ts string

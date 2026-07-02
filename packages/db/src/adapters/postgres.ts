@@ -91,14 +91,6 @@ export function createPostgresAdapter(
       return db
     },
 
-    async runMigrations() {
-      throw new Error('runMigrations: wired by CLI in Phase 9')
-    },
-
-    async getMigrationStatus() {
-      throw new Error('getMigrationStatus: wired by CLI in Phase 9')
-    },
-
     async getTableNames(): Promise<string[]> {
       if (!db) throw new Error('DB not connected')
       const result = await db.execute(
