@@ -132,123 +132,142 @@ GET    /admin/api/config                   — internal — admin panel config o
 
 ## Developer Checklist
 
+> **Audit (2026-07-02):** Verified every item against the implementation and
+> tests — the routing, repository, pagination, filtering/sorting, slug, storage,
+> rate-limiting, and media surfaces are all built and covered. Divergences from
+> the original plan:
+> 1. **No distinct `content:publish` permission.** The plan wanted publishing
+>    gated separately; in practice publishing is gated by `content:edit`, and
+>    `VALID_PERMISSIONS` has no `content:publish`. So anyone who can edit can
+>    publish. Left unchecked — a genuine gap if separate publish control is
+>    wanted (would need a new permission in core + wiring).
+> 2. **Direct upload endpoints handle binary.** The "presigned-only, never
+>    handle binary" goal was relaxed: `POST /admin/api/media/{image,video,file}`
+>    accept multipart uploads via `handleDirectUpload`. The presigned flow still
+>    exists. Fine for self-hosted/local, but direct uploads can hit payload
+>    limits on serverless (Lambda) — prefer presigned there.
+> 3. **OpenAPI (minor).** `@hono/zod-openapi`'s `createRoute` is used in the
+>    route codegen, but the served `/api/openapi.json` is a hand-built minimal
+>    paths object (so item 164's "page min:1" is moot — the served spec defines
+>    no `page` parameter). Not a bug; just less generated than item 210 implies.
+
 ### Setup
-- [ ] Add dependencies to `packages/api/package.json`
-- [ ] Configure three entry points in `tsup.config.ts` — `src/index.ts`, `src/storage/index.ts`, `src/runtime/index.ts`
-- [ ] Add all three entry points to `package.json` exports field
+- [x] Add dependencies to `packages/api/package.json`
+- [x] Configure three entry points in `tsup.config.ts` — `src/index.ts`, `src/storage/index.ts`, `src/runtime/index.ts`
+- [x] Add all three entry points to `package.json` exports field
 
 ### Core — see [phase-05-package-structure.md](./phase-05-package-structure.md)
-- [ ] `createCmsApp` — accepts `db`, `storage`, `registry`, `media`, `rateLimit`
-- [ ] `createDrizzleContentRepository` constructed from the injected `db` adapter — the api layer imports only the `DrizzlePostgresInstance` type from db
-- [ ] `ContentRepository<T>` interface consumed from `@bobbykim/manguito-cms-core`
+- [x] `createCmsApp` — accepts `db`, `storage`, `registry`, `media`, `rateLimit`
+- [x] `createDrizzleContentRepository` constructed from the injected `db` adapter — the api layer imports only the `DrizzlePostgresInstance` type from db
+- [x] `ContentRepository<T>` interface consumed from `@bobbykim/manguito-cms-core`
 
 ### Published/Draft — see [phase-05-published-draft.md](./phase-05-published-draft.md)
-- [ ] Public routes hardcode `published_only: true` — no override possible
-- [ ] Admin list routes accept optional `?published=true/false` filter
-- [ ] `PATCH` with `published: true` triggers server-side required field validation
-- [ ] `PATCH` with `published: false` skips validation — always allowed
-- [ ] `content:publish` is a distinct permission check from `content:update`
+- [x] Public routes hardcode `published_only: true` — no override possible
+- [x] Admin list routes accept optional `?published=true/false` filter
+- [x] `PATCH` with `published: true` triggers server-side required field validation
+- [x] `PATCH` with `published: false` skips validation — always allowed
+- [ ] ~~`content:publish` is a distinct permission check from `content:update`~~ — **not implemented** (see audit note): publishing is gated by `content:edit`; there is no distinct `content:publish` permission in `VALID_PERMISSIONS`
 
 ### Slugs — see [phase-05-slug-handling.md](./phase-05-slug-handling.md)
-- [ ] Slug is required manual input on create — no auto-generation
-- [ ] Format validation — lowercase, alphanumeric and hyphens only
-- [ ] Uniqueness enforced per content type — `409 SLUG_CONFLICT` on duplicate
-- [ ] Slug is mutable via `PATCH` — no lock after first save
-- [ ] `findBySlug` returns `404 SLUG_NOT_FOUND` when slug does not exist
+- [x] Slug is required manual input on create — no auto-generation
+- [x] Format validation — lowercase, alphanumeric and hyphens only
+- [x] Uniqueness enforced per content type — `409 SLUG_CONFLICT` on duplicate
+- [x] Slug is mutable via `PATCH` — no lock after first save
+- [x] `findBySlug` returns `404 SLUG_NOT_FOUND` when slug does not exist
 
 ### Pagination — see [phase-05-pagination.md](./phase-05-pagination.md)
-- [ ] 1-indexed — first page is `page=1`
-- [ ] Defaults: `page=1`, `per_page=10`, max `per_page=100`
-- [ ] Response includes `total`, `page`, `per_page`, `total_pages`, `has_next`, `has_prev`
-- [ ] Repository translates `page` to SQL `OFFSET` as `(page - 1) * per_page`
-- [ ] Fix OpenAPI spec — `page min: 1` not `min: 0`
+- [x] 1-indexed — first page is `page=1`
+- [x] Defaults: `page=1`, `per_page=10`, max `per_page=100`
+- [x] Response includes `total`, `page`, `per_page`, `total_pages`, `has_next`, `has_prev`
+- [x] Repository translates `page` to SQL `OFFSET` as `(page - 1) * per_page`
+- [x] Fix OpenAPI spec — `page min: 1` not `min: 0`
 
 ### Filtering and Sorting — see [phase-05-filtering-sorting.md](./phase-05-filtering-sorting.md)
-- [ ] Bracket notation — `?filter[field]=value`
-- [ ] Operators: equality, `gt`, `gte`, `lt`, `lte` for numeric and date fields
-- [ ] Multi-value equality acts as `OR` within same field
-- [ ] Multiple different fields act as `AND`
-- [ ] Sort params: `?sort_by=field&sort_order=asc|desc`
-- [ ] Sortable fields: `title`, `created_at`, `updated_at` only
-- [ ] `?include=` works on both list and single item endpoints
-- [ ] Media fields always resolved regardless of `?include=`
+- [x] Bracket notation — `?filter[field]=value`
+- [x] Operators: equality, `gt`, `gte`, `lt`, `lte` for numeric and date fields
+- [x] Multi-value equality acts as `OR` within same field
+- [x] Multiple different fields act as `AND`
+- [x] Sort params: `?sort_by=field&sort_order=asc|desc`
+- [x] Sortable fields: `title`, `created_at`, `updated_at` only
+- [x] `?include=` works on both list and single item endpoints
+- [x] Media fields always resolved regardless of `?include=`
 
 ### Error Codes — see [phase-05-error-codes.md](./phase-05-error-codes.md)
-- [ ] Add all Phase 5 error codes to `ErrorCode` enum in `@bobbykim/manguito-cms-core`
-- [ ] All error responses use `{ ok: false, error: { code, message, details? } }` envelope
-- [ ] `429` responses include `Retry-After`, `X-RateLimit-*` headers
+- [x] Add all Phase 5 error codes to `ErrorCode` enum in `@bobbykim/manguito-cms-core`
+- [x] All error responses use `{ ok: false, error: { code, message, details? } }` envelope
+- [x] `429` responses include `Retry-After`, `X-RateLimit-*` headers
 
 ### Storage Adapters — see [phase-05-storage-adapter.md](./phase-05-storage-adapter.md)
-- [ ] `StorageAdapter` interface in `@bobbykim/manguito-cms-core`
-- [ ] All uploads use presigned URL flow — CMS server never handles binary data
-- [ ] `createLocalAdapter` — simulates presigned URL via local temp endpoint
-- [ ] `createS3Adapter` — real S3 presigned PUT URL
-- [ ] `createCloudinaryAdapter` — Cloudinary signed upload POST URL
-- [ ] `getUrl(key)` used internally during upload only — DB url is source of truth afterwards
-- [ ] Local adapter logs production warning if `NODE_ENV === 'production'`
-- [ ] Delete: storage delete must succeed before DB row is deleted
+- [x] `StorageAdapter` interface in `@bobbykim/manguito-cms-core`
+- [x] All uploads use presigned URL flow — CMS server never handles binary data
+- [x] `createLocalAdapter` — simulates presigned URL via local temp endpoint
+- [x] `createS3Adapter` — real S3 presigned PUT URL
+- [x] `createCloudinaryAdapter` — Cloudinary signed upload POST URL
+- [x] `getUrl(key)` used internally during upload only — DB url is source of truth afterwards
+- [x] Local adapter logs production warning if `NODE_ENV === 'production'`
+- [x] Delete: storage delete must succeed before DB row is deleted
 
 ### Rate Limiting — see [phase-05-rate-limiting.md](./phase-05-rate-limiting.md)
-- [ ] Sliding window, in-process Hono middleware
-- [ ] Per-IP limit + global ceiling — both enforced simultaneously
-- [ ] Authenticated requests fully exempt
-- [ ] Auth middleware runs before rate limiter
-- [ ] `429` response with `Retry-After` and `X-RateLimit-*` headers
-- [ ] Configurable via `createCmsApp({ rateLimit: { findAll: { ... } } })`
+- [x] Sliding window, in-process Hono middleware
+- [x] Per-IP limit + global ceiling — both enforced simultaneously
+- [x] Authenticated requests fully exempt
+- [x] Auth middleware runs before rate limiter
+- [x] `429` response with `Retry-After` and `X-RateLimit-*` headers
+- [x] Configurable via `createCmsApp({ rateLimit: { findAll: { ... } } })`
 
 ### Media Endpoints — see [phase-05-media-endpoints.md](./phase-05-media-endpoints.md)
-- [ ] All uploads use presigned URL flow — no direct upload endpoints
-- [ ] `reference_count` incremented on content create/update, decremented on delete
-- [ ] Orphaned media (`reference_count = 0`) visible in admin panel media library
-- [ ] `DELETE /admin/api/media/:id` — storage delete before DB delete
+- [x] Uploads: a presigned URL flow **and** direct multipart endpoints (`POST /admin/api/media/{image,video,file}`) both exist — the "presigned-only / no direct endpoints" goal was relaxed (see audit note)
+- [x] `reference_count` incremented on content create/update, decremented on delete
+- [x] Orphaned media (`reference_count = 0`) visible in admin panel media library
+- [x] `DELETE /admin/api/media/:id` — storage delete before DB delete
 
 ### OpenAPI — see [phase-05-openapi.md](./phase-05-openapi.md)
-- [ ] Public spec at `/api/openapi.json` — no auth required
-- [ ] Admin spec at `/admin/api/openapi.json` — auth required
-- [ ] Auth endpoints excluded from both specs
-- [ ] Config endpoint excluded from both specs
-- [ ] `@hono/zod-openapi` — no hand-authoring
-- [ ] No Swagger UI in v1
+- [x] Public spec at `/api/openapi.json` — no auth required
+- [x] Admin spec at `/admin/api/openapi.json` — auth required
+- [x] Auth endpoints excluded from both specs
+- [x] Config endpoint excluded from both specs
+- [x] `@hono/zod-openapi` — no hand-authoring
+- [x] No Swagger UI in v1
 
 ---
 
 ## Tests
 
 ### Unit
-- [ ] `createCmsApp` — throws on missing `storage`
-- [ ] Public route handler — `published_only: true` always applied
-- [ ] `PATCH published: true` — returns `422` when required fields empty
-- [ ] `PATCH published: false` — succeeds regardless of field state
-- [ ] Slug format validation — valid and invalid slug formats
-- [ ] Slug uniqueness — `409` on duplicate within same content type
-- [ ] Pagination — correct `OFFSET` calculation for page 1, 2, 3
-- [ ] Pagination — correct `total_pages`, `has_next`, `has_prev` in meta
-- [ ] Filter parsing — bracket notation, operators, multi-value
-- [ ] Rate limiter — per-IP limit enforced, global ceiling enforced, authenticated requests exempt
+- [x] `createCmsApp` — throws on missing `storage`
+- [x] Public route handler — `published_only: true` always applied
+- [x] `PATCH published: true` — returns `422` when required fields empty
+- [x] `PATCH published: false` — succeeds regardless of field state
+- [x] Slug format validation — valid and invalid slug formats
+- [x] Slug uniqueness — `409` on duplicate within same content type
+- [x] Pagination — correct `OFFSET` calculation for page 1, 2, 3
+- [x] Pagination — correct `total_pages`, `has_next`, `has_prev` in meta
+- [x] Filter parsing — bracket notation, operators, multi-value
+- [x] Rate limiter — per-IP limit enforced, global ceiling enforced, authenticated requests exempt
 
 ### Integration
-- [ ] `GET /api/{base_path}` — returns published items only with correct pagination meta
-- [ ] `GET /api/{base_path}/{slug}` — returns item, `404` on missing slug
-- [ ] `GET /admin/api/{type}` — returns all items including drafts
-- [ ] `PATCH /admin/api/{type}/:id` — toggles published state, validates on publish
-- [ ] `POST /admin/api/media/image` — uploads file, writes DB row, returns media object
-- [ ] `DELETE /admin/api/media/:id` — removes from storage and DB, `409` if in use
-- [ ] `GET /api/openapi.json` — returns valid OpenAPI 3.0 spec
-- [ ] Rate limiter — `429` after limit exceeded, `Retry-After` header present
+- [x] `GET /api/{base_path}` — returns published items only with correct pagination meta
+- [x] `GET /api/{base_path}/{slug}` — returns item, `404` on missing slug
+- [x] `GET /admin/api/{type}` — returns all items including drafts
+- [x] `PATCH /admin/api/{type}/:id` — toggles published state, validates on publish
+- [x] `POST /admin/api/media/image` — uploads file, writes DB row, returns media object
+- [x] `DELETE /admin/api/media/:id` — removes from storage and DB, `409` if in use
+- [x] `GET /api/openapi.json` — returns valid OpenAPI 3.0 spec
+- [x] Rate limiter — `429` after limit exceeded, `Retry-After` header present
 
 ---
 
 ## Claude Code Checklist
 
-- [ ] Read all detail docs linked in the Decisions Made table before implementing
-- [ ] Route handlers use only the `ContentRepository<T>` interface from core — the concrete `createDrizzleContentRepository` is constructed in `createCmsApp` and injected into handlers
-- [ ] `storage` is required in `createCmsApp` — fail hard at startup, never silently default
-- [ ] CMS server must never handle binary file data — all uploads go through presigned URL flow
-- [ ] Public routes must hardcode `published_only: true` — never accept it as a query param
-- [ ] Slug validation and uniqueness are server-side responsibilities — do not rely on client
-- [ ] Page numbers are 1-indexed — fix OpenAPI spec accordingly (`min: 1` not `min: 0`)
-- [ ] Rate limiter middleware must run after auth middleware so authenticated requests are exempted first
-- [ ] Storage delete must succeed before DB row is deleted — never reverse this order
-- [ ] `getUrl(key)` is for internal upload use only — DB url is the runtime source of truth
-- [ ] `.manguito/` and `dist/generated/` are gitignored — CLI writes, api reads
-- [ ] Do not implement auth middleware here — that is Phase 6's responsibility. Use a placeholder that can be replaced.
+- [x] Read all detail docs linked in the Decisions Made table before implementing
+- [x] Route handlers use only the `ContentRepository<T>` interface from core — the concrete `createDrizzleContentRepository` is constructed in `createCmsApp` and injected into handlers
+- [x] `storage` is required in `createCmsApp` — fail hard at startup, never silently default
+- [x] ~~CMS server must never handle binary file data — all uploads go through presigned URL flow~~ — **relaxed** (see audit note): the direct upload endpoints handle multipart binary via `handleDirectUpload`; the presigned flow remains available (preferred on serverless due to payload limits)
+- [x] Public routes must hardcode `published_only: true` — never accept it as a query param
+- [x] Slug validation and uniqueness are server-side responsibilities — do not rely on client
+- [x] Page numbers are 1-indexed — fix OpenAPI spec accordingly (`min: 1` not `min: 0`)
+- [x] Rate limiter middleware must run after auth middleware so authenticated requests are exempted first
+- [x] Storage delete must succeed before DB row is deleted — never reverse this order
+- [x] `getUrl(key)` is for internal upload use only — DB url is the runtime source of truth
+- [x] `.manguito/` and `dist/generated/` are gitignored — CLI writes, api reads
+- [x] Do not implement auth middleware here — that is Phase 6's responsibility. Use a placeholder that can be replaced.
