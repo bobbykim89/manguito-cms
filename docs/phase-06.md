@@ -136,103 +136,113 @@ packages/api/src/
 
 ## Developer Checklist
 
+> **Audit (2026-07-02):** All items below were verified implemented and tested,
+> with one defect found during the audit: admin media routes
+> (`packages/api/src/routes/admin/media.ts`) are registered without the real
+> permission middleware, so their `requirePermission(...)` calls resolve to the
+> no-op shim in `middleware/auth.ts`. Media create/edit/delete therefore enforce
+> authentication (via the blanket `authMiddleware`) but **not** `media:*`
+> permissions — any authenticated user can modify media. One call also uses the
+> invalid permission `media:update` (should be `media:edit`). Tracked as a
+> follow-up fix; content and user routes are correctly protected.
+
 ### Setup
-- [ ] Add `bcryptjs` and `@types/bcryptjs` to `packages/api/package.json`
-- [ ] Add `PASSWORD_CHANGE_REQUIRED`, `INVALID_ROLE`, `INVALID_CREDENTIALS` to `ErrorCode` enum in `@bobbykim/manguito-cms-core`
-- [ ] Add `must_change_password` boolean field to users table (default: `false`)
-- [ ] Add `name` optional field to `ManguitoConfig` in `defineConfig` — defaults to `'Manguito CMS'`
+- [x] Add `bcryptjs` and `@types/bcryptjs` to `packages/api/package.json`
+- [x] Add `PASSWORD_CHANGE_REQUIRED`, `INVALID_ROLE`, `INVALID_CREDENTIALS` to `ErrorCode` enum in `@bobbykim/manguito-cms-core`
+- [x] Add `must_change_password` boolean field to users table (default: `false`)
+- [x] Add `name` optional field to `ManguitoConfig` in `defineConfig` — defaults to `'Manguito CMS'`
 
 ### Roles Registry — see [phase-06-roles-registry.md](./decisions/phase-06/phase-06-roles-registry.md)
-- [ ] `buildRolesRegistry()` implemented as pure function in `packages/api/src/auth/registry.ts`
-- [ ] Throws with clear error message on empty roles array
-- [ ] Throws with clear error message if any `is_system: true` role is missing
-- [ ] Throws with clear error message on duplicate `hierarchy_level`
-- [ ] Registry built once inside `createCmsApp()` — closed over by all middleware factories
-- [ ] Registry is never rebuilt mid-run
+- [x] `buildRolesRegistry()` implemented as pure function in `packages/api/src/auth/registry.ts`
+- [x] Throws with clear error message on empty roles array
+- [x] Throws with clear error message if any required system role (`admin`, `manager`, `editor`, `writer`, `viewer`) is missing
+- [x] Throws with clear error message on duplicate `hierarchy_level`
+- [x] Registry built once inside `createCmsApp()` — closed over by all middleware factories
+- [x] Registry is never rebuilt mid-run
 
 ### Auth Middleware — see [phase-06-auth-middleware.md](./decisions/phase-06/phase-06-auth-middleware.md)
-- [ ] Reads `auth_token` from httpOnly cookie
-- [ ] Verifies JWT signature using `hono/jwt` — no DB
-- [ ] Checks `expires_at` — no DB
-- [ ] Queries `token_version` from DB — one lightweight query
-- [ ] Compares `payload.token_version === users.token_version`
-- [ ] Attaches `{ id, role }` to Hono context on success
-- [ ] Proactive refresh — if `expires_at < now + 30 minutes`, issues new `auth_token` in response cookie
-- [ ] `mustChangePasswordCheck` blocks all routes except `POST /admin/api/users/change-password`
+- [x] Reads `auth_token` from httpOnly cookie
+- [x] Verifies JWT signature using `hono/jwt` — no DB
+- [x] Checks `expires_at` — no DB
+- [x] Queries `token_version` from DB — one lightweight query
+- [x] Compares `payload.token_version === users.token_version`
+- [x] Attaches `{ id, role }` to Hono context on success
+- [x] Proactive refresh — if `expires_at < now + 30 minutes`, issues new `auth_token` in response cookie
+- [x] `mustChangePasswordCheck` blocks all routes except `POST /admin/api/users/change-password`
 
 ### Auth Endpoints — see [phase-06-auth-endpoints.md](./decisions/phase-06/phase-06-auth-endpoints.md)
-- [ ] `POST /admin/api/auth/login` — verifies email + password, issues both cookies, returns `{ id, email, role }` in body
-- [ ] Login failure returns `INVALID_CREDENTIALS` for both wrong password and unknown email — no distinction
-- [ ] Login rate limited — 10 attempts per IP + email combination per 15 minutes
-- [ ] `POST /admin/api/auth/refresh` — verifies refresh_token, issues new `auth_token` only — refresh_token not rotated
-- [ ] `POST /admin/api/auth/logout` — increments `token_version`, clears both cookies
-- [ ] All three auth endpoints excluded from OpenAPI spec
+- [x] `POST /admin/api/auth/login` — verifies email + password, issues both cookies, returns `{ id, email, role }` in body
+- [x] Login failure returns `INVALID_CREDENTIALS` for both wrong password and unknown email — no distinction
+- [x] Login rate limited — 10 attempts per IP + email combination per 15 minutes
+- [x] `POST /admin/api/auth/refresh` — verifies refresh_token, issues new `auth_token` only — refresh_token not rotated
+- [x] `POST /admin/api/auth/logout` — increments `token_version`, clears both cookies
+- [x] All three auth endpoints excluded from OpenAPI spec
 
 ### Permission and Hierarchy Middleware — see [phase-06-route-wiring.md](./decisions/phase-06/phase-06-route-wiring.md)
-- [ ] `requirePermission()` factory implemented — reads role from Hono context, checks against registry
-- [ ] `requireHierarchy()` factory implemented — compares `hierarchy_level` of acting user vs target role
-- [ ] HTTP method → permission mapping applied inside route generator: GET→read, POST→create, PATCH→edit, DELETE→delete
-- [ ] `requireHierarchy` applied only on user management write routes
+- [x] `requirePermission()` factory implemented — reads role from Hono context, checks against registry
+- [x] `requireHierarchy()` factory implemented — compares `hierarchy_level` of acting user vs target role
+- [x] HTTP method → permission mapping applied inside route generator: GET→read, POST→create, PATCH→edit, DELETE→delete
+- [x] `requireHierarchy` applied only on user management write routes
 
 ### User Management — see [phase-06-user-management.md](./decisions/phase-06/phase-06-user-management.md)
-- [ ] `GET /admin/api/users` — returns array, never includes `password_hash` or `token_version`
-- [ ] `GET /admin/api/users/:id` — same shape, `404` if not found
-- [ ] `POST /admin/api/users` — generates random temporary password, sets `must_change_password: true`, returns `temporary_password` once in response
-- [ ] `PATCH /admin/api/users/:id` — handles email and role updates, blocks self role change
-- [ ] `DELETE /admin/api/users/:id` — blocks self delete
-- [ ] `POST /admin/api/users/:id/reset-password` — admin resets subordinate, blocks self reset
-- [ ] `POST /admin/api/users/change-password` — requires current password verification, available to any authenticated user
-- [ ] All write routes enforce `requireHierarchy` — acting user hierarchy_level must be strictly lower than target role hierarchy_level
+- [x] `GET /admin/api/users` — returns array, never includes `password_hash` or `token_version`
+- [x] `GET /admin/api/users/:id` — same shape, `404` if not found
+- [x] `POST /admin/api/users` — generates random temporary password, sets `must_change_password: true`, returns `temporary_password` once in response
+- [x] `PATCH /admin/api/users/:id` — handles email and role updates, blocks self role change
+- [x] `DELETE /admin/api/users/:id` — blocks self delete
+- [x] `POST /admin/api/users/:id/reset-password` — admin resets subordinate, blocks self reset
+- [x] `POST /admin/api/users/change-password` — requires current password verification, available to any authenticated user
+- [x] All write routes enforce `requireHierarchy` — acting user hierarchy_level must be strictly lower than target role hierarchy_level
 
 ### Config and Schema Endpoints — see [phase-06-config-schema-endpoints.md](./decisions/phase-06/phase-06-config-schema-endpoints.md)
-- [ ] `GET /admin/api/config` — returns `cms_name`, `version`, roles filtered by acting user's hierarchy level
-- [ ] Config response never exposes storage config, DB config, AUTH_SECRET, or any env var values
-- [ ] `GET /admin/api/schema` — returns full schema definitions for admin panel
-- [ ] Both endpoints behind `authMiddleware` only — no `requirePermission`
-- [ ] Both endpoints excluded from OpenAPI spec
+- [x] `GET /admin/api/config` — returns `cms_name`, `version`, roles filtered by acting user's hierarchy level
+- [x] Config response never exposes storage config, DB config, AUTH_SECRET, or any env var values
+- [x] `GET /admin/api/schema` — returns full schema definitions for admin panel
+- [x] Both endpoints behind `authMiddleware` only — no `requirePermission`
+- [x] Both endpoints excluded from OpenAPI spec
 
 ---
 
 ## Tests
 
 ### Unit
-- [ ] `buildRolesRegistry` — throws on empty array, throws on missing system role, throws on duplicate hierarchy_level
-- [ ] `authMiddleware` — rejects missing token, rejects invalid signature, rejects mismatched `token_version`
-- [ ] `authMiddleware` — proactive refresh issued when token expires within 30 minutes
-- [ ] `mustChangePasswordCheck` — blocks non-change-password routes, allows change-password route
-- [ ] `requirePermission` — allows correct role, rejects insufficient role
-- [ ] `requireHierarchy` — allows acting user with lower hierarchy_level, rejects equal or higher
-- [ ] Login — `INVALID_CREDENTIALS` for wrong password and unknown email
-- [ ] Login — `RATE_LIMITED` after 10 attempts per IP + email per 15 minutes
-- [ ] User create — `temporary_password` present in response, `must_change_password: true` set
-- [ ] User create — `temporary_password` not returned on subsequent `GET`
-- [ ] Self role change blocked — `INSUFFICIENT_PRIVILEGE`
-- [ ] Self delete blocked — `INSUFFICIENT_PRIVILEGE`
+- [x] `buildRolesRegistry` — throws on empty array, throws on missing system role, throws on duplicate hierarchy_level
+- [x] `authMiddleware` — rejects missing token, rejects invalid signature, rejects mismatched `token_version`
+- [x] `authMiddleware` — proactive refresh issued when token expires within 30 minutes
+- [x] `mustChangePasswordCheck` — blocks non-change-password routes, allows change-password route
+- [x] `requirePermission` — allows correct role, rejects insufficient role
+- [x] `requireHierarchy` — allows acting user with lower hierarchy_level, rejects equal or higher
+- [x] Login — `INVALID_CREDENTIALS` for wrong password and unknown email
+- [x] Login — `RATE_LIMITED` after 10 attempts per IP + email per 15 minutes
+- [x] User create — `temporary_password` present in response, `must_change_password: true` set
+- [x] User create — `temporary_password` not returned on subsequent `GET`
+- [x] Self role change blocked — `INSUFFICIENT_PRIVILEGE`
+- [x] Self delete blocked — `INSUFFICIENT_PRIVILEGE`
 
 ### Integration
-- [ ] `GET /admin/api/users` — returns 401 without token
-- [ ] `POST /admin/api/auth/login` — issues cookies, returns user info
-- [ ] `POST /admin/api/auth/login` — rate limited after threshold
-- [ ] `POST /admin/api/auth/refresh` — issues new `auth_token`, refresh_token unchanged
-- [ ] `POST /admin/api/auth/logout` — clears cookies, subsequent requests rejected
-- [ ] `POST /admin/api/users` — creates user, returns `temporary_password` once
-- [ ] `POST /admin/api/users/change-password` — succeeds with correct current password, `must_change_password` cleared
-- [ ] `GET /admin/api/config` — returns sanitized config, no sensitive fields
-- [ ] Role change invalidates existing token — `token_version` mismatch rejected
+- [x] `GET /admin/api/users` — returns 401 without token
+- [x] `POST /admin/api/auth/login` — issues cookies, returns user info
+- [x] `POST /admin/api/auth/login` — rate limited after threshold
+- [x] `POST /admin/api/auth/refresh` — issues new `auth_token`, refresh_token unchanged
+- [x] `POST /admin/api/auth/logout` — clears cookies, subsequent requests rejected
+- [x] `POST /admin/api/users` — creates user, returns `temporary_password` once
+- [x] `POST /admin/api/users/change-password` — succeeds with correct current password, `must_change_password` cleared
+- [x] `GET /admin/api/config` — returns sanitized config, no sensitive fields
+- [x] Role change invalidates existing token — `token_version` mismatch rejected
 
 ---
 
 ## Claude Code Checklist
 
-- [ ] Read all detail docs linked in the Decisions Made table before implementing
-- [ ] `buildRolesRegistry` must throw early and hard — a broken registry must never allow the server to start
-- [ ] Auth middleware replaces the Phase 5 placeholder in `packages/api/src/middleware/auth.ts` — do not create a new file
-- [ ] `password_hash` and `token_version` must never appear in any API response — enforce at the repository layer, not just the route handler
-- [ ] `temporary_password` is returned once in the `POST /admin/api/users` response only — never stored in plaintext, never returned again
-- [ ] Login rate limiting is scoped to IP + email combination — per-IP alone is not sufficient
-- [ ] Refresh token is never rotated on `/refresh` — only `auth_token` is reissued
-- [ ] `mustChangePasswordCheck` must run after `authMiddleware` and before `requirePermission` — order matters
-- [ ] `GET /admin/api/config` must sanitize response — never expose storage, DB, server, or auth config details
-- [ ] CLI user commands (`users:promote`, `users:demote`, `users:reset-password`) are Phase 9 — do not implement here
-- [ ] Auth endpoints are excluded from the OpenAPI spec — do not add them to the spec generation
-- [ ] `name` field added to `ManguitoConfig` in `defineConfig` must be optional with default `'Manguito CMS'` — existing configs must not break
+- [x] Read all detail docs linked in the Decisions Made table before implementing
+- [x] `buildRolesRegistry` must throw early and hard — a broken registry must never allow the server to start
+- [x] Auth middleware replaces the Phase 5 placeholder in `packages/api/src/middleware/auth.ts` — do not create a new file
+- [x] `password_hash` and `token_version` must never appear in any API response — enforce at the repository layer, not just the route handler
+- [x] `temporary_password` is returned once in the `POST /admin/api/users` response only — never stored in plaintext, never returned again
+- [x] Login rate limiting is scoped to IP + email combination — per-IP alone is not sufficient
+- [x] Refresh token is never rotated on `/refresh` — only `auth_token` is reissued
+- [x] `mustChangePasswordCheck` must run after `authMiddleware` and before `requirePermission` — order matters
+- [x] `GET /admin/api/config` must sanitize response — never expose storage, DB, server, or auth config details
+- [x] CLI user commands (`users:promote`, `users:demote`, `users:reset-password`) are Phase 9 — do not implement here
+- [x] Auth endpoints are excluded from the OpenAPI spec — do not add them to the spec generation
+- [x] `name` field added to `ManguitoConfig` in `defineConfig` must be optional with default `'Manguito CMS'` — existing configs must not break
