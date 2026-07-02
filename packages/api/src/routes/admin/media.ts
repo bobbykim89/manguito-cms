@@ -1,7 +1,8 @@
 // Admin media routes — upload, presigned URL, update, delete
 import type { Context, Hono } from 'hono'
 import type { MediaRepository, StorageAdapter } from '@bobbykim/manguito-cms-core'
-import { requireAuth, requirePermission } from '../../middleware/auth.js'
+import { requireAuth } from '../../middleware/auth.js'
+import type { createPermissionMiddleware } from '../../middleware/permission.js'
 
 // ─── Accepted MIME types ──────────────────────────────────────────────────────
 
@@ -147,7 +148,8 @@ async function handleDirectUpload(
 export function registerAdminMediaRoutes(
   app: Hono,
   mediaRepo: MediaRepository,
-  storage: StorageAdapter
+  storage: StorageAdapter,
+  requirePermission: ReturnType<typeof createPermissionMiddleware>,
 ): void {
   // POST /admin/api/media/image
   app.post(
@@ -180,7 +182,7 @@ export function registerAdminMediaRoutes(
   )
 
   // GET /admin/api/media/presigned-url
-  app.get('/admin/api/media/presigned-url', requireAuth, async (c) => {
+  app.get('/admin/api/media/presigned-url', requireAuth, requirePermission('media:create'), async (c) => {
     const type = c.req.query('type') as 'image' | 'video' | 'file' | undefined
     const filename = c.req.query('filename')
     const mimeType = c.req.query('mime_type')
@@ -279,7 +281,7 @@ export function registerAdminMediaRoutes(
   })
 
   // POST /admin/api/media/confirm/:id
-  app.post('/admin/api/media/confirm/:id', requireAuth, async (c) => {
+  app.post('/admin/api/media/confirm/:id', requireAuth, requirePermission('media:create'), async (c) => {
     const id = c.req.param('id')
     purgePendingUploads()
 
@@ -334,7 +336,7 @@ export function registerAdminMediaRoutes(
   app.patch(
     '/admin/api/media/:id',
     requireAuth,
-    requirePermission('media:update'),
+    requirePermission('media:edit'),
     async (c) => {
       const id = c.req.param('id')
       const existing = await mediaRepo.findOne(id)
@@ -424,7 +426,7 @@ export function registerAdminMediaRoutes(
   )
 
   // GET /admin/api/media
-  app.get('/admin/api/media', requireAuth, async (c) => {
+  app.get('/admin/api/media', requireAuth, requirePermission('media:read'), async (c) => {
     const pageStr = c.req.query('page')
     const perPageStr = c.req.query('per_page')
     const page = pageStr !== undefined ? Number(pageStr) : 1
@@ -474,7 +476,7 @@ export function registerAdminMediaRoutes(
   })
 
   // GET /admin/api/media/:id
-  app.get('/admin/api/media/:id', requireAuth, async (c) => {
+  app.get('/admin/api/media/:id', requireAuth, requirePermission('media:read'), async (c) => {
     const id = c.req.param('id')
     const item = await mediaRepo.findOne(id)
 

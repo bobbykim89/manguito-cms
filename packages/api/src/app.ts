@@ -215,7 +215,7 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
   registerSchemaRoute(app, registry, db)
   registerUserRoutes(app, db, requirePermission, requireHierarchy)
   registerAdminContentRoutes(app, registry, repos, mediaRepo, requirePermission, db)
-  registerAdminMediaRoutes(app, mediaRepo, storage)
+  registerAdminMediaRoutes(app, mediaRepo, storage, requirePermission)
 
   return { prefix, app }
 }

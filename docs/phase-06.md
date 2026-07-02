@@ -136,15 +136,17 @@ packages/api/src/
 
 ## Developer Checklist
 
-> **Audit (2026-07-02):** All items below were verified implemented and tested,
-> with one defect found during the audit: admin media routes
-> (`packages/api/src/routes/admin/media.ts`) are registered without the real
-> permission middleware, so their `requirePermission(...)` calls resolve to the
-> no-op shim in `middleware/auth.ts`. Media create/edit/delete therefore enforce
-> authentication (via the blanket `authMiddleware`) but **not** `media:*`
-> permissions — any authenticated user can modify media. One call also uses the
-> invalid permission `media:update` (should be `media:edit`). Tracked as a
-> follow-up fix; content and user routes are correctly protected.
+> **Audit (2026-07-02):** All items below were verified implemented and tested.
+> The audit found one defect — admin media routes were registered without the
+> real permission middleware, so their `requirePermission(...)` calls resolved to
+> the no-op shim in `middleware/auth.ts`: media routes enforced authentication
+> (via the blanket `authMiddleware`) but **not** `media:*` permissions, and one
+> call used the invalid permission `media:update`. **Fixed** — the real
+> permission middleware is now threaded into `registerAdminMediaRoutes` (a
+> required parameter, so it can't regress silently), every media route enforces
+> its `media:*` permission (reads → `media:read`, uploads incl. presigned/confirm
+> → `media:create`, edit → `media:edit`, delete → `media:delete`), and
+> viewer-403 tests cover it.
 
 ### Setup
 - [x] Add `bcryptjs` and `@types/bcryptjs` to `packages/api/package.json`

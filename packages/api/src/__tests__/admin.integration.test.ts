@@ -13,6 +13,7 @@ if (!DB_URL) throw new Error('DB_URL must be set in .env.test before running int
 // ─── Auth state (populated in beforeAll) ─────────────────────────────────────
 
 let TEST_AUTH_TOKEN = ''
+let VIEWER_AUTH_TOKEN = ''
 
 function withAuth(init: RequestInit = {}): RequestInit {
   return {
@@ -20,6 +21,18 @@ function withAuth(init: RequestInit = {}): RequestInit {
     headers: {
       ...(init.headers as Record<string, string> | undefined),
       Cookie: `auth_token=${TEST_AUTH_TOKEN}`,
+    },
+  }
+}
+
+// A viewer holds no media permissions in TEST_REGISTRY — used to prove the
+// admin media routes actually enforce media:* (not the no-op shim).
+function withViewerAuth(init: RequestInit = {}): RequestInit {
+  return {
+    ...init,
+    headers: {
+      ...(init.headers as Record<string, string> | undefined),
+      Cookie: `auth_token=${VIEWER_AUTH_TOKEN}`,
     },
   }
 }
@@ -145,6 +158,22 @@ beforeAll(async () => {
   `))
   const userId = (userResult.rows[0] as { id: string }).id
   TEST_AUTH_TOKEN = await signToken({ user_id: userId, role: 'admin', token_version: 0 }, 3600)
+
+  // A viewer with no permissions — used to assert media routes enforce media:*.
+  await db.execute(sql.raw(`
+    INSERT INTO roles (name, label, is_system, hierarchy_level, permissions)
+    VALUES ('viewer', 'Viewer', true, 4, '{}')
+    ON CONFLICT (name) DO NOTHING
+  `))
+  const viewerResult = await db.execute(sql.raw(`
+    INSERT INTO users (email, password_hash, role_id, token_version, must_change_password)
+    SELECT 'viewer-int-test@example.com', '', r.id, 0, false
+    FROM roles r WHERE r.name = 'viewer'
+    ON CONFLICT (email) DO UPDATE SET token_version = 0
+    RETURNING id
+  `))
+  const viewerId = (viewerResult.rows[0] as { id: string }).id
+  VIEWER_AUTH_TOKEN = await signToken({ user_id: viewerId, role: 'viewer', token_version: 0 }, 3600)
 
   await db.execute(sql.raw(`
     CREATE TABLE IF NOT EXISTS "${BLOG_TABLE}" (
@@ -360,6 +389,51 @@ describe('admin media routes — integration', () => {
     const body = await res.json() as { ok: boolean; error: { code: string } }
     expect(body.ok).toBe(false)
     expect(body.error.code).toBe('MEDIA_IN_USE')
+  })
+
+  // ─── Permission enforcement — a viewer holds no media:* permissions ──────────
+  // The permission middleware runs before the handler, so these 403 before any
+  // body/existence check.
+
+  it('POST /admin/api/media/image as viewer → 403 INSUFFICIENT_PERMISSION (media:create)', async () => {
+    const app = makeApp()
+    const res = await app.request('/admin/api/media/image', withViewerAuth({ method: 'POST' }))
+    expect(res.status).toBe(403)
+    const body = await res.json() as { ok: boolean; error: { code: string } }
+    expect(body.error.code).toBe('INSUFFICIENT_PERMISSION')
+  })
+
+  it('PATCH /admin/api/media/:id as viewer → 403 INSUFFICIENT_PERMISSION (media:edit)', async () => {
+    const app = makeApp()
+    const res = await app.request(
+      '/admin/api/media/00000000-0000-0000-0000-000000000000',
+      withViewerAuth({ method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{}' }),
+    )
+    expect(res.status).toBe(403)
+    const body = await res.json() as { ok: boolean; error: { code: string } }
+    expect(body.error.code).toBe('INSUFFICIENT_PERMISSION')
+  })
+
+  it('DELETE /admin/api/media/:id as viewer → 403 INSUFFICIENT_PERMISSION (media:delete)', async () => {
+    const app = makeApp()
+    const res = await app.request(
+      '/admin/api/media/00000000-0000-0000-0000-000000000000',
+      withViewerAuth({ method: 'DELETE' }),
+    )
+    expect(res.status).toBe(403)
+    const body = await res.json() as { ok: boolean; error: { code: string } }
+    expect(body.error.code).toBe('INSUFFICIENT_PERMISSION')
+  })
+
+  it('POST /admin/api/media/confirm/:id as viewer → 403 (upload path also enforces media:create)', async () => {
+    const app = makeApp()
+    const res = await app.request(
+      '/admin/api/media/confirm/00000000-0000-0000-0000-000000000000',
+      withViewerAuth({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }),
+    )
+    expect(res.status).toBe(403)
+    const body = await res.json() as { ok: boolean; error: { code: string } }
+    expect(body.error.code).toBe('INSUFFICIENT_PERMISSION')
   })
 })
 
