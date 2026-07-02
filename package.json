@@ -26,11 +26,13 @@
     "@bobbykim/manguito-cms-db": "workspace:*",
     "@bobbykim/manguito-cms-test-utils": "workspace:*",
     "@changesets/cli": "latest",
+    "@eslint/js": "^10.0.1",
     "dotenv-cli": "latest",
     "drizzle-orm": "^0.45.0",
     "eslint": "^10.0.0",
     "turbo": "latest",
     "typescript": "^6.0.0",
+    "typescript-eslint": "^8.62.1",
     "vitest": "latest"
   }
 }
