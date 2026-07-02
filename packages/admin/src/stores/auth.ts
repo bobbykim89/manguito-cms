@@ -52,7 +52,7 @@ export const useAuthStore = defineStore('auth', () => {
         id: user.id, email: user.email, role: user.role,
         mustChangePassword: user.mustChangePassword ?? false,
       }))
-    } catch {}
+    } catch { /* storage unavailable (private mode / SSR) — non-fatal */ }
   }
 
   function clear() {
@@ -60,7 +60,7 @@ export const useAuthStore = defineStore('auth', () => {
     email.value = null
     role.value = null
     mustChangePassword.value = false
-    try { localStorage.removeItem(STORAGE_KEY) } catch {}
+    try { localStorage.removeItem(STORAGE_KEY) } catch { /* storage unavailable — non-fatal */ }
   }
 
   function hasPermission(permission: string): boolean {

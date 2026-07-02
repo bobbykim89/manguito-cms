@@ -181,7 +181,7 @@ export async function getMigrationStatus(
   // The journal maps filenames (via tag + .sql) to the `when` timestamp value
   // that drizzle-kit inserts into the tracking table's `created_at` column.
   type JournalEntry = { when: number; tag: string }
-  let journalEntries: JournalEntry[] = []
+  let journalEntries: JournalEntry[]
   try {
     const journalPath = path.join(migrationsFolder, 'meta', '_journal.json')
     const raw = await fs.readFile(journalPath, 'utf-8')

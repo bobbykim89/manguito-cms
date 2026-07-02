@@ -2,7 +2,6 @@ import type { Hono, Handler, MiddlewareHandler } from 'hono'
 import type {
   SchemaRegistry,
   ContentRepository,
-  FilterValue,
 } from '@bobbykim/manguito-cms-core'
 import {
   SORTABLE_FIELDS,

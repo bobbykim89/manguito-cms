@@ -27,7 +27,7 @@ describe('printGuidedError', () => {
     const calls = (stderrSpy.mock.calls as [string][]).map(([arg]) => arg)
     const hintCall = calls.find((s) => s.includes('run migrate first'))
     expect(hintCall).toBeDefined()
-    expect(hintCall).toMatch(/^  /)
+    expect(hintCall).toMatch(/^ {2}/)
   })
 
   it('without hint prints only one line', () => {

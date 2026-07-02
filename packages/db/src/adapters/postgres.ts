@@ -107,7 +107,7 @@ export function createPostgresAdapter(
             WHERE table_schema = 'public'
             ORDER BY table_name`
       )
-      return result.rows.map((r: any) => r.table_name as string)
+      return result.rows.map((r) => (r as { table_name: string }).table_name)
     },
 
     async tableExists(name: string): Promise<boolean> {

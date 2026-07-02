@@ -1,7 +1,7 @@
 import { writeFileSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { scanMigrationFiles } from '../scanner'
 
 function writeTmp(name: string, content: string): string {

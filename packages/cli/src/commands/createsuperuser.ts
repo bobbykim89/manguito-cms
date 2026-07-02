@@ -74,7 +74,7 @@ export async function runCreateSuperuser(
   process.stdout.write('\nCreating superuser. Press Ctrl+C to cancel.\n\n')
 
   // Email loop
-  let email = ''
+  let email: string
   while (true) {
     email = await prompt.input('Admin email:')
 
@@ -97,7 +97,7 @@ export async function runCreateSuperuser(
   }
 
   // Password loop
-  let passwordHash = ''
+  let passwordHash: string
   while (true) {
     const pw = await prompt.password('Admin password:')
 

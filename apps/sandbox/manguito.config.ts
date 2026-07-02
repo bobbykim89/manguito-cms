@@ -1,8 +1,6 @@
 import { defineConfig } from '@bobbykim/manguito-cms-core'
 import { createPostgresAdapter } from '@bobbykim/manguito-cms-db'
 import {
-  createLocalAdapter,
-  createCloudinaryAdapter,
   createS3Adapter,
 } from '@bobbykim/manguito-cms-api/storage'
 import { createServer, createAPIAdapter } from '@bobbykim/manguito-cms-api'
@@ -17,7 +15,6 @@ export default defineConfig({
       paragraph_types: 'paragraph-types',
       taxonomy_types: 'taxonomy-types',
       enum_types: 'enum-types',
-      roles: 'roles',
     },
   },
 
