@@ -232,6 +232,16 @@ function makeApp() {
   return app
 }
 
+function makeAppWithMaxFileSize(max: number) {
+  const { app } = createCmsApp({
+    storage: createLocalAdapter(),
+    registry: TEST_REGISTRY,
+    db,
+    media: { max_file_size: max },
+  })
+  return app
+}
+
 type MediaRow = {
   id: string
   url: string
@@ -434,6 +444,17 @@ describe('admin media routes — integration', () => {
     expect(res.status).toBe(403)
     const body = await res.json() as { ok: boolean; error: { code: string } }
     expect(body.error.code).toBe('INSUFFICIENT_PERMISSION')
+  })
+
+  it('POST /admin/api/media/image over max_file_size → 413 FILE_TOO_LARGE', async () => {
+    const app = makeAppWithMaxFileSize(100) // 100-byte limit
+    const form = new FormData()
+    form.append('file', new File(['x'.repeat(500)], 'big.png', { type: 'image/png' }))
+    form.append('alt', 'big image')
+    const res = await app.request('/admin/api/media/image', withAuth({ method: 'POST', body: form }))
+    expect(res.status).toBe(413)
+    const body = await res.json() as { ok: boolean; error: { code: string } }
+    expect(body.error.code).toBe('FILE_TOO_LARGE')
   })
 })
 

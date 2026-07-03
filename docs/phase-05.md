@@ -141,11 +141,15 @@ GET    /admin/api/config                   — internal — admin panel config o
 >    `VALID_PERMISSIONS` has no `content:publish`. So anyone who can edit can
 >    publish. Left unchecked — a genuine gap if separate publish control is
 >    wanted (would need a new permission in core + wiring).
-> 2. **Direct upload endpoints handle binary.** The "presigned-only, never
->    handle binary" goal was relaxed: `POST /admin/api/media/{image,video,file}`
->    accept multipart uploads via `handleDirectUpload`. The presigned flow still
->    exists. Fine for self-hosted/local, but direct uploads can hit payload
->    limits on serverless (Lambda) — prefer presigned there.
+> 2. **Direct upload endpoints handle binary — now bounded.** The
+>    "presigned-only, never handle binary" goal was relaxed: `POST
+>    /admin/api/media/{image,video,file}` accept multipart uploads via
+>    `handleDirectUpload`, and the presigned flow still exists. To keep this safe
+>    on serverless, direct uploads now enforce `max_file_size` (config default
+>    4 MB): a `Content-Length` pre-check rejects oversized bodies before
+>    buffering, plus a decoded-size check, both returning `413 FILE_TOO_LARGE`.
+>    Set `max_file_size` under the platform payload limit (Lambda ~6 MB), or use
+>    the presigned flow for larger files.
 > 3. **OpenAPI (minor).** `@hono/zod-openapi`'s `createRoute` is used in the
 >    route codegen, but the served `/api/openapi.json` is a hand-built minimal
 >    paths object (so item 164's "page min:1" is moot — the served spec defines

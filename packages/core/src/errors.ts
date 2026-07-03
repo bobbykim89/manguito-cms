@@ -36,6 +36,7 @@ export type ErrorCode =
   | 'STORAGE_ERROR'
   | 'MEDIA_IN_USE'
   | 'PRESIGNED_URL_EXPIRED'
+  | 'FILE_TOO_LARGE'
 
   // Phase 5 — rate limiting
   | 'RATE_LIMITED'

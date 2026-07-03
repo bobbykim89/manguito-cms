@@ -51,8 +51,29 @@ async function handleDirectUpload(
   storage: StorageAdapter,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   c: Context<any, any, any>,
-  altRequired: boolean
+  altRequired: boolean,
+  maxFileSize: number | undefined
 ): Promise<Response> {
+  // Direct uploads buffer the whole file in the CMS server's memory (unlike the
+  // presigned flow, which uploads straight to storage). Reject oversized bodies
+  // up front via Content-Length so we never buffer them — and keep max_file_size
+  // under the platform payload limit on serverless (Lambda ~6 MB).
+  if (maxFileSize !== undefined) {
+    const contentLength = Number(c.req.header('content-length'))
+    if (Number.isFinite(contentLength) && contentLength > maxFileSize) {
+      return c.json(
+        {
+          ok: false,
+          error: {
+            code: 'FILE_TOO_LARGE',
+            message: `Upload exceeds the maximum size of ${maxFileSize} bytes`,
+          },
+        },
+        413
+      )
+    }
+  }
+
   let formData: FormData
   try {
     formData = await c.req.formData()
@@ -68,6 +89,21 @@ async function handleDirectUpload(
     return c.json(
       { ok: false, error: { code: 'VALIDATION_ERROR', message: 'file field is required' } },
       422
+    )
+  }
+
+  // Defensive second check: Content-Length may be absent (chunked) or count
+  // multipart overhead, so also reject on the actual decoded file size.
+  if (maxFileSize !== undefined && fileField.size > maxFileSize) {
+    return c.json(
+      {
+        ok: false,
+        error: {
+          code: 'FILE_TOO_LARGE',
+          message: `File exceeds the maximum size of ${maxFileSize} bytes`,
+        },
+      },
+      413
     )
   }
 
@@ -150,6 +186,7 @@ export function registerAdminMediaRoutes(
   mediaRepo: MediaRepository,
   storage: StorageAdapter,
   requirePermission: ReturnType<typeof createPermissionMiddleware>,
+  maxFileSize: number | undefined,
 ): void {
   // POST /admin/api/media/image
   app.post(
@@ -157,7 +194,7 @@ export function registerAdminMediaRoutes(
     requireAuth,
     requirePermission('media:create'),
     async (c) => {
-      return handleDirectUpload('image', IMAGE_MIME_TYPES, mediaRepo, storage, c, false)
+      return handleDirectUpload('image', IMAGE_MIME_TYPES, mediaRepo, storage, c, false, maxFileSize)
     }
   )
 
@@ -167,7 +204,7 @@ export function registerAdminMediaRoutes(
     requireAuth,
     requirePermission('media:create'),
     async (c) => {
-      return handleDirectUpload('video', VIDEO_MIME_TYPES, mediaRepo, storage, c, true)
+      return handleDirectUpload('video', VIDEO_MIME_TYPES, mediaRepo, storage, c, true, maxFileSize)
     }
   )
 
@@ -177,7 +214,7 @@ export function registerAdminMediaRoutes(
     requireAuth,
     requirePermission('media:create'),
     async (c) => {
-      return handleDirectUpload('file', FILE_MIME_TYPES, mediaRepo, storage, c, true)
+      return handleDirectUpload('file', FILE_MIME_TYPES, mediaRepo, storage, c, true, maxFileSize)
     }
   )
 
