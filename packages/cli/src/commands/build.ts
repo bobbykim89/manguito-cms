@@ -170,8 +170,10 @@ export async function runBuild(
       dts: false,
       silent: true,
       // hono/aws-lambda and hono/vercel are optional peer deps — mark external
-      // so the build succeeds even when they aren't installed.
-      external: ['hono/aws-lambda', 'hono/vercel'],
+      // so the build succeeds even when they aren't installed. jsdom (used by
+      // the SVG sanitizer) must stay external too: bundling it breaks its
+      // runtime asset loading. It resolves from node_modules at runtime.
+      external: ['hono/aws-lambda', 'hono/vercel', 'jsdom'],
     })
   } catch (err) {
     printGuidedError(

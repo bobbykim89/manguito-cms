@@ -14,6 +14,11 @@ export default defineConfig({
     '@bobbykim/manguito-cms-api',
     '@bobbykim/manguito-cms-admin',
   ],
+  // jsdom (pulled in transitively by the api's SVG sanitizer) must not be
+  // bundled: it loads asset files (e.g. browser/default-stylesheet.css) via
+  // runtime paths that break once inlined. Keep it a require resolved from
+  // node_modules.
+  external: ['jsdom'],
   // CJS deps bundled into ESM use esbuild's __require shim, which throws when
   // require() is undefined. Injecting createRequire at the top makes it work.
   banner: {
