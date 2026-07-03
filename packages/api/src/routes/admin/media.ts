@@ -3,6 +3,7 @@ import type { Context, Hono } from 'hono'
 import type { MediaRepository, StorageAdapter } from '@bobbykim/manguito-cms-core'
 import { requireAuth } from '../../middleware/auth.js'
 import type { createPermissionMiddleware } from '../../middleware/permission.js'
+import { sanitizeSvg } from './sanitize-svg.js'
 
 // ─── Accepted MIME types ──────────────────────────────────────────────────────
 
@@ -154,7 +155,13 @@ async function handleDirectUpload(
 
   if (storage.upload) {
     try {
-      const bytes = new Uint8Array(await fileField.arrayBuffer())
+      let bytes = new Uint8Array(await fileField.arrayBuffer())
+      // SVGs can carry <script>/on* handlers that execute when rendered inline —
+      // sanitize before storing so the served file is safe.
+      if (mimeType === 'image/svg+xml') {
+        const sanitized = sanitizeSvg(new TextDecoder().decode(bytes))
+        bytes = new TextEncoder().encode(sanitized)
+      }
       await storage.upload(presigned.key, bytes, mimeType)
     } catch (err) {
       console.error('[media] storage.upload error:', err)
@@ -276,6 +283,22 @@ export function registerAdminMediaRoutes(
           error: {
             code: 'UNSUPPORTED_MIME_TYPE',
             message: `MIME type '${mimeType}' is not accepted for ${type} uploads`,
+          },
+        },
+        415
+      )
+    }
+
+    // SVGs must be sanitized before storage, which only the direct upload path
+    // can do (the presigned flow uploads straight to storage, bypassing the
+    // server). Steer SVG uploads to POST /admin/api/media/image instead.
+    if (mimeType === 'image/svg+xml') {
+      return c.json(
+        {
+          ok: false,
+          error: {
+            code: 'UNSUPPORTED_MIME_TYPE',
+            message: 'SVG uploads are not supported via presigned URLs; use the direct upload endpoint',
           },
         },
         415

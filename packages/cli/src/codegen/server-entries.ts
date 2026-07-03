@@ -112,7 +112,12 @@ createServer(async (req, res) => {
     if (!filePath.startsWith(uploadsDir + '/')) { res.statusCode = 403; res.end('Forbidden'); return }
     try {
       const data = await readFile(filePath)
-      res.setHeader('Content-Type', MIME[extname(filePath).slice(1).toLowerCase()] ?? 'application/octet-stream')
+      const mime = MIME[extname(filePath).slice(1).toLowerCase()] ?? 'application/octet-stream'
+      res.setHeader('Content-Type', mime)
+      // User-uploaded content served same-origin: stop the browser from
+      // MIME-sniffing, and force unknown types to download rather than render.
+      res.setHeader('X-Content-Type-Options', 'nosniff')
+      if (mime === 'application/octet-stream') res.setHeader('Content-Disposition', 'attachment')
       res.end(data)
     } catch { res.statusCode = 404; res.end('Not found') }
     return
