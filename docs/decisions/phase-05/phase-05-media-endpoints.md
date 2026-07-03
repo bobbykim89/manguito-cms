@@ -111,6 +111,7 @@ On upload:
   → MIME type detected from file
   → Small files: direct upload
   → Large files: presigned URL flow (transparent)
+  → SVG: always direct upload (see note)
   → Alt text input appears after upload
   → New item appears in grid, pre-selected
         ↓
@@ -118,6 +119,8 @@ Editor confirms → media ID stored in content field
 ```
 
 Field type pre-filters the grid (image field opens modal showing images only) but editor can clear the filter.
+
+**SVG safety.** `image/svg+xml` is accepted, but SVGs can carry active content (`<script>`, `on*`, `javascript:`) that runs when rendered inline. The direct upload path sanitizes SVG bytes server-side (DOMPurify); the presigned path uploads straight to storage and cannot sanitize, so it **rejects** `image/svg+xml` (`415`) — SVGs must go through direct upload regardless of size. Served local uploads also carry `X-Content-Type-Options: nosniff`. See [ADR api/0008](../../adr/api/0008-media-upload-security.md).
 
 ---
 
