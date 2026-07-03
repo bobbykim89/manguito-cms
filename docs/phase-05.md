@@ -136,11 +136,11 @@ GET    /admin/api/config                   — internal — admin panel config o
 > tests — the routing, repository, pagination, filtering/sorting, slug, storage,
 > rate-limiting, and media surfaces are all built and covered. Divergences from
 > the original plan:
-> 1. **No distinct `content:publish` permission.** The plan wanted publishing
->    gated separately; in practice publishing is gated by `content:edit`, and
->    `VALID_PERMISSIONS` has no `content:publish`. So anyone who can edit can
->    publish. Left unchecked — a genuine gap if separate publish control is
->    wanted (would need a new permission in core + wiring).
+> 1. **`content:publish` was a documentation error, not a gap.** There is no
+>    `content:publish` permission by design — content is gated by
+>    `content:create`/`content:edit`/`content:delete`, and publishing (PATCH
+>    with `published: true`) is gated by `content:edit`. The checklist item was
+>    a mistake; corrected below.
 > 2. **Direct upload endpoints handle binary — now bounded.** The
 >    "presigned-only, never handle binary" goal was relaxed: `POST
 >    /admin/api/media/{image,video,file}` accept multipart uploads via
@@ -170,7 +170,7 @@ GET    /admin/api/config                   — internal — admin panel config o
 - [x] Admin list routes accept optional `?published=true/false` filter
 - [x] `PATCH` with `published: true` triggers server-side required field validation
 - [x] `PATCH` with `published: false` skips validation — always allowed
-- [ ] ~~`content:publish` is a distinct permission check from `content:update`~~ — **not implemented** (see audit note): publishing is gated by `content:edit`; there is no distinct `content:publish` permission in `VALID_PERMISSIONS`
+- [x] Publishing (PATCH with `published: true`) is gated by `content:edit` — there is no separate `content:publish` permission (an earlier draft of this item listing one was a mistake; the model is `content:create`/`content:edit`/`content:delete`)
 
 ### Slugs — see [phase-05-slug-handling.md](./phase-05-slug-handling.md)
 - [x] Slug is required manual input on create — no auto-generation
