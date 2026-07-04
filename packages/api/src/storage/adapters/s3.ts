@@ -23,6 +23,11 @@ export function createS3Adapter(options: S3AdapterOptions): StorageAdapter {
 
   const client = new S3Client({
     region,
+    // AWS SDK v3 (>= ~3.729) adds a CRC32 checksum to PutObject by default. For
+    // presigned URLs that bakes the *empty-body* checksum into the signed URL,
+    // so the browser's real upload fails the check with 403. Only checksum when
+    // an operation actually requires it, which excludes presigned PUTs.
+    requestChecksumCalculation: 'WHEN_REQUIRED',
     ...(access_key_id && secret_access_key
       ? { credentials: { accessKeyId: access_key_id, secretAccessKey: secret_access_key } }
       : {}),
