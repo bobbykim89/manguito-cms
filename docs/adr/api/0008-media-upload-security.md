@@ -2,22 +2,24 @@
 status: accepted
 ---
 
-# Uploaded SVGs are sanitized server-side, and user media is served with nosniff
+# SVG uploads are not accepted, and user media is served with nosniff
 
-Media the CMS accepts and serves is untrusted. Of the allowlisted types, SVG is the one that can execute script when rendered inline — embedded `<script>`, `on*` handlers, `javascript:` URIs, `<foreignObject>` — so an unsanitized SVG is a stored-XSS vector. It is worst on the local storage adapter, whose `/uploads` are served **same-origin** with the admin panel (an SVG there runs in the CMS origin). Uploads are hardened in two places:
+Media the CMS accepts and serves is untrusted. Of the image types, SVG is the one that can execute script when rendered inline — embedded `<script>`, `on*` handlers, `javascript:` URIs, `<foreignObject>` — so an SVG served inline is a stored-XSS vector, worst on the local adapter whose `/uploads` are served **same-origin** with the admin panel.
 
-1. **Sanitize on the way in.** The direct upload path (`POST /admin/api/media/{image,video,file}`) runs SVG bytes through DOMPurify's SVG profile before handing them to storage. The presigned path uploads straight to storage and the server never sees the bytes, so it **cannot** sanitize — it rejects `image/svg+xml` (`415`) and steers clients to the direct endpoint.
-2. **Neutralize on the way out.** The server-controlled local `/uploads` handler (both the generated production server and the dev server) sends `X-Content-Type-Options: nosniff` so browsers honor the declared type instead of sniffing, and `Content-Disposition: attachment` for unknown (`application/octet-stream`) types so they download rather than render. Known media types stay inline for the admin preview.
+Making SVG safe requires sanitizing it, which needs a full DOM in Node. We tried DOMPurify with jsdom: it works, but **jsdom is hostile to serverless bundling** — it loads asset files (`browser/default-stylesheet.css`) via runtime paths that break once bundled, and once externalized it was absent from the pruned deploy `node_modules`, so the handler crashed at module load (Lambda `502` on every request, Vercel `500` on the API function). The lighter linkedom backend silently no-ops with DOMPurify (returns the input unsanitized), which is worse. So there is no dependency-light way to sanitize SVG that survives the Fargate/Lambda/Vercel build.
+
+Therefore **SVG is not an accepted upload type**: `image/svg+xml` is removed from the media allowlist, so uploads are rejected with `415`. Separately, served local uploads carry `X-Content-Type-Options: nosniff` and `Content-Disposition: attachment` for unknown (`application/octet-stream`) types, so browsers honor the declared type and don't render arbitrary bytes.
 
 ## Considered Options
 
-- **Drop SVG from the allowlist** — rejected: SVG is a legitimate, widely-wanted format; disallowing it is a usability regression and does not address the general "client-declared MIME" issue.
-- **Hand-rolled / allowlist sanitizer** — rejected: SVG sanitization has a long history of bypasses (mutation XSS, namespace confusion). A maintained sanitizer (DOMPurify) is the safer choice, even at the cost of the `jsdom` dependency.
-- **Serve all media as `attachment`** — rejected: the media library needs inline previews; forcing downloads is poor UX. `attachment` is used only for unknown types.
+- **Sanitize SVG with DOMPurify + jsdom** — rejected: breaks the deploy build and crashes the serverless functions at init (see above).
+- **DOMPurify + linkedom (lighter DOM)** — rejected: bundles cleanly but DOMPurify does not recognize linkedom's DOM and silently returns the input unsanitized — a false sense of safety.
+- **Serve SVG as `attachment`** — viable but needs per-adapter serving config (local server + S3 `ContentDisposition` + Cloudinary `fl_attachment`); deferred as a way to re-introduce SVG later if wanted.
+- **Keep SVG, serve inline** — rejected: stored XSS.
 
 ## Consequences
 
-- The api package depends on `dompurify` + `jsdom` (heavy). Watch the serverless bundle in Phase 10 (Lambda cold start); if it hurts, revisit (lighter sanitizer, or sanitize in a separate build target).
-- **SVG cannot be uploaded via presigned URLs** — clients must use the direct endpoint. This is the one upload asymmetry between the two paths.
-- `nosniff` on S3/Cloudinary-served media is **not** set by the CMS — those are served from their own domains and need a CloudFront (or equivalent) response-headers policy. Tracked as a pre-release infra follow-up.
+- Users cannot upload SVG. If it's needed later, re-introduce it via storage-level `Content-Disposition: attachment` (so it downloads instead of rendering) rather than server-side sanitization — and verify on the actual Fargate/Lambda/Vercel deploys, since the storage/serving path differs per adapter.
+- The core field-type registry still lists `image/svg+xml` in the default `image` `allowed_mime_types`; this is now inconsistent with the upload gate (harmless — uploads reject it) and is a minor follow-up.
+- `nosniff` on S3/Cloudinary-served media is not set by the CMS — those serve from their own domains and need a CloudFront (or equivalent) response-headers policy. Tracked as a pre-release infra follow-up.
 - Direct uploads are size-bounded by `max_file_size`; presigned uploads are not yet (see [0004-presigned-first-storage.md](./0004-presigned-first-storage.md) and the pre-release security round).
