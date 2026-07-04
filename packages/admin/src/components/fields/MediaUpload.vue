@@ -173,10 +173,11 @@ async function startUpload(file: File) {
 
   try {
     const alt = altText.value.trim()
-    const maxSize = uiStore.maxFileSize
-    const item = (maxSize === 0 || file.size <= maxSize)
-      ? await uploadDirect(file, alt)
-      : await uploadPresigned(file, alt)
+    // Cloud storage uploads straight to the bucket via presigned URL; local
+    // storage routes through the server's direct endpoint.
+    const item = uiStore.presignedUploads
+      ? await uploadPresigned(file, alt)
+      : await uploadDirect(file, alt)
 
     displayItem.value = item
     altText.value = item.alt ?? ''

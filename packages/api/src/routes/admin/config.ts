@@ -18,6 +18,7 @@ type ActingUser = { id: string; role: string }
 type ConfigOptions = {
   name: string
   maxFileSize?: number
+  presignedUploads?: boolean
 }
 
 // ─── Register ─────────────────────────────────────────────────────────────────
@@ -72,6 +73,7 @@ export function registerConfigRoute(
         },
         media: {
           max_file_size: config.maxFileSize ?? null,
+          presigned_uploads: config.presignedUploads ?? false,
         },
       },
     })

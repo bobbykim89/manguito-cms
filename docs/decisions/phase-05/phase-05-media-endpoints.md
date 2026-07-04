@@ -109,8 +109,9 @@ Editor can:
         ↓
 On upload:
   → MIME type detected from file
-  → Small files: direct upload
-  → Large files: presigned URL flow (transparent)
+  → Cloud storage (s3/cloudinary): presigned URL flow — browser uploads
+    straight to the bucket, never through the server (works on serverless)
+  → Local storage: direct upload endpoint (the server writes the file)
   → Alt text input appears after upload
   → New item appears in grid, pre-selected
         ↓

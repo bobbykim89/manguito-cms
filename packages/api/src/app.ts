@@ -208,7 +208,15 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
   //    GET /admin/api/config handler wins over the stale stub in content.ts.
   registerConfigRoute(
     app,
-    { name: cmsName, ...(maxFileSize !== undefined && { maxFileSize }) },
+    {
+      name: cmsName,
+      ...(maxFileSize !== undefined && { maxFileSize }),
+      // Cloud storage (s3/cloudinary) issues real presigned URLs, so the admin
+      // uploads straight to it — never routing the file through the server
+      // (which breaks on serverless). Local storage has no presigned receiver,
+      // so it uses the direct upload endpoint.
+      presignedUploads: storage.type !== 'local',
+    },
     rolesRegistry,
     db,
   )
