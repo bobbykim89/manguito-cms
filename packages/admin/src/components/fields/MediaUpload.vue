@@ -115,19 +115,20 @@ async function uploadPresigned(file: File, alt: string): Promise<MediaItem> {
   )
   const presignedJson = (await presignedRes.json()) as {
     ok: boolean
-    data?: { upload_url: string; media_id: string }
+    data?: { upload_url: string; media_id: string; method?: 'PUT' | 'POST'; fields?: Record<string, string> }
     error?: { message: string }
   }
   if (!presignedJson.ok || !presignedJson.data) {
     throw new Error(presignedJson.error?.message ?? 'Failed to get upload URL')
   }
 
-  const { upload_url, media_id } = presignedJson.data
+  const { upload_url, media_id, method, fields } = presignedJson.data
 
-  // Step 2 — PUT directly to storage (no auth headers; presigned URL is self-authenticated).
+  // Step 2 — upload directly to storage (no auth headers; the URL/fields are
+  // self-authenticated). S3 takes a raw PUT; Cloudinary a multipart POST with
+  // signed fields.
   await new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest()
-    xhr.open('PUT', upload_url)
 
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) {
@@ -141,7 +142,16 @@ async function uploadPresigned(file: File, alt: string): Promise<MediaItem> {
         : reject(new Error(`Storage upload failed (${xhr.status})`))
     }
     xhr.onerror = () => reject(new Error('Network error during upload'))
-    xhr.send(file)
+    if (method === 'POST' && fields) {
+      const form = new FormData()
+      for (const [k, v] of Object.entries(fields)) form.append(k, v)
+      form.append('file', file)
+      xhr.open('POST', upload_url)
+      xhr.send(form)
+    } else {
+      xhr.open('PUT', upload_url)
+      xhr.send(file)
+    }
   })
 
   // Step 3 — confirm with alt text.

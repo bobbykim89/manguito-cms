@@ -318,6 +318,10 @@ export function registerAdminMediaRoutes(
         // Signed, self-contained token the client posts back to /confirm/:id.
         media_id,
         expires_at: presigned.expires_at,
+        // Present for storages that need a multipart POST with signed fields
+        // (Cloudinary); absent for a raw PUT (S3).
+        ...(presigned.method && { method: presigned.method }),
+        ...(presigned.fields && { fields: presigned.fields }),
       },
     })
   })

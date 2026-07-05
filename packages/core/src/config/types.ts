@@ -72,6 +72,11 @@ export type PresignedResult = {
   upload_url: string
   key: string
   expires_at: number
+  // Some storages (e.g. Cloudinary) require a multipart POST with signed form
+  // fields instead of a raw PUT (S3). When `method` is 'POST', the client posts
+  // a form containing `fields` plus the file; otherwise it PUTs the raw file.
+  method?: 'PUT' | 'POST'
+  fields?: Record<string, string>
 }
 
 export interface StorageAdapter {

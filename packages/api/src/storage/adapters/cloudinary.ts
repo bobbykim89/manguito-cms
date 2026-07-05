@@ -12,14 +12,6 @@ export type CloudinaryAdapterOptions = {
   secret_access_key?: string
 }
 
-type CloudinaryPresignedResult = PresignedResult & {
-  params: {
-    signature: string
-    timestamp: number
-    api_key: string
-  }
-}
-
 function toCloudinaryResourceType(folder: string): string {
   if (folder === 'video') return 'video'
   if (folder === 'file') return 'raw'
@@ -39,7 +31,9 @@ function signParams(params: Record<string, string | number>, secret: string): st
     .sort()
     .map((k) => `${k}=${params[k]}`)
     .join('&')
-  return crypto.createHash('sha256').update(to_sign + secret).digest('hex')
+  // Cloudinary's default signature algorithm is SHA-1 (accounts can opt into
+  // SHA-256). Match the default so signed uploads/deletes verify out of the box.
+  return crypto.createHash('sha1').update(to_sign + secret).digest('hex')
 }
 
 export function createCloudinaryAdapter(
@@ -72,18 +66,20 @@ export function createCloudinaryAdapter(
       const resource_type = toCloudinaryResourceType(opts.folder)
       const upload_url = `https://api.cloudinary.com/v1_1/${cloud_name}/${resource_type}/upload`
 
-      const result: CloudinaryPresignedResult = {
+      // Cloudinary uploads are a signed multipart POST — the client posts these
+      // fields plus the file directly to Cloudinary (never through the server).
+      return {
         upload_url,
         key,
         expires_at,
-        params: {
+        method: 'POST',
+        fields: {
+          public_id,
+          timestamp: String(timestamp),
           signature,
-          timestamp,
           api_key: access_key_id,
         },
       }
-
-      return result
     },
 
     getUrl(key: string): string {

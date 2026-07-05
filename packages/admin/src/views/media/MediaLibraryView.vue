@@ -193,20 +193,30 @@ function uploadDirect(file: File, alt: string): Promise<MediaItem> {
 async function uploadPresigned(file: File, alt: string): Promise<MediaItem> {
   const params = new URLSearchParams({ type: pendingMediaType.value, filename: file.name, mime_type: file.type })
   const presignedRes = await fetch(`${__ADMIN_PREFIX__}/api/media/presigned-url?${params.toString()}`, { credentials: 'include' })
-  const presignedJson = await presignedRes.json() as { ok: boolean; data?: { upload_url: string; media_id: string }; error?: { message: string } }
+  const presignedJson = await presignedRes.json() as { ok: boolean; data?: { upload_url: string; media_id: string; method?: 'PUT' | 'POST'; fields?: Record<string, string> }; error?: { message: string } }
   if (!presignedJson.ok || !presignedJson.data) throw new Error(presignedJson.error?.message ?? 'Failed to get upload URL')
 
-  const { upload_url, media_id } = presignedJson.data
+  const { upload_url, media_id, method, fields } = presignedJson.data
 
   await new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest()
-    xhr.open('PUT', upload_url)
     xhr.upload.onprogress = (ev) => {
       if (ev.lengthComputable) uploadProgress.value = Math.round((ev.loaded / ev.total) * 100)
     }
     xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Storage upload failed (${xhr.status})`)))
     xhr.onerror = () => reject(new Error('Network error'))
-    xhr.send(file)
+    if (method === 'POST' && fields) {
+      // Cloudinary: multipart POST with signed fields + the file.
+      const form = new FormData()
+      for (const [k, v] of Object.entries(fields)) form.append(k, v)
+      form.append('file', file)
+      xhr.open('POST', upload_url)
+      xhr.send(form)
+    } else {
+      // S3: raw PUT to the presigned URL.
+      xhr.open('PUT', upload_url)
+      xhr.send(file)
+    }
   })
 
   const confirmRes = await fetch(`${__ADMIN_PREFIX__}/api/media/confirm/${media_id}`, {
