@@ -38,6 +38,14 @@ The sandbox is live at `https://sandbox-mocha-kappa.vercel.app` —
   Variables** for all three targets (production/preview/development) —
   `manguito build` validates `DB_URL` eagerly at config-load time, so the
   build itself fails without it, not just the running function
+- **S3 credentials.** Unlike Lambda/Fargate, Vercel has no AWS execution role,
+  so the SDK cannot sign presigned upload URLs and `/admin/api/media/presigned-url`
+  returns `502`. Provide an IAM user's keys (with `s3:PutObject` on the bucket)
+  as `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY`, plus `S3_REGION` (the bucket's
+  region — `AWS_REGION` on Vercel is the platform's region, not the bucket's).
+  Custom names are required because the underlying Lambda runtime reserves the
+  `AWS_` prefix, so `AWS_ACCESS_KEY_ID` cannot be set. Add the bucket's Vercel
+  origin to the S3 bucket CORS `AllowedOrigins`.
 
 ---
 

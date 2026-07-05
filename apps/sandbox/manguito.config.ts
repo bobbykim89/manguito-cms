@@ -31,7 +31,17 @@ export default defineConfig({
   // }),
   storage: createS3Adapter({
     bucket: process.env['S3_BUCKET'] ?? '',
-    region: process.env['AWS_REGION'] ?? 'us-east-1',
+    region: process.env['S3_REGION'] ?? process.env['AWS_REGION'] ?? 'us-east-1',
+    // On AWS (Lambda/Fargate) leave these unset — the execution/task role
+    // supplies credentials. On platforms without an AWS role (e.g. Vercel),
+    // set S3_ACCESS_KEY_ID / S3_SECRET_ACCESS_KEY to an IAM user's keys. Custom
+    // names are used because the Lambda runtime reserves the AWS_ prefix.
+    ...(process.env['S3_ACCESS_KEY_ID'] && process.env['S3_SECRET_ACCESS_KEY']
+      ? {
+          access_key_id: process.env['S3_ACCESS_KEY_ID'],
+          secret_access_key: process.env['S3_SECRET_ACCESS_KEY'],
+        }
+      : {}),
   }),
   // storage: createLocalAdapter(), // for local testing
 
