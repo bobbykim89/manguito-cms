@@ -39,6 +39,10 @@ if (process.env['DB_URL'] !== undefined) {
     S3_BUCKET: requireEnv('S3_BUCKET'),
     AWS_REGION: requireEnv('AWS_REGION'),
     ALLOWED_ORIGIN: process.env['ALLOWED_ORIGIN'] ?? '*',
+    // Optional — passed through only when set (Cloudinary storage).
+    CLOUDINARY_CLOUD_NAME: process.env['CLOUDINARY_CLOUD_NAME'],
+    CLOUDINARY_API_KEY: process.env['CLOUDINARY_API_KEY'],
+    CLOUDINARY_API_SECRET: process.env['CLOUDINARY_API_SECRET'],
   }
 
   new LambdaStack(app, 'LambdaStack', {

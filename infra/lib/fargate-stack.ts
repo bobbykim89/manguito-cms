@@ -70,6 +70,10 @@ export class FargateStack extends cdk.Stack {
           AWS_REGION: cmsEnv.AWS_REGION,
           ALLOWED_ORIGIN: cmsEnv.ALLOWED_ORIGIN,
           NODE_ENV: 'production',
+          // Cloudinary storage — passed through only when configured.
+          ...(cmsEnv.CLOUDINARY_CLOUD_NAME ? { CLOUDINARY_CLOUD_NAME: cmsEnv.CLOUDINARY_CLOUD_NAME } : {}),
+          ...(cmsEnv.CLOUDINARY_API_KEY ? { CLOUDINARY_API_KEY: cmsEnv.CLOUDINARY_API_KEY } : {}),
+          ...(cmsEnv.CLOUDINARY_API_SECRET ? { CLOUDINARY_API_SECRET: cmsEnv.CLOUDINARY_API_SECRET } : {}),
           PORT: '3000',
         },
       },

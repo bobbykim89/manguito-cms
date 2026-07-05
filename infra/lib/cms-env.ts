@@ -12,4 +12,10 @@ export type CmsEnv = {
   S3_BUCKET: string
   AWS_REGION: string
   ALLOWED_ORIGIN: string
+  // Optional — only needed when the app uses the Cloudinary storage adapter.
+  // Harmless alongside S3: the config selects one adapter, and each reads only
+  // its own vars, so unused ones are ignored.
+  CLOUDINARY_CLOUD_NAME?: string
+  CLOUDINARY_API_KEY?: string
+  CLOUDINARY_API_SECRET?: string
 }
