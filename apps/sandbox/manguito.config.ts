@@ -1,8 +1,6 @@
 import { defineConfig } from '@bobbykim/manguito-cms-core'
 import { createPostgresAdapter } from '@bobbykim/manguito-cms-db'
-import {
-  createS3Adapter,
-} from '@bobbykim/manguito-cms-api/storage'
+import { createS3Adapter } from '@bobbykim/manguito-cms-api/storage'
 import { createServer, createAPIAdapter } from '@bobbykim/manguito-cms-api'
 import { createAdminAdapter } from '@bobbykim/manguito-cms-admin'
 
@@ -31,7 +29,8 @@ export default defineConfig({
   // }),
   storage: createS3Adapter({
     bucket: process.env['S3_BUCKET'] ?? '',
-    region: process.env['S3_REGION'] ?? process.env['AWS_REGION'] ?? 'us-east-1',
+    region:
+      process.env['S3_REGION'] ?? process.env['AWS_REGION'] ?? 'us-east-1',
     // On AWS (Lambda/Fargate) leave these unset — the execution/task role
     // supplies credentials. On platforms without an AWS role (e.g. Vercel),
     // set S3_ACCESS_KEY_ID / S3_SECRET_ACCESS_KEY to an IAM user's keys. Custom
