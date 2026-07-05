@@ -1,6 +1,7 @@
 // Admin media routes — upload, presigned URL, update, delete
 import type { Context, Hono } from 'hono'
 import type { MediaRepository, StorageAdapter } from '@bobbykim/manguito-cms-core'
+import { sign, verify } from 'hono/jwt'
 import { requireAuth } from '../../middleware/auth.js'
 import type { createPermissionMiddleware } from '../../middleware/permission.js'
 
@@ -17,29 +18,39 @@ const VIDEO_MIME_TYPES = new Set(['video/mp4', 'video/webm', 'video/quicktime'])
 
 const FILE_MIME_TYPES = new Set(['application/pdf'])
 
-// ─── Pending upload store ─────────────────────────────────────────────────────
+// ─── Pending upload token ─────────────────────────────────────────────────────
+// The presigned-url request and the confirm request can land on different
+// serverless instances, so pending-upload state cannot live in memory. Encode it
+// in a short-lived token signed with AUTH_SECRET — stateless and tamper-proof —
+// and hand it to the client as media_id; confirm verifies it.
 
-type PendingEntry = {
+type PendingUpload = {
   key: string
   folder: 'image' | 'video' | 'file'
   mime_type: string
-  filename: string
-  expires_at: number
 }
 
-const pendingUploads = new Map<string, PendingEntry>()
+function authSecret(): string {
+  const secret = process.env['AUTH_SECRET']
+  if (!secret) throw new Error('AUTH_SECRET environment variable is not set')
+  return secret
+}
 
-function purgePendingUploads(): void {
-  const now = Date.now() / 1000
-  for (const [id, entry] of pendingUploads) {
-    if (entry.expires_at < now) pendingUploads.delete(id)
+async function signPendingUpload(data: PendingUpload, expiresAt: number): Promise<string> {
+  return sign({ ...data, exp: expiresAt }, authSecret())
+}
+
+async function verifyPendingUpload(token: string): Promise<PendingUpload | null> {
+  try {
+    const p = await verify(token, authSecret(), 'HS256') as {
+      key: string
+      folder: 'image' | 'video' | 'file'
+      mime_type: string
+    }
+    return { key: p.key, folder: p.folder, mime_type: p.mime_type }
+  } catch {
+    return null
   }
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function generateId(): string {
-  return globalThis.crypto.randomUUID()
 }
 
 
@@ -295,24 +306,17 @@ export function registerAdminMediaRoutes(
       )
     }
 
-    purgePendingUploads()
-
-    const pendingId = generateId()
-    pendingUploads.set(pendingId, {
-      key: presigned.key,
-      folder: type,
-      mime_type: mimeType,
-      filename,
-      expires_at: presigned.expires_at,
-    })
+    const media_id = await signPendingUpload(
+      { key: presigned.key, folder: type, mime_type: mimeType },
+      presigned.expires_at,
+    )
 
     return c.json({
       ok: true,
       data: {
         upload_url: presigned.upload_url,
-        // The id the client posts back to /confirm/:id. Named media_id to match
-        // the admin uploader (it is the pending-upload id, not the storage key).
-        media_id: pendingId,
+        // Signed, self-contained token the client posts back to /confirm/:id.
+        media_id,
         expires_at: presigned.expires_at,
       },
     })
@@ -321,9 +325,8 @@ export function registerAdminMediaRoutes(
   // POST /admin/api/media/confirm/:id
   app.post('/admin/api/media/confirm/:id', requireAuth, requirePermission('media:create'), async (c) => {
     const id = c.req.param('id')
-    purgePendingUploads()
 
-    const pending = pendingUploads.get(id)
+    const pending = await verifyPendingUpload(id)
     if (!pending) {
       return c.json(
         {
@@ -364,8 +367,6 @@ export function registerAdminMediaRoutes(
       ...(altValue !== undefined && { alt: altValue }),
       file_size: 0,
     })
-
-    pendingUploads.delete(id)
 
     return c.json({ ok: true, data: item }, 201)
   })

@@ -456,6 +456,36 @@ describe('admin media routes — integration', () => {
     const body = await res.json() as { ok: boolean; error: { code: string } }
     expect(body.error.code).toBe('FILE_TOO_LARGE')
   })
+
+  // The presigned flow's pending state is a signed token (media_id), not
+  // in-memory — so confirm works even when it lands on a different serverless
+  // instance than presigned-url.
+  it('presigned-url → confirm creates a media row via the stateless token', async () => {
+    const app = makeApp()
+    const params = new URLSearchParams({ type: 'image', filename: 'x.png', mime_type: 'image/png' })
+    const presignedRes = await app.request(`/admin/api/media/presigned-url?${params.toString()}`, withAuth())
+    expect(presignedRes.status).toBe(200)
+    const presigned = await presignedRes.json() as { ok: boolean; data: { media_id: string; upload_url: string } }
+    expect(presigned.data.media_id).toBeTruthy()
+
+    const confirmRes = await app.request(
+      `/admin/api/media/confirm/${presigned.data.media_id}`,
+      withAuth({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ alt: 'x' }) }),
+    )
+    expect(confirmRes.status).toBe(201)
+    const confirmed = await confirmRes.json() as { ok: boolean; data: { id: string; type: string } }
+    expect(confirmed.ok).toBe(true)
+    expect(confirmed.data.type).toBe('image')
+  })
+
+  it('POST /admin/api/media/confirm with a tampered/invalid token → 410', async () => {
+    const app = makeApp()
+    const res = await app.request(
+      '/admin/api/media/confirm/not-a-valid-token',
+      withAuth({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }),
+    )
+    expect(res.status).toBe(410)
+  })
 })
 
 describe('admin OpenAPI — integration', () => {
