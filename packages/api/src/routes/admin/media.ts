@@ -310,7 +310,9 @@ export function registerAdminMediaRoutes(
       ok: true,
       data: {
         upload_url: presigned.upload_url,
-        key: pendingId,
+        // The id the client posts back to /confirm/:id. Named media_id to match
+        // the admin uploader (it is the pending-upload id, not the storage key).
+        media_id: pendingId,
         expires_at: presigned.expires_at,
       },
     })
