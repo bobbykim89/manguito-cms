@@ -17,9 +17,7 @@ export type S3AdapterOptions = {
 }
 
 export function createS3Adapter(options: S3AdapterOptions): StorageAdapter {
-  const { bucket, region, prefix } = options
-  const access_key_id = options.access_key_id ?? process.env['AWS_ACCESS_KEY_ID']
-  const secret_access_key = options.secret_access_key ?? process.env['AWS_SECRET_ACCESS_KEY']
+  const { bucket, region, prefix, access_key_id, secret_access_key } = options
 
   const client = new S3Client({
     region,
@@ -28,6 +26,12 @@ export function createS3Adapter(options: S3AdapterOptions): StorageAdapter {
     // so the browser's real upload fails the check with 403. Only checksum when
     // an operation actually requires it, which excludes presigned PUTs.
     requestChecksumCalculation: 'WHEN_REQUIRED',
+    // Only override credentials when explicitly configured. Otherwise fall back
+    // to the SDK's default provider chain, which resolves the Lambda/Fargate
+    // execution role *including the AWS_SESSION_TOKEN that temporary credentials
+    // require*. Hand-reading only AWS_ACCESS_KEY_ID/SECRET dropped the session
+    // token, so presigned URLs 403'd on Lambda (works on Fargate, whose role
+    // credentials don't arrive via those env vars).
     ...(access_key_id && secret_access_key
       ? { credentials: { accessKeyId: access_key_id, secretAccessKey: secret_access_key } }
       : {}),
