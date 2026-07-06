@@ -19,7 +19,7 @@ export async function generateServerEntries(
 
 // ─── Shared preamble ──────────────────────────────────────────────────────────
 
-function appSetup(): string {
+export function appSetup(): string {
   return `import config from '../../manguito.config.js'
 import { schemaRegistry } from './schema-registry.js'
 import { createCmsApp } from '@bobbykim/manguito-cms-api'
@@ -35,6 +35,7 @@ const { app } = createCmsApp({
   storage: config.storage,
   prefix: config.api.prefix,
   ...(config.api.media ? { media: config.api.media } : {}),
+  ...(config.api.rateLimit ? { rateLimit: config.api.rateLimit } : {}),
 })`
 }
 
