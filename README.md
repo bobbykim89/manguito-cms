@@ -145,7 +145,7 @@ manguito validate         # parse and validate all schemas, report errors
 - REST API with auto-generated CRUD endpoints per content type
 - Role-based auth: Admin, Editor, Writer, Tester
 - Storage adapters: local filesystem, AWS S3, Cloudinary
-- Minimalist admin panel (Vue 3 + Tailwind + shadcn-vue)
+- Minimalist admin panel (Vue 3 + Tailwind)
 - Serverless deployment target (AWS Lambda) and traditional server mode
 - Unit and integration test suite
 
@@ -228,8 +228,8 @@ The **Field Type Registry** is the architectural keystone. Every supported field
 | [Phase 5](./docs/phase-05.md) | REST API layer — route generation, request/response contracts |
 | [Phase 6](./docs/phase-06.md) | Auth module — JWT, roles, route protection                    |
 | [Phase 7](./docs/phase-07.md) | Testing — unit, integration, smoke tests                      |
-| Phase 8                       | Admin panel — Vue 3, auto-generated forms                     |
-| Phase 9                       | CLI — `init`, `dev`, `build`, `start`, `validate` commands    |
+| [Phase 8](./docs/phase-08.md) | Admin panel — Vue 3, auto-generated forms                     |
+| [Phase 9](./docs/phase-09.md) | CLI — `init`, `dev`, `build`, `start`, `validate` commands    |
 | Phase 10                      | Deployment — Lambda, Neon, CI/CD pipeline                     |
 
 ---

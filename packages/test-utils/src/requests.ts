@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto'
-import { createAPIAdapter } from '@bobbykim/manguito-cms-api'
+import { createCmsApp } from '@bobbykim/manguito-cms-api'
 import { createLocalAdapter } from '@bobbykim/manguito-cms-api/storage'
 import type { SchemaRegistry } from '@bobbykim/manguito-cms-core'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
@@ -32,7 +32,7 @@ async function signAuthToken(payload: {
 // ─── App factory ─────────────────────────────────────────────────────────────
 
 export function createTestApp(schema: SchemaRegistry, db: DrizzlePostgresInstance) {
-  const { app } = createAPIAdapter({
+  const { app } = createCmsApp({
     storage: createLocalAdapter(),
     registry: schema,
     db,

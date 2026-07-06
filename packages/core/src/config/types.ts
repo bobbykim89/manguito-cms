@@ -1,11 +1,12 @@
 // ─── Schema Config ────────────────────────────────────────────────────────────
 
+// The four schema-type folders walked by the parser. roles.json and routes.json
+// are not folders — they are fixed files read directly from base_path.
 export type SchemaFolders = {
   content_types: string
   paragraph_types: string
   taxonomy_types: string
   enum_types: string
-  roles: string
 }
 
 export type SchemaConfig = {
@@ -42,13 +43,18 @@ export type MigrationStatus = {
   applied: string[]
 }
 
+// Migration orchestration is not an adapter responsibility: it needs the
+// generated drizzle config path + migrations folder, which the CLI produces at
+// build time. It runs through the standalone runDevMigration / generateMigration
+// / applyMigrations / getMigrationStatus functions in @bobbykim/manguito-cms-db,
+// which take those paths as arguments. The adapter is connection + introspection
+// only. (MigrationResult / MigrationStatus below are the return types of those
+// standalone functions.)
 export interface DbAdapter {
   readonly type: 'postgres' | 'mongodb'
   connect(): Promise<void>
   disconnect(): Promise<void>
   isConnected(): boolean
-  runMigrations(): Promise<MigrationResult>
-  getMigrationStatus(): Promise<MigrationStatus>
   getTableNames(): Promise<string[]>
   tableExists(name: string): Promise<boolean>
 }
@@ -66,6 +72,11 @@ export type PresignedResult = {
   upload_url: string
   key: string
   expires_at: number
+  // Some storages (e.g. Cloudinary) require a multipart POST with signed form
+  // fields instead of a raw PUT (S3). When `method` is 'POST', the client posts
+  // a form containing `fields` plus the file; otherwise it PUTs the raw file.
+  method?: 'PUT' | 'POST'
+  fields?: Record<string, string>
 }
 
 export interface StorageAdapter {

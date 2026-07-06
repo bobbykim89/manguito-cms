@@ -1,7 +1,7 @@
 import { writeFileSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { scanMigrationFiles } from '../scanner'
 
 function writeTmp(name: string, content: string): string {
@@ -61,8 +61,8 @@ describe('scanMigrationFiles — DROP_COLUMN', () => {
 
     const result = scanMigrationFiles([file])
     expect(result.hasDestructiveOperations).toBe(true)
-    expect(result.operations[0].pattern).toBe('DROP_COLUMN')
-    expect(result.operations[0].operation).toBe('DROP COLUMN blog_post.summary')
+    expect(result.operations[0]!.pattern).toBe('DROP_COLUMN')
+    expect(result.operations[0]!.operation).toBe('DROP COLUMN blog_post.summary')
   })
 })
 
@@ -93,8 +93,8 @@ describe('scanMigrationFiles — DROP_TABLE', () => {
 
     const result = scanMigrationFiles([file])
     expect(result.hasDestructiveOperations).toBe(true)
-    expect(result.operations[0].pattern).toBe('DROP_TABLE')
-    expect(result.operations[0].operation).toBe('DROP TABLE paragraph_photo_card')
+    expect(result.operations[0]!.pattern).toBe('DROP_TABLE')
+    expect(result.operations[0]!.operation).toBe('DROP TABLE paragraph_photo_card')
   })
 })
 
@@ -145,8 +145,8 @@ describe('scanMigrationFiles — multiple operations', () => {
     const result = scanMigrationFiles([file])
     expect(result.hasDestructiveOperations).toBe(true)
     expect(result.operations).toHaveLength(2)
-    expect(result.operations[0].pattern).toBe('DROP_COLUMN')
-    expect(result.operations[1].pattern).toBe('DROP_TABLE')
+    expect(result.operations[0]!.pattern).toBe('DROP_COLUMN')
+    expect(result.operations[1]!.pattern).toBe('DROP_TABLE')
   })
 
   it('attributes operations to correct files across two files', () => {
@@ -176,6 +176,6 @@ describe('scanMigrationFiles — multiple operations', () => {
     const result = scanMigrationFiles([clean, destructive])
     expect(result.hasDestructiveOperations).toBe(true)
     expect(result.operations).toHaveLength(1)
-    expect(result.operations[0].file).toBe('0006_destructive.sql')
+    expect(result.operations[0]!.file).toBe('0006_destructive.sql')
   })
 })

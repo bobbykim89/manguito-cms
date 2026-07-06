@@ -85,7 +85,7 @@ Phase 10 — CI/CD pipeline
 ## Developer Checklist
 
 ### Setup
-- [ ] Add dependencies to `packages/admin/package.json` — Vue 3, Vite, Tailwind, shadcn-vue, Pinia, vue-router, `@tiptap/vue-3`, `@vueuse/core`, `msw`, `@vue/test-utils`, `@testing-library/vue`
+- [ ] Add dependencies to `packages/admin/package.json` — Vue 3, Vite, Tailwind, Pinia, vue-router, `@tiptap/vue-3`, `@vueuse/core`, `msw`, `@vue/test-utils`, `@testing-library/vue`
 - [ ] Configure `vite.config.ts` — placeholder `define` block (CLI will inject real values at runtime)
 - [ ] Configure `tsup.config.ts` — `codegen/` entry only, `external: ['vue']`
 - [ ] Add subpath exports to `package.json` — `.` and `./codegen`

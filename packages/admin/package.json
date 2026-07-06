@@ -40,7 +40,6 @@
     "dotenv-cli": "latest",
     "jsdom": "^29.1.1",
     "msw": "^2.7.0",
-    "shadcn-vue": "^0.10.0",
     "tailwindcss": "^4.2.2",
     "tsup": "^8.5.0",
     "typescript": "^6.0.0",

@@ -10,90 +10,17 @@ import type {
   UpdateInput,
   FilterOperator,
   FilterValue,
-  ParsedField,
-  SchemaRegistry,
 } from '@bobbykim/manguito-cms-core'
+import {
+  resolveRelationField,
+  resolveRelationBareIds,
+  type RelationDef,
+} from '../relations.js'
 
-// ─── Relation definition types ────────────────────────────────────────────────
-
-export type ParagraphRelationDef = {
-  type: 'paragraph'
-  table: string
-}
-
-export type ReferenceRelationDef = {
-  type: 'reference'
-  table: string
-  fk_column: string
-}
-
-export type JunctionRelationDef = {
-  type: 'junction'
-  table: string
-  junction_table: string
-  left_column: string
-  right_column: string
-}
-
-export type MediaRelationDef = {
-  type: 'media'
-  fk_column: string
-}
-
-export type RelationDef =
-  | ParagraphRelationDef
-  | ReferenceRelationDef
-  | JunctionRelationDef
-  | MediaRelationDef
+// ─── Repository options ───────────────────────────────────────────────────────
 
 export type ContentRepositoryOptions = {
   relations?: Record<string, RelationDef>
-}
-
-// Derives a repository's relations map from its parsed schema fields, so
-// paragraph/reference/media fields are actually resolved by resolveRows()
-// instead of silently dropped. Junction info (many-to-many) and foreign_key
-// info (one-to-one/many-to-one) are already fully resolved by the schema
-// parser onto each field's db_column — no extra registry lookups needed
-// except for paragraph fields, which store their target table only on the
-// paragraph type itself.
-export function buildRelationsMap(
-  fields: ParsedField[],
-  registry: SchemaRegistry
-): Record<string, RelationDef> {
-  const relations: Record<string, RelationDef> = {}
-
-  for (const field of fields) {
-    if (field.field_type === 'image' || field.field_type === 'video' || field.field_type === 'file') {
-      if (!field.db_column) continue
-      relations[field.name] = { type: 'media', fk_column: field.db_column.column_name }
-    } else if (field.field_type === 'paragraph') {
-      const ref = (field.ui_component as { ref?: string }).ref
-      const pType = ref ? registry.paragraph_types[ref] : undefined
-      if (!pType) continue
-      relations[field.name] = { type: 'paragraph', table: pType.db.table_name }
-    } else if (field.field_type === 'reference') {
-      if (!field.db_column) continue
-      if (field.db_column.junction) {
-        const j = field.db_column.junction
-        relations[field.name] = {
-          type: 'junction',
-          table: j.right_table,
-          junction_table: j.table_name,
-          left_column: j.left_column,
-          right_column: j.right_column,
-        }
-      } else if (field.db_column.foreign_key) {
-        relations[field.name] = {
-          type: 'reference',
-          table: field.db_column.foreign_key.table,
-          fk_column: field.db_column.column_name,
-        }
-      }
-    }
-  }
-
-  return relations
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -175,19 +102,6 @@ function whereFragment(conds: SQL[]): SQL {
     : sql``
 }
 
-function groupBy<T extends Record<string, unknown>>(
-  items: T[],
-  key: string
-): Record<string, T[]> {
-  const result: Record<string, T[]> = {}
-  for (const item of items) {
-    const k = String(item[key])
-    if (!result[k]) result[k] = []
-    result[k]!.push(item)
-  }
-  return result
-}
-
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
 export function createDrizzleContentRepository<T>(
@@ -199,154 +113,6 @@ export function createDrizzleContentRepository<T>(
 
   function tableRaw(): SQL {
     return sql.raw(quoteIdent(tableName))
-  }
-
-  async function batchResolveField(
-    rows: Record<string, unknown>[],
-    fieldName: string,
-    rel: RelationDef,
-    cache: Map<string, unknown>
-  ): Promise<void> {
-    if (rows.length === 0) return
-
-    if (rel.type === 'paragraph') {
-      const parentIds = rows.map((r) => r['id'] as string)
-      const inList = sql.join(
-        parentIds.map((id) => sql`${id}`),
-        sql`, `
-      )
-      const result = await db.execute(
-        sql`SELECT * FROM ${sql.raw(quoteIdent(rel.table))} WHERE parent_id IN (${inList}) ORDER BY "order" ASC`
-      )
-      const byParent = groupBy(result.rows as Record<string, unknown>[], 'parent_id')
-      for (const row of rows) {
-        row[fieldName] = byParent[row['id'] as string] ?? []
-      }
-    } else if (rel.type === 'reference') {
-      const fkValues = rows
-        .map((r) => r[rel.fk_column] as string)
-        .filter(Boolean)
-      if (fkValues.length === 0) {
-        for (const row of rows) row[fieldName] = null
-        return
-      }
-      const unique = [...new Set(fkValues)]
-      const uncached = unique.filter((id) => !cache.has(`${rel.table}:${id}`))
-      if (uncached.length > 0) {
-        const inList = sql.join(
-          uncached.map((id) => sql`${id}`),
-          sql`, `
-        )
-        const result = await db.execute(
-          sql`SELECT * FROM ${sql.raw(quoteIdent(rel.table))} WHERE id IN (${inList})`
-        )
-        for (const item of result.rows as Record<string, unknown>[]) {
-          cache.set(`${rel.table}:${item['id']}`, item)
-        }
-      }
-      for (const row of rows) {
-        const fkVal = row[rel.fk_column] as string
-        row[fieldName] = fkVal ? (cache.get(`${rel.table}:${fkVal}`) ?? null) : null
-      }
-    } else if (rel.type === 'junction') {
-      const parentIds = rows.map((r) => r['id'] as string)
-      const inList = sql.join(
-        parentIds.map((id) => sql`${id}`),
-        sql`, `
-      )
-      const junctionResult = await db.execute(
-        sql`SELECT * FROM ${sql.raw(quoteIdent(rel.junction_table))} WHERE ${sql.raw(quoteIdent(rel.left_column))} IN (${inList}) ORDER BY "order" ASC`
-      )
-      const jRows = junctionResult.rows as Record<string, unknown>[]
-      const rightIds = [...new Set(jRows.map((r) => r[rel.right_column] as string))]
-      const uncached = rightIds.filter((id) => !cache.has(`${rel.table}:${id}`))
-      if (uncached.length > 0) {
-        const rightInList = sql.join(
-          uncached.map((id) => sql`${id}`),
-          sql`, `
-        )
-        const entitiesResult = await db.execute(
-          sql`SELECT * FROM ${sql.raw(quoteIdent(rel.table))} WHERE id IN (${rightInList})`
-        )
-        for (const item of entitiesResult.rows as Record<string, unknown>[]) {
-          cache.set(`${rel.table}:${item['id']}`, item)
-        }
-      }
-      const byLeft = groupBy(jRows, rel.left_column)
-      for (const row of rows) {
-        const jEntries = byLeft[row['id'] as string] ?? []
-        row[fieldName] = jEntries
-          .map((jr) => cache.get(`${rel.table}:${jr[rel.right_column] as string}`))
-          .filter(Boolean)
-      }
-    } else if (rel.type === 'media') {
-      const fkValues = rows
-        .map((r) => r[rel.fk_column] as string)
-        .filter(Boolean)
-      if (fkValues.length === 0) {
-        for (const row of rows) row[fieldName] = null
-        return
-      }
-      const unique = [...new Set(fkValues)]
-      const uncached = unique.filter((id) => !cache.has(`media:${id}`))
-      if (uncached.length > 0) {
-        const inList = sql.join(
-          uncached.map((id) => sql`${id}`),
-          sql`, `
-        )
-        const result = await db.execute(
-          sql`SELECT * FROM "media" WHERE id IN (${inList})`
-        )
-        for (const item of result.rows as Record<string, unknown>[]) {
-          cache.set(`media:${item['id']}`, item)
-        }
-      }
-      for (const row of rows) {
-        const fkVal = row[rel.fk_column] as string
-        row[fieldName] = fkVal ? (cache.get(`media:${fkVal}`) ?? null) : null
-      }
-    }
-  }
-
-  // Populates paragraph/junction fields with bare ID arrays when not
-  // explicitly included — they have no column on the owning table, so
-  // without this they'd be silently absent from the response. Reference
-  // fields with a plain foreign_key already carry their bare ID as a real
-  // column from `SELECT *`, so they need no extra query here.
-  async function batchResolveBareIds(
-    rows: Record<string, unknown>[],
-    fieldName: string,
-    rel: RelationDef
-  ): Promise<void> {
-    if (rows.length === 0) return
-
-    if (rel.type === 'paragraph') {
-      const parentIds = rows.map((r) => r['id'] as string)
-      const inList = sql.join(
-        parentIds.map((id) => sql`${id}`),
-        sql`, `
-      )
-      const result = await db.execute(
-        sql`SELECT id, parent_id FROM ${sql.raw(quoteIdent(rel.table))} WHERE parent_id IN (${inList}) ORDER BY "order" ASC`
-      )
-      const byParent = groupBy(result.rows as Record<string, unknown>[], 'parent_id')
-      for (const row of rows) {
-        row[fieldName] = (byParent[row['id'] as string] ?? []).map((r) => r['id'])
-      }
-    } else if (rel.type === 'junction') {
-      const parentIds = rows.map((r) => r['id'] as string)
-      const inList = sql.join(
-        parentIds.map((id) => sql`${id}`),
-        sql`, `
-      )
-      const result = await db.execute(
-        sql`SELECT ${sql.raw(quoteIdent(rel.left_column))} AS left_id, ${sql.raw(quoteIdent(rel.right_column))} AS right_id FROM ${sql.raw(quoteIdent(rel.junction_table))} WHERE ${sql.raw(quoteIdent(rel.left_column))} IN (${inList})`
-      )
-      const byLeft = groupBy(result.rows as Record<string, unknown>[], 'left_id')
-      for (const row of rows) {
-        row[fieldName] = (byLeft[row['id'] as string] ?? []).map((r) => r['right_id'])
-      }
-    }
   }
 
   async function resolveRows(
@@ -367,9 +133,9 @@ export function createDrizzleContentRepository<T>(
     // included, populate bare IDs so the field is never silently dropped.
     for (const [fieldName, rel] of Object.entries(relations)) {
       if (rel.type === 'media') {
-        await batchResolveField(rows, fieldName, rel, cache)
+        await resolveRelationField(db, rows, fieldName, rel, cache)
       } else if (!include.includes(fieldName)) {
-        await batchResolveBareIds(rows, fieldName, rel)
+        await resolveRelationBareIds(db, rows, fieldName, rel)
       }
     }
 
@@ -377,7 +143,7 @@ export function createDrizzleContentRepository<T>(
     for (const fieldName of include) {
       const rel = relations[fieldName]!
       if (rel.type !== 'media') {
-        await batchResolveField(rows, fieldName, rel, cache)
+        await resolveRelationField(db, rows, fieldName, rel, cache)
       }
     }
 

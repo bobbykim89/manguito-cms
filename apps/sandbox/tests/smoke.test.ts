@@ -135,8 +135,8 @@ describe('smoke — content CRUD', () => {
     }
   })
 
-  it('POST /admin/api/blog → 201', async () => {
-    const res = await authenticatedRequest(app, 'admin', 'POST', '/admin/api/blog', {
+  it('POST /admin/api/content/content--article → 201', async () => {
+    const res = await authenticatedRequest(app, 'admin', 'POST', '/admin/api/content/content--article', {
       body: {
         slug: 'smoke-test-article',
         title: 'Smoke Test Article',
@@ -152,9 +152,9 @@ describe('smoke — content CRUD', () => {
     articleId = data.data.id
   })
 
-  it('GET /admin/api/blog/:id → 200', async () => {
+  it('GET /admin/api/content/content--article/:id → 200', async () => {
     expect(articleId).toBeTruthy()
-    const res = await authenticatedRequest(app, 'admin', 'GET', `/admin/api/blog/${articleId}`)
+    const res = await authenticatedRequest(app, 'admin', 'GET', `/admin/api/content/content--article/${articleId}`)
 
     expect(res.status).toBe(200)
     const body = await res.json() as { ok: boolean; data: { id: string } }
@@ -162,9 +162,9 @@ describe('smoke — content CRUD', () => {
     expect(body.data.id).toBe(articleId)
   })
 
-  it('PATCH /admin/api/blog/:id → 200', async () => {
+  it('PATCH /admin/api/content/content--article/:id → 200', async () => {
     expect(articleId).toBeTruthy()
-    const res = await authenticatedRequest(app, 'admin', 'PATCH', `/admin/api/blog/${articleId}`, {
+    const res = await authenticatedRequest(app, 'admin', 'PATCH', `/admin/api/content/content--article/${articleId}`, {
       body: { title: 'Smoke Test Article Updated' },
     })
 
@@ -174,9 +174,9 @@ describe('smoke — content CRUD', () => {
     expect(body.data.title).toBe('Smoke Test Article Updated')
   })
 
-  it('DELETE /admin/api/blog/:id → 200', async () => {
+  it('DELETE /admin/api/content/content--article/:id → 200', async () => {
     expect(articleId).toBeTruthy()
-    const res = await authenticatedRequest(app, 'admin', 'DELETE', `/admin/api/blog/${articleId}`)
+    const res = await authenticatedRequest(app, 'admin', 'DELETE', `/admin/api/content/content--article/${articleId}`)
 
     expect(res.status).toBe(200)
     const body = await res.json() as { ok: boolean }
@@ -188,8 +188,8 @@ describe('smoke — content CRUD', () => {
 // ─── Smoke — permission boundary ─────────────────────────────────────────────
 
 describe('smoke — permission boundary', () => {
-  it('viewer POST /admin/api/blog → 403 INSUFFICIENT_PERMISSION', async () => {
-    const res = await authenticatedRequest(app, 'viewer', 'POST', '/admin/api/blog', {
+  it('viewer POST /admin/api/content/content--article → 403 INSUFFICIENT_PERMISSION', async () => {
+    const res = await authenticatedRequest(app, 'viewer', 'POST', '/admin/api/content/content--article', {
       body: { slug: 'viewer-attempt', title: 'Viewer attempt', body: 'body' },
     })
 

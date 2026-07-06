@@ -1,7 +1,9 @@
 // Admin media routes — upload, presigned URL, update, delete
 import type { Context, Hono } from 'hono'
 import type { MediaRepository, StorageAdapter } from '@bobbykim/manguito-cms-core'
-import { requireAuth, requirePermission } from '../../middleware/auth.js'
+import { sign, verify } from 'hono/jwt'
+import { requireAuth } from '../../middleware/auth.js'
+import type { createPermissionMiddleware } from '../../middleware/permission.js'
 
 // ─── Accepted MIME types ──────────────────────────────────────────────────────
 
@@ -10,36 +12,45 @@ const IMAGE_MIME_TYPES = new Set([
   'image/png',
   'image/webp',
   'image/gif',
-  'image/svg+xml',
 ])
 
 const VIDEO_MIME_TYPES = new Set(['video/mp4', 'video/webm', 'video/quicktime'])
 
 const FILE_MIME_TYPES = new Set(['application/pdf'])
 
-// ─── Pending upload store ─────────────────────────────────────────────────────
+// ─── Pending upload token ─────────────────────────────────────────────────────
+// The presigned-url request and the confirm request can land on different
+// serverless instances, so pending-upload state cannot live in memory. Encode it
+// in a short-lived token signed with AUTH_SECRET — stateless and tamper-proof —
+// and hand it to the client as media_id; confirm verifies it.
 
-type PendingEntry = {
+type PendingUpload = {
   key: string
   folder: 'image' | 'video' | 'file'
   mime_type: string
-  filename: string
-  expires_at: number
 }
 
-const pendingUploads = new Map<string, PendingEntry>()
+function authSecret(): string {
+  const secret = process.env['AUTH_SECRET']
+  if (!secret) throw new Error('AUTH_SECRET environment variable is not set')
+  return secret
+}
 
-function purgePendingUploads(): void {
-  const now = Date.now() / 1000
-  for (const [id, entry] of pendingUploads) {
-    if (entry.expires_at < now) pendingUploads.delete(id)
+async function signPendingUpload(data: PendingUpload, expiresAt: number): Promise<string> {
+  return sign({ ...data, exp: expiresAt }, authSecret())
+}
+
+async function verifyPendingUpload(token: string): Promise<PendingUpload | null> {
+  try {
+    const p = await verify(token, authSecret(), 'HS256') as {
+      key: string
+      folder: 'image' | 'video' | 'file'
+      mime_type: string
+    }
+    return { key: p.key, folder: p.folder, mime_type: p.mime_type }
+  } catch {
+    return null
   }
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function generateId(): string {
-  return globalThis.crypto.randomUUID()
 }
 
 
@@ -50,8 +61,29 @@ async function handleDirectUpload(
   storage: StorageAdapter,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   c: Context<any, any, any>,
-  altRequired: boolean
+  altRequired: boolean,
+  maxFileSize: number | undefined
 ): Promise<Response> {
+  // Direct uploads buffer the whole file in the CMS server's memory (unlike the
+  // presigned flow, which uploads straight to storage). Reject oversized bodies
+  // up front via Content-Length so we never buffer them — and keep max_file_size
+  // under the platform payload limit on serverless (Lambda ~6 MB).
+  if (maxFileSize !== undefined) {
+    const contentLength = Number(c.req.header('content-length'))
+    if (Number.isFinite(contentLength) && contentLength > maxFileSize) {
+      return c.json(
+        {
+          ok: false,
+          error: {
+            code: 'FILE_TOO_LARGE',
+            message: `Upload exceeds the maximum size of ${maxFileSize} bytes`,
+          },
+        },
+        413
+      )
+    }
+  }
+
   let formData: FormData
   try {
     formData = await c.req.formData()
@@ -67,6 +99,21 @@ async function handleDirectUpload(
     return c.json(
       { ok: false, error: { code: 'VALIDATION_ERROR', message: 'file field is required' } },
       422
+    )
+  }
+
+  // Defensive second check: Content-Length may be absent (chunked) or count
+  // multipart overhead, so also reject on the actual decoded file size.
+  if (maxFileSize !== undefined && fileField.size > maxFileSize) {
+    return c.json(
+      {
+        ok: false,
+        error: {
+          code: 'FILE_TOO_LARGE',
+          message: `File exceeds the maximum size of ${maxFileSize} bytes`,
+        },
+      },
+      413
     )
   }
 
@@ -147,7 +194,9 @@ async function handleDirectUpload(
 export function registerAdminMediaRoutes(
   app: Hono,
   mediaRepo: MediaRepository,
-  storage: StorageAdapter
+  storage: StorageAdapter,
+  requirePermission: ReturnType<typeof createPermissionMiddleware>,
+  maxFileSize: number | undefined,
 ): void {
   // POST /admin/api/media/image
   app.post(
@@ -155,7 +204,7 @@ export function registerAdminMediaRoutes(
     requireAuth,
     requirePermission('media:create'),
     async (c) => {
-      return handleDirectUpload('image', IMAGE_MIME_TYPES, mediaRepo, storage, c, false)
+      return handleDirectUpload('image', IMAGE_MIME_TYPES, mediaRepo, storage, c, false, maxFileSize)
     }
   )
 
@@ -165,7 +214,7 @@ export function registerAdminMediaRoutes(
     requireAuth,
     requirePermission('media:create'),
     async (c) => {
-      return handleDirectUpload('video', VIDEO_MIME_TYPES, mediaRepo, storage, c, true)
+      return handleDirectUpload('video', VIDEO_MIME_TYPES, mediaRepo, storage, c, true, maxFileSize)
     }
   )
 
@@ -175,12 +224,12 @@ export function registerAdminMediaRoutes(
     requireAuth,
     requirePermission('media:create'),
     async (c) => {
-      return handleDirectUpload('file', FILE_MIME_TYPES, mediaRepo, storage, c, true)
+      return handleDirectUpload('file', FILE_MIME_TYPES, mediaRepo, storage, c, true, maxFileSize)
     }
   )
 
   // GET /admin/api/media/presigned-url
-  app.get('/admin/api/media/presigned-url', requireAuth, async (c) => {
+  app.get('/admin/api/media/presigned-url', requireAuth, requirePermission('media:create'), async (c) => {
     const type = c.req.query('type') as 'image' | 'video' | 'file' | undefined
     const filename = c.req.query('filename')
     const mimeType = c.req.query('mime_type')
@@ -257,33 +306,31 @@ export function registerAdminMediaRoutes(
       )
     }
 
-    purgePendingUploads()
-
-    const pendingId = generateId()
-    pendingUploads.set(pendingId, {
-      key: presigned.key,
-      folder: type,
-      mime_type: mimeType,
-      filename,
-      expires_at: presigned.expires_at,
-    })
+    const media_id = await signPendingUpload(
+      { key: presigned.key, folder: type, mime_type: mimeType },
+      presigned.expires_at,
+    )
 
     return c.json({
       ok: true,
       data: {
         upload_url: presigned.upload_url,
-        key: pendingId,
+        // Signed, self-contained token the client posts back to /confirm/:id.
+        media_id,
         expires_at: presigned.expires_at,
+        // Present for storages that need a multipart POST with signed fields
+        // (Cloudinary); absent for a raw PUT (S3).
+        ...(presigned.method && { method: presigned.method }),
+        ...(presigned.fields && { fields: presigned.fields }),
       },
     })
   })
 
   // POST /admin/api/media/confirm/:id
-  app.post('/admin/api/media/confirm/:id', requireAuth, async (c) => {
+  app.post('/admin/api/media/confirm/:id', requireAuth, requirePermission('media:create'), async (c) => {
     const id = c.req.param('id')
-    purgePendingUploads()
 
-    const pending = pendingUploads.get(id)
+    const pending = await verifyPendingUpload(id)
     if (!pending) {
       return c.json(
         {
@@ -325,8 +372,6 @@ export function registerAdminMediaRoutes(
       file_size: 0,
     })
 
-    pendingUploads.delete(id)
-
     return c.json({ ok: true, data: item }, 201)
   })
 
@@ -334,7 +379,7 @@ export function registerAdminMediaRoutes(
   app.patch(
     '/admin/api/media/:id',
     requireAuth,
-    requirePermission('media:update'),
+    requirePermission('media:edit'),
     async (c) => {
       const id = c.req.param('id')
       const existing = await mediaRepo.findOne(id)
@@ -424,7 +469,7 @@ export function registerAdminMediaRoutes(
   )
 
   // GET /admin/api/media
-  app.get('/admin/api/media', requireAuth, async (c) => {
+  app.get('/admin/api/media', requireAuth, requirePermission('media:read'), async (c) => {
     const pageStr = c.req.query('page')
     const perPageStr = c.req.query('per_page')
     const page = pageStr !== undefined ? Number(pageStr) : 1
@@ -474,7 +519,7 @@ export function registerAdminMediaRoutes(
   })
 
   // GET /admin/api/media/:id
-  app.get('/admin/api/media/:id', requireAuth, async (c) => {
+  app.get('/admin/api/media/:id', requireAuth, requirePermission('media:read'), async (c) => {
     const id = c.req.param('id')
     const item = await mediaRepo.findOne(id)
 

@@ -15,12 +15,13 @@ import {
 
 // ─── Routes derived from testParsedSchema ─────────────────────────────────────
 //
-// testParsedSchema.content_types['content--article'].default_base_path = 'blog'
-// → admin routes: /admin/api/blog
+// content--article: admin routes are keyed by the content type machine name
+// (stable), public routes by default_base_path = 'blog' (the published URL).
+// → admin routes:  /admin/api/content/content--article
 // → public routes: /api/blog/:slug
 
-const ADMIN_ARTICLES = '/admin/api/blog'
-const articlePath = (id: string) => `/admin/api/blog/${id}`
+const ADMIN_ARTICLES = '/admin/api/content/content--article'
+const articlePath = (id: string) => `/admin/api/content/content--article/${id}`
 const publicSlug = (slug: string) => `/api/blog/${slug}`
 
 // ─── Shared state ─────────────────────────────────────────────────────────────
@@ -92,6 +93,15 @@ beforeAll(async () => {
       category     UUID,
       published_at TIMESTAMP,
       priority     INTEGER
+    )
+  `))
+
+  // The article fixture has a many-to-many "tags" field — its junction table is
+  // written by every create/update (delete + reinsert), so it must exist too.
+  await db.execute(sql.raw(`
+    CREATE TABLE IF NOT EXISTS junction_content_article_tags (
+      left_id  UUID NOT NULL,
+      right_id UUID NOT NULL
     )
   `))
 

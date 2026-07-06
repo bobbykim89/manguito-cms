@@ -199,7 +199,12 @@ export async function runDev(
         try {
           const data = await readFile(filePath)
           const ext = extname(filePath).slice(1).toLowerCase()
-          res.setHeader('Content-Type', UPLOAD_MIME_MAP[ext] ?? 'application/octet-stream')
+          const mime = UPLOAD_MIME_MAP[ext] ?? 'application/octet-stream'
+          res.setHeader('Content-Type', mime)
+          // User-uploaded content served same-origin: block MIME-sniffing and
+          // force unknown types to download rather than render inline.
+          res.setHeader('X-Content-Type-Options', 'nosniff')
+          if (mime === 'application/octet-stream') res.setHeader('Content-Disposition', 'attachment')
           res.end(data)
         } catch {
           res.statusCode = 404

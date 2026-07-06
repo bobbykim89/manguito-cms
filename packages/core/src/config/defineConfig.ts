@@ -29,7 +29,6 @@ function resolveSchemaConfig(config?: SchemaConfig): ResolvedSchemaConfig {
       paragraph_types: config?.folders?.paragraph_types ?? 'paragraph-types',
       taxonomy_types: config?.folders?.taxonomy_types ?? 'taxonomy-types',
       enum_types: config?.folders?.enum_types ?? 'enum-types',
-      roles: config?.folders?.roles ?? 'roles',
     },
   }
 }

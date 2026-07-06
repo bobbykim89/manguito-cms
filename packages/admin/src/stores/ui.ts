@@ -22,6 +22,9 @@ export const useUiStore = defineStore('ui', () => {
   const mobileNavOpen = ref(false)
   const activeModal = ref<string | null>(null)
   const maxFileSize = ref(0)
+  // When true (cloud storage), uploads go straight to storage via presigned URL;
+  // when false (local storage), they use the direct upload endpoint.
+  const presignedUploads = ref(false)
   const cmsName = ref('Manguito CMS')
 
   function addToast(variant: ToastVariant, message: string, duration: number | null = DEFAULT_DURATION) {
@@ -49,6 +52,10 @@ export const useUiStore = defineStore('ui', () => {
     maxFileSize.value = bytes
   }
 
+  function setPresignedUploads(value: boolean) {
+    presignedUploads.value = value
+  }
+
   function setCmsName(name: string) {
     cmsName.value = name
   }
@@ -74,10 +81,12 @@ export const useUiStore = defineStore('ui', () => {
     mobileNavOpen,
     activeModal,
     maxFileSize,
+    presignedUploads,
     cmsName,
     addToast,
     removeToast,
     setMaxFileSize,
+    setPresignedUploads,
     setCmsName,
     toggleSidebar,
     closeMobileNav,

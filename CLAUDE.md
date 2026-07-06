@@ -4,10 +4,11 @@
 
 Self-hosted schema-driven headless CMS.
 Read docs/phase-XX.md before making changes.
+Architectural decisions are recorded as ADRs in docs/adr/ (cross-cutting at the root, per-package in subfolders); see CONTEXT-MAP.md for the package map and per-package CONTEXT.md glossaries.
 
 ## Current phase
 
-Phase 8 — Admin panel — Vue 3, auto-generated forms
+Phase 10 — Deployment — Lambda, Neon, CI/CD pipeline
 
 ## Completed phases
 
@@ -18,6 +19,8 @@ Phase 4 — Migration strategy for schema changes.
 Phase 5 — REST API layer — route generation, request/response contracts.
 Phase 6 — Auth module — JWT, roles, route protection
 Phase 7 — Testing — unit, integration, smoke tests
+Phase 8 — Admin panel — Vue 3, auto-generated forms
+Phase 9 — CLI — init, dev, build, start, validate commands
 
 ## Packages
 
@@ -35,15 +38,15 @@ Build: tsup (packages), Vite (admin only)
 Test: Vitest throughout
 API: Hono + @hono/zod-openapi
 DB: Drizzle ORM + Postgres (Neon for serverless)
-Admin: Vue 3 + Vite + Tailwind + shadcn-vue
-CLI: citty + clack
+Admin: Vue 3 + Vite + Tailwind (custom components)
+CLI: commander + @inquirer/prompts
 
 ## Coding conventions
 
 - Factory functions over classes for public API
 - Functional style — pure functions for data transformations
 - Named function declarations for top-level exports, arrow functions for callbacks
-- No barrel index.ts files that re-export everything
+- No barrel index.ts files for internal submodules — each package's root index.ts is its public API surface
 - Parser output must be serializable plain objects (no class instances)
 - Internal failures use Result type — never throw for expected conditions
 - HTTP responses always use { ok, data } / { ok, error: { code, message } } envelope
@@ -65,7 +68,7 @@ pnpm build — build all packages in dependency order
 
 ## Do not
 
-- Add dependencies to manguito-cms-core beyond Zod
+- Add dependencies to manguito-cms-core unless they clear a high bar: needed by parsing itself, or a framework-agnostic primitive multiple packages must share identically (current set: zod, yaml, bcryptjs — see docs/adr/core/0006)
 - Create JavaScript files — TypeScript only
 - Import across forbidden layer boundaries
 - Throw exceptions for expected failure conditions — use Result type

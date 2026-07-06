@@ -5,7 +5,7 @@ import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import type { SchemaRegistry, ParsedRole } from '@bobbykim/manguito-cms-core'
 import { hashPassword } from '@bobbykim/manguito-cms-core'
 import { signToken } from '../auth/jwt'
-import { createAPIAdapter } from '../app'
+import { createCmsApp } from '../app'
 import { createLocalAdapter } from '../storage/adapters/local'
 
 const DB_URL = process.env['DB_URL']
@@ -127,7 +127,7 @@ beforeEach(async () => {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function makeApp() {
-  const { app } = createAPIAdapter({ storage: createLocalAdapter(), registry: TEST_REGISTRY, db })
+  const { app } = createCmsApp({ storage: createLocalAdapter(), registry: TEST_REGISTRY, db })
   return app
 }
 

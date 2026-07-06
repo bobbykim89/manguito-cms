@@ -18,7 +18,8 @@ import { registerAuthRoutes } from './routes/admin/auth.js'
 import { registerUserRoutes } from './routes/admin/users.js'
 import { registerConfigRoute } from './routes/admin/config.js'
 import { registerSchemaRoute } from './routes/admin/schema.js'
-import { createDrizzleContentRepository, buildRelationsMap } from './repositories/content.js'
+import { createDrizzleContentRepository } from './repositories/content.js'
+import { buildRelationsMap } from './relations.js'
 import { createMediaRepository } from './repositories/media.js'
 
 export type CreateCmsAppOptions = {
@@ -207,14 +208,22 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
   //    GET /admin/api/config handler wins over the stale stub in content.ts.
   registerConfigRoute(
     app,
-    { name: cmsName, ...(maxFileSize !== undefined && { maxFileSize }) },
+    {
+      name: cmsName,
+      ...(maxFileSize !== undefined && { maxFileSize }),
+      // Cloud storage (s3/cloudinary) issues real presigned URLs, so the admin
+      // uploads straight to it — never routing the file through the server
+      // (which breaks on serverless). Local storage has no presigned receiver,
+      // so it uses the direct upload endpoint.
+      presignedUploads: storage.type !== 'local',
+    },
     rolesRegistry,
     db,
   )
   registerSchemaRoute(app, registry, db)
   registerUserRoutes(app, db, requirePermission, requireHierarchy)
   registerAdminContentRoutes(app, registry, repos, mediaRepo, requirePermission, db)
-  registerAdminMediaRoutes(app, mediaRepo, storage)
+  registerAdminMediaRoutes(app, mediaRepo, storage, requirePermission, maxFileSize)
 
   return { prefix, app }
 }

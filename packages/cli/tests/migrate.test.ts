@@ -4,7 +4,7 @@ import type { PromptAdapter } from '../src/utils/prompt.js'
 vi.mock('../src/utils/env.js', () => ({ loadEnvFile: vi.fn() }))
 vi.mock('../src/utils/config.js', () => ({
   resolveConfig: vi.fn().mockResolvedValue({
-    schema: { dir: '/fake/schemas' },
+    schema: { base_path: '/fake/schemas' },
     migrations: undefined,
     db: {},
     storage: {},
@@ -87,7 +87,7 @@ function makeDeps(overrides: Partial<Parameters<typeof runMigrate>[1]> = {}): Pa
 
 describe('runMigrate', () => {
   const MOCK_CONFIG = {
-    schema: { dir: '/fake/schemas' },
+    schema: { base_path: '/fake/schemas' },
     migrations: undefined,
     db: {},
     storage: {},

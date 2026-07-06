@@ -190,7 +190,7 @@ describe('buildSchemaRegistry', () => {
     const registry = buildSchemaRegistry([content, enumSchema], EMPTY_ROUTES, EMPTY_ROLES)
 
     // After registry: resolved from enum-type
-    const statusField = registry.content_types['content--article']?.fields[0]!
+    const statusField = registry.content_types['content--article']!.fields[0]!
     expect(statusField.validation.allowed_values).toEqual(['draft', 'published'])
     expect(statusField.db_column?.check_constraint).toEqual(['draft', 'published'])
     const ui = statusField.ui_component as { component: string; options: string[] }
@@ -224,7 +224,7 @@ describe('buildSchemaRegistry', () => {
 
     // Build without the referenced enum — should not throw, should leave empty
     const registry = buildSchemaRegistry([content], EMPTY_ROUTES, EMPTY_ROLES)
-    const statusField = registry.content_types['content--article']?.fields[0]!
+    const statusField = registry.content_types['content--article']!.fields[0]!
     expect(statusField.validation.allowed_values).toEqual([]) // unresolved
   })
 })

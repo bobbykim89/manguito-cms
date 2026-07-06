@@ -334,15 +334,15 @@ The `code` field allows clients to handle specific error types programmatically 
 | Framework  | Vue 3 (Composition API) |
 | Build tool | Vite                    |
 | Styling    | Tailwind CSS            |
-| Components | shadcn-vue              |
+| Components | Custom (Tailwind)       |
 
 #### CLI — `@bobbykim/manguito-cms-cli`
 
 | Concern             | Library                           |
 | ------------------- | --------------------------------- |
-| CLI framework       | citty                             |
-| Interactive prompts | clack                             |
-| Template engine     | handlebars (for `init` templates) |
+| CLI framework       | commander                         |
+| Interactive prompts | @inquirer/prompts                 |
+| Template engine     | none (`{{var}}` string substitution) |
 
 The CLI owns the `manguito` binary and the full dev/build/start lifecycle. It reads `manguito.config.ts` and orchestrates all other packages. It is the last package built since it depends on all others being stable, but it is scaffolded as an empty package in Phase 1 so the dependency graph is established.
 
@@ -453,8 +453,7 @@ schemas/
 │   └── card-accordion.json
 ├── taxonomy-types/
 │   └── tag.json
-└── roles/
-    └── roles.json
+└── roles.json
 ```
 
 ---
@@ -509,7 +508,7 @@ manguito-cms/
 │   │
 │   ├── admin/
 │   │   ├── src/
-│   │   │   ├── components/      # shadcn-vue + custom components
+│   │   │   ├── components/      # custom Tailwind components
 │   │   │   ├── views/           # Page-level components
 │   │   │   ├── composables/     # Vue composables
 │   │   │   └── main.ts
@@ -541,8 +540,7 @@ manguito-cms/
 │       ├── schemas/
 │       │   ├── content-types/
 │       │   │   └── example-page.json
-│       │   └── roles/
-│       │       └── roles.json
+│       │   └── roles.json
 │       ├── manguito.config.ts
 │       ├── .env.example
 │       └── package.json         # private, workspace:* deps, ESM only
@@ -744,8 +742,8 @@ Build: tsup (packages), Vite (admin only)
 Test: Vitest throughout
 API: Hono + @hono/zod-openapi
 DB: Drizzle ORM + Postgres (Neon for serverless)
-Admin: Vue 3 + Vite + Tailwind + shadcn-vue
-CLI: citty + clack
+Admin: Vue 3 + Vite + Tailwind (custom components)
+CLI: commander + @inquirer/prompts
 
 ## Coding conventions
 

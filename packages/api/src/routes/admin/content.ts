@@ -1,15 +1,30 @@
-import crypto from 'node:crypto'
 import { sql } from 'drizzle-orm'
 import type { Hono } from 'hono'
 import type {
   SchemaRegistry,
   MediaRepository,
   FilterValue,
-  FilterOperator,
   ParsedField,
-  ParsedParagraphType,
 } from '@bobbykim/manguito-cms-core'
+import {
+  SORTABLE_FIELDS,
+  RELATION_FIELD_TYPES,
+  parsePagination,
+  parseInclude,
+  parseFilters,
+} from '../query-params.js'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
+import {
+  topLevelMediaDelta,
+  mergeMediaDeltas,
+  applyMediaReferenceDelta,
+  type MediaDelta,
+} from '../../media-references.js'
+import {
+  persistParagraphField,
+  deleteParagraphField,
+  persistJunctionField,
+} from '../../relations.js'
 import { requireAuth, requirePermission as requirePermissionShim } from '../../middleware/auth.js'
 import type { createPermissionMiddleware } from '../../middleware/permission.js'
 import type { ContentRepos } from '../content.js'
@@ -28,230 +43,9 @@ async function lookupBasePathId(db: DrizzlePostgresInstance, pathOrName: string)
   return (r.rows[0] as { id: string } | undefined)?.id ?? null
 }
 
-// Paragraph rows are saved on a separate child table, with their own image/video/file
-// columns (e.g. a "photo card" paragraph block embeds an image) — these need the same
-// media reference-count bookkeeping as top-level content fields, just one level down.
-function paragraphMediaFieldNames(pType: ParsedParagraphType): Set<string> {
-  return new Set(
-    pType.fields
-      .filter((f) => f.field_type === 'image' || f.field_type === 'video' || f.field_type === 'file')
-      .map((f) => f.name)
-  )
-}
-
-async function fetchParagraphMediaIds(
-  db: DrizzlePostgresInstance,
-  pType: ParsedParagraphType,
-  itemId: string,
-  fieldName: string,
-): Promise<string[]> {
-  const mediaColumns = pType.fields
-    .filter((f) => f.field_type === 'image' || f.field_type === 'video' || f.field_type === 'file')
-    .map((f) => f.db_column!.column_name)
-  if (mediaColumns.length === 0) return []
-
-  const tbl = sql.raw(quoteIdent(pType.db.table_name))
-  const cols = sql.join(mediaColumns.map((c) => sql.raw(quoteIdent(c))), sql`, `)
-  const result = await db.execute(
-    sql`SELECT ${cols} FROM ${tbl} WHERE parent_id = ${itemId} AND parent_field = ${fieldName}`
-  )
-
-  const ids: string[] = []
-  for (const row of result.rows as Record<string, unknown>[]) {
-    for (const col of mediaColumns) {
-      const v = row[col]
-      if (typeof v === 'string' && v !== '') ids.push(v)
-    }
-  }
-  return ids
-}
-
-// Deletes all paragraph rows for one field of one parent item (used when the parent
-// itself is being deleted — paragraph rows have no FK/cascade back to their parent,
-// so without this they'd be left behind forever). Returns the media ids that were
-// referenced by the deleted rows, so the caller can decrement them.
-async function deleteParagraphRowsForField(
-  db: DrizzlePostgresInstance,
-  itemId: string,
-  fieldName: string,
-  pType: ParsedParagraphType,
-): Promise<string[]> {
-  const removedMediaIds = await fetchParagraphMediaIds(db, pType, itemId, fieldName)
-  const tbl = sql.raw(quoteIdent(pType.db.table_name))
-  await db.execute(sql`DELETE FROM ${tbl} WHERE parent_id = ${itemId} AND parent_field = ${fieldName}`)
-  return removedMediaIds
-}
-
-async function saveParagraphField(
-  db: DrizzlePostgresInstance,
-  itemId: string,
-  parentType: string,
-  fieldName: string,
-  pType: ParsedParagraphType,
-  items: unknown[],
-): Promise<{ removedMediaIds: string[]; addedMediaIds: string[] }> {
-  const removedMediaIds = await fetchParagraphMediaIds(db, pType, itemId, fieldName)
-
-  const tbl = sql.raw(quoteIdent(pType.db.table_name))
-  await db.execute(sql`DELETE FROM ${tbl} WHERE parent_id = ${itemId} AND parent_field = ${fieldName}`)
-
-  const mediaFieldNames = paragraphMediaFieldNames(pType)
-  const addedMediaIds: string[] = []
-
-  for (let i = 0; i < items.length; i++) {
-    const pItem = items[i] as Record<string, unknown>
-    const data: Record<string, unknown> = {
-      id: crypto.randomUUID(),
-      parent_id: itemId,
-      parent_type: parentType,
-      parent_field: fieldName,
-      order: i,
-      created_at: new Date(),
-      updated_at: new Date(),
-    }
-    for (const pf of pType.fields) {
-      if (!pf.db_column || pf.db_column.junction) continue
-      data[pf.db_column.column_name] = pItem[pf.name] ?? null
-    }
-    const cols = sql.join(Object.keys(data).map((k) => sql.raw(quoteIdent(k))), sql`, `)
-    const vals = sql.join(Object.values(data).map((v) => sql`${v}`), sql`, `)
-    await db.execute(sql`INSERT INTO ${tbl} (${cols}) VALUES (${vals})`)
-
-    for (const name of mediaFieldNames) {
-      const val = pItem[name]
-      if (typeof val === 'string' && val !== '') addedMediaIds.push(val)
-    }
-  }
-
-  return { removedMediaIds, addedMediaIds }
-}
-
-// ─── Top-level media field reference-count syncing ────────────────────────────
-
-function extractMediaId(value: unknown): string | null {
-  return typeof value === 'string' && value !== '' ? value : null
-}
-
-async function syncTopLevelMediaOnCreate(
-  mediaRepo: MediaRepository,
-  mediaFields: ParsedField[],
-  body: Record<string, unknown>,
-): Promise<void> {
-  const ids = mediaFields
-    .map((f) => extractMediaId(body[f.name]))
-    .filter((id): id is string => id !== null)
-  if (ids.length > 0) await mediaRepo.incrementReferenceCount(ids)
-}
-
-// Diffs the old vs new media id per field (both are raw id strings — see the
-// no-relation-resolution note above), so an unchanged field is a no-op, a cleared
-// field only decrements, and a replaced field decrements the old id and increments
-// the new one.
-async function syncTopLevelMediaOnUpdate(
-  mediaRepo: MediaRepository,
-  mediaFields: ParsedField[],
-  existing: Record<string, unknown>,
-  body: Record<string, unknown>,
-): Promise<void> {
-  const toIncrement: string[] = []
-  const toDecrement: string[] = []
-
-  for (const f of mediaFields) {
-    if (!(f.name in body)) continue
-    const oldId = extractMediaId(existing[f.name])
-    const newId = extractMediaId(body[f.name])
-    if (newId === oldId) continue
-    if (oldId) toDecrement.push(oldId)
-    if (newId) toIncrement.push(newId)
-  }
-
-  if (toIncrement.length > 0) await mediaRepo.incrementReferenceCount(toIncrement)
-  if (toDecrement.length > 0) await mediaRepo.decrementReferenceCount(toDecrement)
-}
-
-async function saveJunctionField(
-  db: DrizzlePostgresInstance,
-  itemId: string,
-  junction: { table_name: string; left_column: string; right_column: string },
-  relatedIds: string[],
-): Promise<void> {
-  const tbl = sql.raw(quoteIdent(junction.table_name))
-  const left = sql.raw(quoteIdent(junction.left_column))
-  const right = sql.raw(quoteIdent(junction.right_column))
-  await db.execute(sql`DELETE FROM ${tbl} WHERE ${left} = ${itemId}`)
-  for (const rid of relatedIds) {
-    await db.execute(sql`INSERT INTO ${tbl} (${left}, ${right}) VALUES (${itemId}, ${rid})`)
-  }
-}
-
 // ─── Shared query-param helpers ───────────────────────────────────────────────
 
-const SORTABLE_FIELDS = new Set<string>(['title', 'created_at', 'updated_at'])
-
-const RELATION_FIELD_TYPES = new Set([
-  'paragraph',
-  'reference',
-  'image',
-  'video',
-  'file',
-])
-
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
-
-function parsePagination(
-  pageStr: string | undefined,
-  perPageStr: string | undefined
-): { ok: true; page: number; per_page: number } | { ok: false } {
-  const page = pageStr !== undefined ? Number(pageStr) : 1
-  const per_page = perPageStr !== undefined ? Number(perPageStr) : 10
-
-  if (!Number.isInteger(page) || page < 1) return { ok: false }
-  if (!Number.isInteger(per_page) || per_page < 1 || per_page > 100) return { ok: false }
-  return { ok: true, page, per_page }
-}
-
-function parseInclude(includeParam: string | undefined): string[] {
-  if (!includeParam) return []
-  return includeParam
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
-}
-
-function parseFilters(
-  url: string,
-  validFields: Set<string>
-): { ok: true; filters: Record<string, FilterValue> } | { ok: false; invalidField: string } {
-  const { searchParams } = new URL(url)
-  const filters: Record<string, FilterValue> = {}
-
-  for (const [key, value] of searchParams.entries()) {
-    const simpleMatch = /^filter\[([^\]]+)\]$/.exec(key)
-    const opMatch = /^filter\[([^\]]+)\]\[([^\]]+)\]$/.exec(key)
-
-    if (simpleMatch) {
-      const field = simpleMatch[1]!
-      if (!validFields.has(field)) return { ok: false, invalidField: field }
-      const existing = filters[field]
-      if (existing !== undefined) {
-        filters[field] = Array.isArray(existing)
-          ? [...existing, value]
-          : [existing as string | number | boolean, value]
-      } else {
-        filters[field] = value
-      }
-    } else if (opMatch) {
-      const field = opMatch[1]!
-      const operator = opMatch[2]!
-      if (!validFields.has(field)) return { ok: false, invalidField: field }
-      if (!['gt', 'gte', 'lt', 'lte'].includes(operator)) continue
-      const existing = (filters[field] as FilterOperator | undefined) ?? {}
-      filters[field] = { ...(existing as FilterOperator), [operator]: value }
-    }
-  }
-
-  return { ok: true, filters }
-}
 
 // ─── Validation helpers ───────────────────────────────────────────────────────
 
@@ -275,18 +69,6 @@ function checkRequiredFields(
 // Admin repos are created without relation resolution (see app.ts) so edit forms get
 // plain foreign-key id strings back — media fields here are raw ids, not resolved
 // { id, url, ... } objects.
-function collectMediaIds(
-  mediaFields: ParsedField[],
-  item: Record<string, unknown>
-): string[] {
-  const ids: string[] = []
-  for (const field of mediaFields) {
-    const id = extractMediaId(item[field.name])
-    if (id) ids.push(id)
-  }
-  return ids
-}
-
 // ─── List query helpers (shared between content and taxonomy list routes) ─────
 
 type ListQueryResult =
@@ -476,7 +258,12 @@ export function registerAdminContentRoutes(
           )
         }
 
-        // Resolve paragraph and junction fields so the edit form loads real data
+        // Resolve paragraph and junction fields so the edit form loads real data.
+        // This deliberately does NOT reuse the relation module's resolvers: the
+        // edit read scopes paragraph rows by parent_id AND parent_field, whereas
+        // resolveRelationField scopes by parent_id only. Two paragraph fields of
+        // the same paragraph type would be mixed by the resolver — so the more
+        // precise per-field read stays here on purpose.
         if (db) {
           const row = item as Record<string, unknown>
           for (const f of contentType.fields) {
@@ -631,33 +418,29 @@ export function registerAdminContentRoutes(
         const item = await repo.create(columnData as Parameters<typeof repo.create>[0])
         const itemId = (item as Record<string, unknown>)['id'] as string
 
-        if (mediaFields.length > 0) {
-          await syncTopLevelMediaOnCreate(mediaRepo, mediaFields, body)
-        }
+        // Reconcile media reference counts across top-level fields and paragraphs.
+        const mediaDeltas: MediaDelta[] = [topLevelMediaDelta(mediaFields, null, body)]
 
         // Save paragraph and junction rows
         if (db) {
-          const addedParagraphMediaIds: string[] = []
           for (const f of paragraphFields) {
             const comp = f.ui_component as { component: string; ref?: string }
             if (comp.component !== 'paragraph-embed' || !comp.ref) continue
             const pType = registry.paragraph_types[comp.ref]
             if (!pType) continue
             const items = Array.isArray(body[f.name]) ? (body[f.name] as unknown[]) : []
-            const { addedMediaIds } = await saveParagraphField(db, itemId, contentType.db.table_name, f.name, pType, items)
-            addedParagraphMediaIds.push(...addedMediaIds)
-          }
-          if (addedParagraphMediaIds.length > 0) {
-            await mediaRepo.incrementReferenceCount(addedParagraphMediaIds)
+            mediaDeltas.push(await persistParagraphField(db, itemId, contentType.db.table_name, f.name, pType, items))
           }
           for (const f of junctionFields) {
             const junction = f.db_column!.junction!
             const relatedIds = Array.isArray(body[f.name])
               ? (body[f.name] as unknown[]).filter((v): v is string => typeof v === 'string')
               : []
-            await saveJunctionField(db, itemId, junction, relatedIds)
+            await persistJunctionField(db, itemId, junction, relatedIds)
           }
         }
+
+        await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
 
         return c.json({ ok: true, data: item }, 201)
       }
@@ -774,38 +557,31 @@ export function registerAdminContentRoutes(
           )
         }
 
-        if (mediaFields.length > 0) {
-          await syncTopLevelMediaOnUpdate(mediaRepo, mediaFields, existing as Record<string, unknown>, body)
-        }
+        // Reconcile media reference counts across top-level fields and paragraphs.
+        const mediaDeltas: MediaDelta[] = [
+          topLevelMediaDelta(mediaFields, existing as Record<string, unknown>, body),
+        ]
 
         // Delete+reinsert paragraph and junction rows
         if (db) {
-          const addedParagraphMediaIds: string[] = []
-          const removedParagraphMediaIds: string[] = []
           for (const f of patchParagraphFields) {
             const comp = f.ui_component as { component: string; ref?: string }
             if (comp.component !== 'paragraph-embed' || !comp.ref) continue
             const pType = registry.paragraph_types[comp.ref]
             if (!pType) continue
             const items = Array.isArray(body[f.name]) ? (body[f.name] as unknown[]) : []
-            const { removedMediaIds, addedMediaIds } = await saveParagraphField(db, id, contentType.db.table_name, f.name, pType, items)
-            addedParagraphMediaIds.push(...addedMediaIds)
-            removedParagraphMediaIds.push(...removedMediaIds)
-          }
-          if (addedParagraphMediaIds.length > 0) {
-            await mediaRepo.incrementReferenceCount(addedParagraphMediaIds)
-          }
-          if (removedParagraphMediaIds.length > 0) {
-            await mediaRepo.decrementReferenceCount(removedParagraphMediaIds)
+            mediaDeltas.push(await persistParagraphField(db, id, contentType.db.table_name, f.name, pType, items))
           }
           for (const f of patchJunctionFields) {
             const junction = f.db_column!.junction!
             const relatedIds = Array.isArray(body[f.name])
               ? (body[f.name] as unknown[]).filter((v): v is string => typeof v === 'string')
               : []
-            await saveJunctionField(db, id, junction, relatedIds)
+            await persistJunctionField(db, id, junction, relatedIds)
           }
         }
+
+        await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
 
         return c.json({ ok: true, data: updated })
       }
@@ -827,7 +603,10 @@ export function registerAdminContentRoutes(
           )
         }
 
-        const mediaIds = collectMediaIds(mediaFields, item as Record<string, unknown>)
+        // A delete removes every media reference the item held (top-level + paragraphs).
+        const mediaDeltas: MediaDelta[] = [
+          topLevelMediaDelta(mediaFields, item as Record<string, unknown>, null),
+        ]
 
         // Paragraph rows have no FK/cascade back to their parent — clean them up
         // explicitly so they don't leak, and collect their media for decrementing.
@@ -837,14 +616,11 @@ export function registerAdminContentRoutes(
             if (comp.component !== 'paragraph-embed' || !comp.ref) continue
             const pType = registry.paragraph_types[comp.ref]
             if (!pType) continue
-            const removed = await deleteParagraphRowsForField(db, id, f.name, pType)
-            mediaIds.push(...removed)
+            mediaDeltas.push(await deleteParagraphField(db, id, f.name, pType))
           }
         }
 
-        if (mediaIds.length > 0) {
-          await mediaRepo.decrementReferenceCount(mediaIds)
-        }
+        await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
 
         await repo.delete(id)
         return c.json({ ok: true })
@@ -977,25 +753,21 @@ export function registerAdminContentRoutes(
         const item = await repo.create(taxColumnData as Parameters<typeof repo.create>[0])
         const taxItemId = (item as Record<string, unknown>)['id'] as string
 
-        if (mediaFields.length > 0) {
-          await syncTopLevelMediaOnCreate(mediaRepo, mediaFields, body)
-        }
+        // Reconcile media reference counts across top-level fields and paragraphs.
+        const mediaDeltas: MediaDelta[] = [topLevelMediaDelta(mediaFields, null, body)]
 
         if (db) {
-          const addedParagraphMediaIds: string[] = []
           for (const f of taxParagraphFields) {
             const comp = f.ui_component as { component: string; ref?: string }
             if (comp.component !== 'paragraph-embed' || !comp.ref) continue
             const pType = registry.paragraph_types[comp.ref]
             if (!pType) continue
             const items = Array.isArray(body[f.name]) ? (body[f.name] as unknown[]) : []
-            const { addedMediaIds } = await saveParagraphField(db, taxItemId, taxonomyType.db.table_name, f.name, pType, items)
-            addedParagraphMediaIds.push(...addedMediaIds)
-          }
-          if (addedParagraphMediaIds.length > 0) {
-            await mediaRepo.incrementReferenceCount(addedParagraphMediaIds)
+            mediaDeltas.push(await persistParagraphField(db, taxItemId, taxonomyType.db.table_name, f.name, pType, items))
           }
         }
+
+        await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
 
         return c.json({ ok: true, data: item }, 201)
       }
@@ -1061,30 +833,23 @@ export function registerAdminContentRoutes(
           )
         }
 
-        if (mediaFields.length > 0) {
-          await syncTopLevelMediaOnUpdate(mediaRepo, mediaFields, existing as Record<string, unknown>, body)
-        }
+        // Reconcile media reference counts across top-level fields and paragraphs.
+        const mediaDeltas: MediaDelta[] = [
+          topLevelMediaDelta(mediaFields, existing as Record<string, unknown>, body),
+        ]
 
         if (db) {
-          const addedParagraphMediaIds: string[] = []
-          const removedParagraphMediaIds: string[] = []
           for (const f of taxPatchParagraphFields) {
             const comp = f.ui_component as { component: string; ref?: string }
             if (comp.component !== 'paragraph-embed' || !comp.ref) continue
             const pType = registry.paragraph_types[comp.ref]
             if (!pType) continue
             const items = Array.isArray(body[f.name]) ? (body[f.name] as unknown[]) : []
-            const { removedMediaIds, addedMediaIds } = await saveParagraphField(db, id, taxonomyType.db.table_name, f.name, pType, items)
-            addedParagraphMediaIds.push(...addedMediaIds)
-            removedParagraphMediaIds.push(...removedMediaIds)
-          }
-          if (addedParagraphMediaIds.length > 0) {
-            await mediaRepo.incrementReferenceCount(addedParagraphMediaIds)
-          }
-          if (removedParagraphMediaIds.length > 0) {
-            await mediaRepo.decrementReferenceCount(removedParagraphMediaIds)
+            mediaDeltas.push(await persistParagraphField(db, id, taxonomyType.db.table_name, f.name, pType, items))
           }
         }
+
+        await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
 
         return c.json({ ok: true, data: updated })
       }
@@ -1106,7 +871,10 @@ export function registerAdminContentRoutes(
           )
         }
 
-        const mediaIds = collectMediaIds(mediaFields, item as Record<string, unknown>)
+        // A delete removes every media reference the item held (top-level + paragraphs).
+        const mediaDeltas: MediaDelta[] = [
+          topLevelMediaDelta(mediaFields, item as Record<string, unknown>, null),
+        ]
 
         if (db) {
           for (const f of paragraphFieldDefs) {
@@ -1114,14 +882,11 @@ export function registerAdminContentRoutes(
             if (comp.component !== 'paragraph-embed' || !comp.ref) continue
             const pType = registry.paragraph_types[comp.ref]
             if (!pType) continue
-            const removed = await deleteParagraphRowsForField(db, id, f.name, pType)
-            mediaIds.push(...removed)
+            mediaDeltas.push(await deleteParagraphField(db, id, f.name, pType))
           }
         }
 
-        if (mediaIds.length > 0) {
-          await mediaRepo.decrementReferenceCount(mediaIds)
-        }
+        await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
 
         await repo.delete(id)
         return c.json({ ok: true })

@@ -10,8 +10,6 @@ function makePostgresAdapter(): ManguitoConfig['db'] {
     connect: async () => {},
     disconnect: async () => {},
     isConnected: () => false,
-    runMigrations: async () => ({ applied: 0, skipped: 0 }),
-    getMigrationStatus: async () => ({ applied: [], pending: [] }),
     getTableNames: async () => [],
     tableExists: async () => false,
   }
@@ -24,7 +22,7 @@ function makeMongoAdapter(): ManguitoConfig['db'] {
 function makeStorageAdapter(): ManguitoConfig['storage'] {
   return {
     type: 'local',
-    upload: async () => ({ key: '', url: '' }),
+    upload: async () => {},
     delete: async () => {},
     getUrl: () => '',
     getPresignedUploadUrl: async () => ({ upload_url: '', key: '', expires_at: 0 }),
@@ -71,7 +69,6 @@ describe('defineConfig — schema config', () => {
     expect(resolved.schema.folders.paragraph_types).toBe('paragraph-types')
     expect(resolved.schema.folders.taxonomy_types).toBe('taxonomy-types')
     expect(resolved.schema.folders.enum_types).toBe('enum-types')
-    expect(resolved.schema.folders.roles).toBe('roles')
   })
 
   it('overrides base_path when provided', () => {
@@ -94,7 +91,6 @@ describe('defineConfig — schema config', () => {
     expect(resolved.schema.folders.enum_types).toBe('my-enums')
     expect(resolved.schema.folders.paragraph_types).toBe('paragraph-types')
     expect(resolved.schema.folders.taxonomy_types).toBe('taxonomy-types')
-    expect(resolved.schema.folders.roles).toBe('roles')
   })
 
   it('accepts an empty schema object — all defaults apply', () => {

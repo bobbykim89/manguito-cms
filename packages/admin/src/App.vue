@@ -30,6 +30,7 @@ type ConfigResponse = {
   }
   media?: {
     max_file_size: number
+    presigned_uploads?: boolean
   }
 }
 
@@ -85,6 +86,7 @@ async function fetchConfigAndSchema(redirectOn401 = true): Promise<void> {
     if (data.media?.max_file_size) {
       uiStore.setMaxFileSize(data.media.max_file_size)
     }
+    uiStore.setPresignedUploads(data.media?.presigned_uploads ?? false)
 
     const schemaRes = await fetch(`${__ADMIN_PREFIX__}/api/schema`, { credentials: 'include' })
     if (schemaRes.ok) {

@@ -68,83 +68,98 @@ packages/db/src/
 
 ## Developer Checklist
 
+> **Audit (2026-07-02):** Verified every item against the implementation. Two
+> divergences from the original plan (neither a runtime bug):
+> 1. **Adapter migration methods were dead stubs — now removed.** `DbAdapter`
+>    declared `runMigrations()` / `getMigrationStatus()`, but `PostgresAdapter`
+>    threw "wired by CLI in Phase 9" for both and nothing called them (they can't
+>    delegate — the standalone functions need the CLI-generated config path +
+>    migrations folder). Resolved: both were dropped from the `DbAdapter`
+>    interface and the adapter. Migrations run only through the standalone
+>    `runDevMigration` / `generateMigration` / `applyMigrations` /
+>    `getMigrationStatus` functions.
+> 2. **`DrizzlePostgresInstance` is exported.** The plan said not to export it,
+>    but the api layer imports the type (`relations.ts`, `repositories/*.ts`,
+>    routes), so it is — and must be — part of the db package's public surface.
+>    The plan item was superseded; only `PostgresAdapter` stays unexported.
+
 ### Setup
-- [ ] Add dependencies to `packages/db/package.json`
-- [ ] Create Docker Compose file at repo root for test Postgres instance
-- [ ] Add `.env.test` with `DB_URL` pointing to test container
+- [x] Add dependencies to `packages/db/package.json`
+- [x] Create Docker Compose file at repo root for test Postgres instance
+- [x] Add `.env.test` with `DB_URL` pointing to test container
 
 ### types.ts
-- [ ] `PostgresAdapter` type — `DbAdapter & { getDb(): DrizzlePostgresInstance }`
-- [ ] `DrizzlePostgresInstance` union type — `NodePgDatabase | NeonHttpDatabase`
-- [ ] `SeederOptions` type — `{ dryRun?: boolean }`
-- [ ] `SeedResult` type — counts per system table
-- [ ] `MigrationRunnerOptions` type
+- [x] `PostgresAdapter` type — `DbAdapter & { getDb(): DrizzlePostgresInstance }`
+- [x] `DrizzlePostgresInstance` union type — `NodePgDatabase | NeonHttpDatabase`
+- [x] `SeederOptions` type — `{ dryRun?: boolean }`
+- [x] `SeedResult` type — counts per system table
+- [x] `MigrationRunnerOptions` type
 
 ### Adapter — see [phase-03-adapter.md](./decisions/phase-03/phase-03-adapter.md)
-- [ ] `connect()` — standard TCP path via `pg` Pool
-- [ ] `connect()` — Neon HTTP path via `@neondatabase/serverless`
-- [ ] `connect()` — serverless auto-detection from URL (`neon.tech`)
-- [ ] `disconnect()` — clears Drizzle instance and connected flag
-- [ ] `isConnected()` — returns connected flag
-- [ ] `getDb()` — throws if called before `connect()`
-- [ ] `tableExists()` — queries `information_schema.tables`
-- [ ] `getTableNames()` — queries `information_schema.tables`
-- [ ] `runMigrations()` — delegates to migration runner
-- [ ] `getMigrationStatus()` — delegates to migration runner
+- [x] `connect()` — standard TCP path via `pg` Pool
+- [x] `connect()` — Neon HTTP path via `@neondatabase/serverless`
+- [x] `connect()` — serverless auto-detection from URL (`neon.tech`)
+- [x] `disconnect()` — clears Drizzle instance and connected flag
+- [x] `isConnected()` — returns connected flag
+- [x] `getDb()` — throws if called before `connect()`
+- [x] `tableExists()` — queries `information_schema.tables`
+- [x] `getTableNames()` — queries `information_schema.tables`
+- [x] ~~`runMigrations()`~~ — **removed from `DbAdapter`** (see audit note): migration orchestration is a CLI concern via the standalone functions, not an adapter method.
+- [x] ~~`getMigrationStatus()`~~ — **removed from `DbAdapter`** (see audit note): the real one is the standalone `getMigrationStatus()` under Migrations.
 
 ### Codegen — see [phase-03-codegen.md](./decisions/phase-03/phase-03-codegen.md)
-- [ ] `generateSchemaFile()` — pure function, returns complete schema.ts string
-- [ ] File header — `import * as s from 'drizzle-orm/pg-core'` and `import { sql } from 'drizzle-orm'`
-- [ ] System tables — hardcoded (`media`, `base_paths`, `roles`, `users`)
-- [ ] `generateSystemFieldColumn()` — all 5 system field `db_type` values
-- [ ] `generateFieldColumn()` — all 7 `DbColumnType` values
-- [ ] Skip paragraph fields (no column on parent table)
-- [ ] Skip many-to-many reference fields (junction table handles it)
-- [ ] FK references always use `() =>` callback form
-- [ ] Enum fields produce table-level check constraints
-- [ ] `orderParagraphTypes()` — topological sort for nested paragraphs
-- [ ] `generateJunctionTables()` — including self-referencing content type case
-- [ ] Table output order: system → taxonomy → paragraphs → content → junction
+- [x] `generateSchemaFile()` — pure function, returns complete schema.ts string
+- [x] File header — `import * as s from 'drizzle-orm/pg-core'` and `import { sql } from 'drizzle-orm'`
+- [x] System tables — hardcoded (`media`, `base_paths`, `roles`, `users`)
+- [x] `generateSystemFieldColumn()` — all 5 system field `db_type` values
+- [x] `generateFieldColumn()` — all 7 `DbColumnType` values
+- [x] Skip paragraph fields (no column on parent table)
+- [x] Skip many-to-many reference fields (junction table handles it)
+- [x] FK references always use `() =>` callback form
+- [x] Enum fields produce table-level check constraints
+- [x] `orderParagraphTypes()` — topological sort for nested paragraphs
+- [x] `generateJunctionTables()` — including self-referencing content type case
+- [x] Table output order: system → taxonomy → paragraphs → content → junction
 
 ### Seeder — see [phase-03-seeder.md](./decisions/phase-03/phase-03-seeder.md)
-- [ ] `seedSystemTables()` — orchestrates roles and base paths seeding
-- [ ] Roles: diff existing DB rows vs incoming `ParsedRoles`
-- [ ] Roles: check users assigned to removed roles — error with user emails listed
-- [ ] Roles: upsert incoming roles with `onConflictDoUpdate`
-- [ ] Roles: delete removed roles (only after dependency check passes)
-- [ ] Base paths: diff existing DB rows vs incoming `ParsedRoutes`
-- [ ] Base paths: check content items using removed base paths — error with details
-- [ ] Base paths: upsert incoming base paths with `onConflictDoUpdate`
-- [ ] Base paths: delete removed base paths (only after dependency check passes)
-- [ ] `dryRun` mode — all checks run, no writes executed
-- [ ] Returns `SeedResult` with inserted/updated/deleted counts per table
+- [x] `seedSystemTables()` — orchestrates roles and base paths seeding
+- [x] Roles: diff existing DB rows vs incoming `ParsedRoles`
+- [x] Roles: check users assigned to removed roles — error with user emails listed
+- [x] Roles: upsert incoming roles with `onConflictDoUpdate`
+- [x] Roles: delete removed roles (only after dependency check passes)
+- [x] Base paths: diff existing DB rows vs incoming `ParsedRoutes`
+- [x] Base paths: check content items using removed base paths — error with details
+- [x] Base paths: upsert incoming base paths with `onConflictDoUpdate`
+- [x] Base paths: delete removed base paths (only after dependency check passes)
+- [x] `dryRun` mode — all checks run, no writes executed
+- [x] Returns `SeedResult` with inserted/updated/deleted counts per table
 
 ### Migrations — see [phase-03-migrations.md](./decisions/phase-03/phase-03-migrations.md)
-- [ ] `runDevMigration()` — wraps `drizzle-kit push` for dev mode
-- [ ] `generateMigration()` — wraps `drizzle-kit generate` for production
-- [ ] `applyMigrations()` — wraps `drizzle-kit migrate` for production
-- [ ] `getMigrationStatus()` — reads migration table, returns pending + applied lists
-- [ ] Auto-generated `drizzle.config.ts` written to `.manguito/` (dev) or `dist/` (production) by CLI
+- [x] `runDevMigration()` — wraps `drizzle-kit push` for dev mode
+- [x] `generateMigration()` — wraps `drizzle-kit generate` for production
+- [x] `applyMigrations()` — wraps `drizzle-kit migrate` for production
+- [x] `getMigrationStatus()` — reads migration table, returns pending + applied lists
+- [x] Auto-generated `drizzle.config.ts` written to `.manguito/` (dev) or `dist/` (production) by CLI
 
 ### Public exports — `index.ts`
-- [ ] Exports: `createPostgresAdapter`, `PostgresAdapterOptions`
-- [ ] Exports: `generateSchemaFile`
-- [ ] Exports: `seedSystemTables`, `SeedResult`, `SeederOptions`
-- [ ] Exports: `runDevMigration`, `generateMigration`, `applyMigrations`, `getMigrationStatus`
-- [ ] `PostgresAdapter` and `DrizzlePostgresInstance` are NOT exported
+- [x] Exports: `createPostgresAdapter`, `PostgresAdapterOptions`
+- [x] Exports: `generateSchemaFile`
+- [x] Exports: `seedSystemTables`, `SeedResult`, `SeederOptions`
+- [x] Exports: `runDevMigration`, `generateMigration`, `applyMigrations`, `getMigrationStatus`
+- [x] `PostgresAdapter` is not exported; `DrizzlePostgresInstance` **is** exported (the api layer depends on the type — see audit note)
 
 ### Tests
-- [ ] Unit: `codegen` — all field types produce correct Drizzle column strings
-- [ ] Unit: `codegen` — junction tables including self-referencing content type
-- [ ] Unit: `codegen` — paragraph topological ordering
-- [ ] Unit: `codegen` — enum check constraints
-- [ ] Unit: `codegen` — system tables hardcoded output
-- [ ] Integration: adapter `connect` / `disconnect` / `tableExists` / `getTableNames`
-- [ ] Integration: seeder full sync cycle — insert, update, delete
-- [ ] Integration: seeder error — role in use
-- [ ] Integration: seeder error — base path in use
-- [ ] Integration: seeder `dryRun` — no writes, correct result counts
-- [ ] Integration: migrations — `applyMigrations` and `getMigrationStatus`
+- [x] Unit: `codegen` — all field types produce correct Drizzle column strings
+- [x] Unit: `codegen` — junction tables including self-referencing content type
+- [x] Unit: `codegen` — paragraph topological ordering
+- [x] Unit: `codegen` — enum check constraints
+- [x] Unit: `codegen` — system tables hardcoded output
+- [x] Integration: adapter `connect` / `disconnect` / `tableExists` / `getTableNames`
+- [x] Integration: seeder full sync cycle — insert, update, delete
+- [x] Integration: seeder error — role in use
+- [x] Integration: seeder error — base path in use
+- [x] Integration: seeder `dryRun` — no writes, correct result counts
+- [x] Integration: migrations — `applyMigrations` and `getMigrationStatus`
 
 ---
 
@@ -152,12 +167,12 @@ packages/db/src/
 
 > Read the linked decision docs before implementing each section.
 
-- [ ] Read [phase-03-adapter.md](./decisions/phase-03/phase-03-adapter.md) before touching `adapters/postgres.ts`
-- [ ] Read [phase-03-codegen.md](./decisions/phase-03/phase-03-codegen.md) before touching `codegen/index.ts`
-- [ ] Read [phase-03-seeder.md](./decisions/phase-03/phase-03-seeder.md) before touching `seeder/index.ts`
-- [ ] Read [phase-03-migrations.md](./decisions/phase-03/phase-03-migrations.md) before touching `migrations/index.ts`
-- [ ] Do not export `PostgresAdapter` or `DrizzlePostgresInstance` from `packages/db/src/index.ts`
-- [ ] Do not add filesystem access to `generateSchemaFile` — it returns a string only
-- [ ] Do not import from `db`, `api`, `admin`, or `cli` inside `core`
-- [ ] All FK references in generated code use `() =>` callback — no exceptions
-- [ ] Seeder must never silently ignore deleted roles or base paths — always diff
+- [x] Read [phase-03-adapter.md](./decisions/phase-03/phase-03-adapter.md) before touching `adapters/postgres.ts`
+- [x] Read [phase-03-codegen.md](./decisions/phase-03/phase-03-codegen.md) before touching `codegen/index.ts`
+- [x] Read [phase-03-seeder.md](./decisions/phase-03/phase-03-seeder.md) before touching `seeder/index.ts`
+- [x] Read [phase-03-migrations.md](./decisions/phase-03/phase-03-migrations.md) before touching `migrations/index.ts`
+- [x] Do not export `PostgresAdapter` from `packages/db/src/index.ts` (`DrizzlePostgresInstance` **is** exported — the api layer depends on the type)
+- [x] Do not add filesystem access to `generateSchemaFile` — it returns a string only
+- [x] Do not import from `db`, `api`, `admin`, or `cli` inside `core`
+- [x] All FK references in generated code use `() =>` callback — no exceptions
+- [x] Seeder must never silently ignore deleted roles or base paths — always diff

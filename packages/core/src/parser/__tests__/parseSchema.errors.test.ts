@@ -360,7 +360,6 @@ describe('ParseErrorCode — SCHEMA_DIR_NOT_FOUND', () => {
         paragraph_types: 'paragraph-types',
         taxonomy_types: 'taxonomy-types',
         enum_types: 'enum-types',
-        roles: 'roles',
       },
     })
 
@@ -384,7 +383,6 @@ describe('ParseErrorCode — SCHEMA_FOLDER_NOT_FOUND', () => {
         paragraph_types: 'manguito-test-paragraph-types-missing-xyzzy',
         taxonomy_types: 'manguito-test-taxonomy-types-missing-xyzzy',
         enum_types: 'manguito-test-enum-types-missing-xyzzy',
-        roles: 'roles',
       },
     })
 
@@ -408,7 +406,6 @@ describe('ParseErrorCode — DUPLICATE_SCHEMA_FOLDER', () => {
         paragraph_types: 'manguito-test-shared-folder', // same as above → duplicate
         taxonomy_types: 'manguito-test-taxonomy-types-xyzzy',
         enum_types: 'manguito-test-enum-types-xyzzy',
-        roles: 'roles',
       },
     })
 

@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm'
 import { createPostgresAdapter } from '@bobbykim/manguito-cms-db'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import type { SchemaRegistry, ParsedContentType, ParsedRole } from '@bobbykim/manguito-cms-core'
-import { createAPIAdapter } from '../app'
+import { createCmsApp } from '../app'
 import { createLocalAdapter } from '../storage/adapters/local'
 import { signToken } from '../auth/jwt'
 
@@ -13,6 +13,7 @@ if (!DB_URL) throw new Error('DB_URL must be set in .env.test before running int
 // ─── Auth state (populated in beforeAll) ─────────────────────────────────────
 
 let TEST_AUTH_TOKEN = ''
+let VIEWER_AUTH_TOKEN = ''
 
 function withAuth(init: RequestInit = {}): RequestInit {
   return {
@@ -20,6 +21,18 @@ function withAuth(init: RequestInit = {}): RequestInit {
     headers: {
       ...(init.headers as Record<string, string> | undefined),
       Cookie: `auth_token=${TEST_AUTH_TOKEN}`,
+    },
+  }
+}
+
+// A viewer holds no media permissions in TEST_REGISTRY — used to prove the
+// admin media routes actually enforce media:* (not the no-op shim).
+function withViewerAuth(init: RequestInit = {}): RequestInit {
+  return {
+    ...init,
+    headers: {
+      ...(init.headers as Record<string, string> | undefined),
+      Cookie: `auth_token=${VIEWER_AUTH_TOKEN}`,
     },
   }
 }
@@ -63,7 +76,7 @@ const BLOG_TYPE: ParsedContentType = {
   api: {
     default_base_path: BASE_PATH,
     http_methods: ['GET', 'POST', 'PATCH', 'DELETE'],
-    item_path: `/admin/api/${BASE_PATH}/:id`,
+    item_path: `/admin/api/content/${BASE_PATH}/:id`,
   },
 }
 
@@ -146,6 +159,22 @@ beforeAll(async () => {
   const userId = (userResult.rows[0] as { id: string }).id
   TEST_AUTH_TOKEN = await signToken({ user_id: userId, role: 'admin', token_version: 0 }, 3600)
 
+  // A viewer with no permissions — used to assert media routes enforce media:*.
+  await db.execute(sql.raw(`
+    INSERT INTO roles (name, label, is_system, hierarchy_level, permissions)
+    VALUES ('viewer', 'Viewer', true, 4, '{}')
+    ON CONFLICT (name) DO NOTHING
+  `))
+  const viewerResult = await db.execute(sql.raw(`
+    INSERT INTO users (email, password_hash, role_id, token_version, must_change_password)
+    SELECT 'viewer-int-test@example.com', '', r.id, 0, false
+    FROM roles r WHERE r.name = 'viewer'
+    ON CONFLICT (email) DO UPDATE SET token_version = 0
+    RETURNING id
+  `))
+  const viewerId = (viewerResult.rows[0] as { id: string }).id
+  VIEWER_AUTH_TOKEN = await signToken({ user_id: viewerId, role: 'viewer', token_version: 0 }, 3600)
+
   await db.execute(sql.raw(`
     CREATE TABLE IF NOT EXISTS "${BLOG_TABLE}" (
       id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -195,10 +224,20 @@ beforeEach(async () => {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function makeApp() {
-  const { app } = createAPIAdapter({
+  const { app } = createCmsApp({
     storage: createLocalAdapter(),
     registry: TEST_REGISTRY,
     db,
+  })
+  return app
+}
+
+function makeAppWithMaxFileSize(max: number) {
+  const { app } = createCmsApp({
+    storage: createLocalAdapter(),
+    registry: TEST_REGISTRY,
+    db,
+    media: { max_file_size: max },
   })
   return app
 }
@@ -224,7 +263,7 @@ describe('admin content routes — integration', () => {
         ('draft-1', false, 'Draft One')
     `))
 
-    const res = await app.request(`/admin/api/${BASE_PATH}`, withAuth())
+    const res = await app.request(`/admin/api/content/${BASE_PATH}`, withAuth())
     expect(res.status).toBe(200)
 
     const body = await res.json() as {
@@ -249,7 +288,7 @@ describe('admin content routes — integration', () => {
     `))
     const id = (result.rows[0] as { id: string }).id
 
-    const res = await app.request(`/admin/api/${BASE_PATH}/${id}`, withAuth({
+    const res = await app.request(`/admin/api/content/${BASE_PATH}/${id}`, withAuth({
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ published: true }),
@@ -278,7 +317,7 @@ describe('admin content routes — integration', () => {
     `))
     const id = (result.rows[0] as { id: string }).id
 
-    const res = await app.request(`/admin/api/${BASE_PATH}/${id}`, withAuth({
+    const res = await app.request(`/admin/api/content/${BASE_PATH}/${id}`, withAuth({
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ published: false, blog_title: '' }),
@@ -327,8 +366,8 @@ describe('admin media routes — integration', () => {
 
     // Insert a media row directly — local adapter ignores missing files on delete
     const insertResult = await db.execute(sql.raw(`
-      INSERT INTO media (url, mime_type, file_size, reference_count)
-      VALUES ('http://localhost:3000/uploads/image/to-delete.png', 'image/png', 1024, 0)
+      INSERT INTO media (type, url, mime_type, file_size, reference_count)
+      VALUES ('image', 'http://localhost:3000/uploads/image/to-delete.png', 'image/png', 1024, 0)
       RETURNING id
     `))
     const id = (insertResult.rows[0] as { id: string }).id
@@ -348,8 +387,8 @@ describe('admin media routes — integration', () => {
     const app = makeApp()
 
     const insertResult = await db.execute(sql.raw(`
-      INSERT INTO media (url, mime_type, file_size, reference_count)
-      VALUES ('http://localhost:3000/uploads/image/in-use.png', 'image/png', 512, 1)
+      INSERT INTO media (type, url, mime_type, file_size, reference_count)
+      VALUES ('image', 'http://localhost:3000/uploads/image/in-use.png', 'image/png', 512, 1)
       RETURNING id
     `))
     const id = (insertResult.rows[0] as { id: string }).id
@@ -360,6 +399,92 @@ describe('admin media routes — integration', () => {
     const body = await res.json() as { ok: boolean; error: { code: string } }
     expect(body.ok).toBe(false)
     expect(body.error.code).toBe('MEDIA_IN_USE')
+  })
+
+  // ─── Permission enforcement — a viewer holds no media:* permissions ──────────
+  // The permission middleware runs before the handler, so these 403 before any
+  // body/existence check.
+
+  it('POST /admin/api/media/image as viewer → 403 INSUFFICIENT_PERMISSION (media:create)', async () => {
+    const app = makeApp()
+    const res = await app.request('/admin/api/media/image', withViewerAuth({ method: 'POST' }))
+    expect(res.status).toBe(403)
+    const body = await res.json() as { ok: boolean; error: { code: string } }
+    expect(body.error.code).toBe('INSUFFICIENT_PERMISSION')
+  })
+
+  it('PATCH /admin/api/media/:id as viewer → 403 INSUFFICIENT_PERMISSION (media:edit)', async () => {
+    const app = makeApp()
+    const res = await app.request(
+      '/admin/api/media/00000000-0000-0000-0000-000000000000',
+      withViewerAuth({ method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{}' }),
+    )
+    expect(res.status).toBe(403)
+    const body = await res.json() as { ok: boolean; error: { code: string } }
+    expect(body.error.code).toBe('INSUFFICIENT_PERMISSION')
+  })
+
+  it('DELETE /admin/api/media/:id as viewer → 403 INSUFFICIENT_PERMISSION (media:delete)', async () => {
+    const app = makeApp()
+    const res = await app.request(
+      '/admin/api/media/00000000-0000-0000-0000-000000000000',
+      withViewerAuth({ method: 'DELETE' }),
+    )
+    expect(res.status).toBe(403)
+    const body = await res.json() as { ok: boolean; error: { code: string } }
+    expect(body.error.code).toBe('INSUFFICIENT_PERMISSION')
+  })
+
+  it('POST /admin/api/media/confirm/:id as viewer → 403 (upload path also enforces media:create)', async () => {
+    const app = makeApp()
+    const res = await app.request(
+      '/admin/api/media/confirm/00000000-0000-0000-0000-000000000000',
+      withViewerAuth({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }),
+    )
+    expect(res.status).toBe(403)
+    const body = await res.json() as { ok: boolean; error: { code: string } }
+    expect(body.error.code).toBe('INSUFFICIENT_PERMISSION')
+  })
+
+  it('POST /admin/api/media/image over max_file_size → 413 FILE_TOO_LARGE', async () => {
+    const app = makeAppWithMaxFileSize(100) // 100-byte limit
+    const form = new FormData()
+    form.append('file', new File(['x'.repeat(500)], 'big.png', { type: 'image/png' }))
+    form.append('alt', 'big image')
+    const res = await app.request('/admin/api/media/image', withAuth({ method: 'POST', body: form }))
+    expect(res.status).toBe(413)
+    const body = await res.json() as { ok: boolean; error: { code: string } }
+    expect(body.error.code).toBe('FILE_TOO_LARGE')
+  })
+
+  // The presigned flow's pending state is a signed token (media_id), not
+  // in-memory — so confirm works even when it lands on a different serverless
+  // instance than presigned-url.
+  it('presigned-url → confirm creates a media row via the stateless token', async () => {
+    const app = makeApp()
+    const params = new URLSearchParams({ type: 'image', filename: 'x.png', mime_type: 'image/png' })
+    const presignedRes = await app.request(`/admin/api/media/presigned-url?${params.toString()}`, withAuth())
+    expect(presignedRes.status).toBe(200)
+    const presigned = await presignedRes.json() as { ok: boolean; data: { media_id: string; upload_url: string } }
+    expect(presigned.data.media_id).toBeTruthy()
+
+    const confirmRes = await app.request(
+      `/admin/api/media/confirm/${presigned.data.media_id}`,
+      withAuth({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ alt: 'x' }) }),
+    )
+    expect(confirmRes.status).toBe(201)
+    const confirmed = await confirmRes.json() as { ok: boolean; data: { id: string; type: string } }
+    expect(confirmed.ok).toBe(true)
+    expect(confirmed.data.type).toBe('image')
+  })
+
+  it('POST /admin/api/media/confirm with a tampered/invalid token → 410', async () => {
+    const app = makeApp()
+    const res = await app.request(
+      '/admin/api/media/confirm/not-a-valid-token',
+      withAuth({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }),
+    )
+    expect(res.status).toBe(410)
   })
 })
 

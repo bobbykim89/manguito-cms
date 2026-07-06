@@ -1,4 +1,4 @@
-import { eq, inArray, sql } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import * as s from 'drizzle-orm/pg-core'
 import type {
   ParsedRoles,
@@ -96,6 +96,23 @@ async function seedRoles(
   const toDelete = [...existingNames].filter((n) => !incomingNames.has(n))
 
   if (toDelete.length > 0) {
+    // Protect built-in roles: a role stored with is_system must not be removed
+    // by dropping it from roles.json — that would delete, e.g., `admin` and lock
+    // everyone out. To remove one deliberately, re-seed it with is_system: false
+    // first, then remove it from roles.json.
+    const systemRoles = await db
+      .select({ name: roles.name })
+      .from(roles)
+      .where(and(inArray(roles.name, toDelete), eq(roles.is_system, true)))
+
+    if (systemRoles.length > 0) {
+      throw new Error(
+        `SEEDER_SYSTEM_ROLE: Cannot remove system role(s) [${systemRoles.map((r) => r.name).join(', ')}] ` +
+          `from roles.json — they are marked is_system and are protected from deletion. ` +
+          `Re-seed the role with is_system: false first if you intend to remove it.`,
+      )
+    }
+
     const affected = await db
       .select({ id: users.id, email: users.email })
       .from(users)

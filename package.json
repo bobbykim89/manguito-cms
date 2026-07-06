@@ -8,8 +8,8 @@
     "dev": "turbo run dev",
     "build": "turbo run build",
     "build:packages": "pnpm --filter @bobbykim/manguito-cms-core run build && pnpm --filter @bobbykim/manguito-cms-db run build && pnpm --filter @bobbykim/manguito-cms-api run build && pnpm --filter @bobbykim/manguito-cms-admin run build && pnpm --filter @bobbykim/manguito-cms-cli run build && pnpm install --frozen-lockfile",
-    "test": "turbo run test",
-    "smoke": "dotenv -e .env.test -- vitest run apps/sandbox/tests",
+    "test": "turbo run test --concurrency=1",
+    "smoke": "pnpm --filter sandbox smoke",
     "lint": "turbo run lint",
     "changeset": "changeset",
     "version": "changeset version",
@@ -26,11 +26,13 @@
     "@bobbykim/manguito-cms-db": "workspace:*",
     "@bobbykim/manguito-cms-test-utils": "workspace:*",
     "@changesets/cli": "latest",
+    "@eslint/js": "^10.0.1",
     "dotenv-cli": "latest",
     "drizzle-orm": "^0.45.0",
     "eslint": "^10.0.0",
     "turbo": "latest",
     "typescript": "^6.0.0",
+    "typescript-eslint": "^8.62.1",
     "vitest": "latest"
   }
 }

@@ -80,9 +80,9 @@ const MEDIA_TYPE: ParsedContentType = {
       required: false,
       nullable: true,
       order: 0,
-      validation: {},
+      validation: { required: false },
       db_column: { column_name: 'hero_image', column_type: 'uuid', nullable: true },
-      ui_component: { component: 'media-upload' },
+      ui_component: { component: 'file-upload', accepted_mime_types: ['image/*'] },
     },
   ],
   ui: { tabs: [] },
@@ -199,7 +199,7 @@ describe('admin content routes', () => {
       const existingItem = { id: 'item-1', blog_title: '', blog_meta_title: '', published: false }
       ;(mockBlogRepo.findOne as ReturnType<typeof vi.fn>).mockResolvedValue(existingItem)
 
-      const res = await app.request('/admin/api/blog-post/item-1', {
+      const res = await app.request('/admin/api/content/blog-post/item-1', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ published: true }),
@@ -222,7 +222,7 @@ describe('admin content routes', () => {
       ;(mockBlogRepo.findOne as ReturnType<typeof vi.fn>).mockResolvedValue(existingItem)
       ;(mockBlogRepo.update as ReturnType<typeof vi.fn>).mockResolvedValue(updatedItem)
 
-      const res = await app.request('/admin/api/blog-post/item-1', {
+      const res = await app.request('/admin/api/content/blog-post/item-1', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ published: false }),
@@ -236,7 +236,7 @@ describe('admin content routes', () => {
 
   describe('POST — slug validation', () => {
     it('POST with invalid slug format returns 422 INVALID_SLUG_FORMAT', async () => {
-      const res = await app.request('/admin/api/blog-post', {
+      const res = await app.request('/admin/api/content/blog-post', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ slug: 'My Invalid Slug!', blog_title: 'Test' }),
@@ -251,7 +251,7 @@ describe('admin content routes', () => {
     it('POST with duplicate slug returns 409 SLUG_CONFLICT', async () => {
       ;(mockBlogRepo.findBySlug as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 'other-item' })
 
-      const res = await app.request('/admin/api/blog-post', {
+      const res = await app.request('/admin/api/content/blog-post', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ slug: 'existing-slug', blog_title: 'Test', blog_meta_title: 'Meta' }),
@@ -425,7 +425,7 @@ describe('admin content routes', () => {
         makePageWithRows(1)
       )
 
-      const res = await app.request('/admin/api/home-page', {
+      const res = await app.request('/admin/api/content/home-page', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),

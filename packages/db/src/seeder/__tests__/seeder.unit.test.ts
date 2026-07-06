@@ -143,7 +143,9 @@ describe('seedRoles — dependency check', () => {
     const db = createMockDb([
       // 1. seedRoles: existing roles include admin + editor
       [{ name: 'admin' }, { name: 'editor' }],
-      // 2. Users assigned to the 'editor' role
+      // 2. is_system roles among those being deleted — none
+      [],
+      // 3. Users assigned to the 'editor' role
       [{ id: 'u-1', email: 'occupied@example.com' }],
     ])
 
@@ -165,9 +167,11 @@ describe('seedRoles — dependency check', () => {
     const db = createMockDb([
       // 1. seedRoles: existing roles include admin + editor
       [{ name: 'admin' }, { name: 'editor' }],
-      // 2. No users assigned to the 'editor' role
+      // 2. is_system roles among those being deleted — none
       [],
-      // 3. seedBasePaths: no existing base paths
+      // 3. No users assigned to the 'editor' role
+      [],
+      // 4. seedBasePaths: no existing base paths
       [],
     ])
 
@@ -176,6 +180,27 @@ describe('seedRoles — dependency check', () => {
     expect(result.roles.deleted).toBe(1)
     expect(result.roles.inserted).toBe(0)
     expect(result.roles.updated).toBe(1) // admin was already present → updated
+  })
+
+  it('role marked is_system blocks deletion with SEEDER_SYSTEM_ROLE error', async () => {
+    // Scenario: incoming has only admin; editor exists in DB and is is_system.
+    const db = createMockDb([
+      // 1. seedRoles: existing roles include admin + editor
+      [{ name: 'admin' }, { name: 'editor' }],
+      // 2. is_system roles among those being deleted — editor is protected
+      [{ name: 'editor' }],
+    ])
+
+    let caught: Error | undefined
+    try {
+      await seedSystemTables(db, makeRegistry(ADMIN_ONLY, EMPTY_ROUTES))
+    } catch (e) {
+      caught = e as Error
+    }
+
+    expect(caught).toBeDefined()
+    expect(caught!.message).toContain('SEEDER_SYSTEM_ROLE')
+    expect(caught!.message).toContain('editor')
   })
 })
 

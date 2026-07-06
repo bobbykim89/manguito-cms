@@ -76,7 +76,7 @@ packages/api/src/
 │   │   └── media.ts            ← admin media management routes
 │   └── __tests__/
 ├── repositories/
-│   ├── content.ts              ← wraps DrizzleContentRepository from db package
+│   ├── content.ts              ← createDrizzleContentRepository (concrete Drizzle repository)
 │   └── media.ts                ← media repository
 ├── middleware/
 │   ├── auth.ts                 ← JWT validation, token_version check
@@ -104,27 +104,36 @@ packages/api/src/
 
 ## Repository Wiring — Dependency Injection
 
-`DrizzleContentRepository` lives in `@bobbykim/manguito-cms-db`. The api package never imports from the db package directly — it depends only on the `ContentRepository<T>` interface defined in `@bobbykim/manguito-cms-core`.
+> **Corrected (see [ADR api/0001](../../adr/api/0001-repository-pattern.md)):** the
+> original plan below placed `DrizzleContentRepository` in the db package with the
+> api package never importing from db. The actual design keeps the concrete
+> `createDrizzleContentRepository` in the **api** package
+> (`src/repositories/content.ts`), importing only the `DrizzlePostgresInstance`
+> *type* from db. This matches the layer boundaries (`api → imports from core and
+> db`) while keeping the API layer free of any `drizzle-orm` runtime dependency —
+> route handlers still depend only on the `ContentRepository<T>` interface.
+
+`ContentRepository<T>` is the interface (defined in core); `createDrizzleContentRepository` is its concrete Drizzle implementation, and route handlers only ever see the interface.
 
 ```
 @bobbykim/manguito-cms-core
   └── defines: ContentRepository<T> interface
 
 @bobbykim/manguito-cms-db
-  └── implements: DrizzleContentRepository
-                  (satisfies ContentRepository<T>)
+  └── exports: DrizzlePostgresInstance (type) + PostgresAdapter
 
 @bobbykim/manguito-cms-api
-  └── depends on: ContentRepository<T> interface only
-                  (receives DrizzleContentRepository injected at runtime via db adapter)
+  └── defines: createDrizzleContentRepository (satisfies ContentRepository<T>,
+               imports only the DrizzlePostgresInstance type from db)
+  └── route handlers depend on: ContentRepository<T> interface only
 ```
 
-`createAPIAdapter` receives the `db` adapter and constructs repositories internally:
+`createCmsApp` receives the `db` adapter and constructs the repositories internally:
 
 ```ts
-export function createAPIAdapter(options: CreateAPIAdapterOptions): APIAdapter {
-  // repositories constructed from db adapter internally
-  // api package never imports DrizzleContentRepository directly
+export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapter {
+  // createDrizzleContentRepository(db, tableName, ...) built here and injected;
+  // route handlers only ever receive a ContentRepository<T>
 }
 
 type CreateAPIAdapterOptions = {
@@ -180,4 +189,4 @@ api → imports from: core, db (via injected repositories only)
 api → never imports from: admin, cli
 ```
 
-`DrizzleContentRepository` is accessed only through the `ContentRepository<T>` interface — the api package has no direct Drizzle dependency.
+Route handlers access content only through the `ContentRepository<T>` interface; the concrete `createDrizzleContentRepository` lives in the api package and imports only the `DrizzlePostgresInstance` type from db — so the API layer carries no `drizzle-orm` runtime dependency.

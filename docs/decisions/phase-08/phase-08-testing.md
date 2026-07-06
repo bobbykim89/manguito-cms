@@ -104,7 +104,7 @@ Per-test handlers override defaults using `server.use(...)` for specific scenari
 | Thing | Reason |
 |-------|--------|
 | Pinia store internals directly | Test through component behavior instead |
-| shadcn-vue component rendering | Third-party library |
+| Tiptap editor internals | Third-party library |
 | CSS / visual layout | Wrong layer for automated tests |
 | `ParagraphEmbed` drag-and-drop ordering | Too coupled to DOM simulation, unreliable in jsdom |
 

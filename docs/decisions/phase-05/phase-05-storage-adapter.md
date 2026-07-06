@@ -2,13 +2,25 @@
 
 > Defines the StorageAdapter interface, adapter factory signatures, and behavioral contracts for local, S3, and Cloudinary adapters.
 
+> **Amendment (2026-07):** The "uniform, adapter-agnostic client / presigned
+> exclusively" model described below was superseded during deployment:
+> - Uploads route by **storage capability**, not "presigned exclusively": cloud
+>   (S3/Cloudinary) use the presigned flow; **local uses the direct upload
+>   endpoint** and the CMS server writes the file (the `/_local_upload` presigned
+>   receiver was never built).
+> - `PresignedResult` gained optional `method` + `fields`, and the admin uploader
+>   **branches** on them — a raw **PUT** for S3, a multipart **POST** with signed
+>   fields for Cloudinary. The method is *not* hidden inside the adapter.
+> - Confirm is **stateless** — it takes a signed token (`media_id`), not the
+>   storage key. See [ADR api/0009](../../adr/api/0009-stateless-presigned-confirm.md).
+
 ---
 
 ## Interface
 
 Defined in `@bobbykim/manguito-cms-core` — no storage SDK dependency:
 
-All uploads use the presigned URL flow exclusively — the CMS server never handles binary file data. This keeps the server lightweight, avoids Lambda/Vercel request size limits entirely, and decouples upload volume from CMS server load.
+Cloud uploads (S3/Cloudinary) use the presigned URL flow — the CMS server never streams the binary, which keeps it lightweight and avoids Lambda/Vercel request-size limits. Local storage uses the direct upload endpoint (the server writes the file). See the amendment above.
 
 ```ts
 interface StorageAdapter {
@@ -26,9 +38,11 @@ type PresignedOptions = {
 }
 
 type PresignedResult = {
-  upload_url: string    // client sends file here directly
-  key: string           // media_id / storage key
-  expires_at: number    // unix timestamp
+  upload_url: string               // client sends file here directly
+  key: string                      // storage key
+  expires_at: number               // unix timestamp
+  method?: "PUT" | "POST"          // POST for storages needing a multipart form (Cloudinary); PUT/absent for S3
+  fields?: Record<string, string>  // signed form fields sent alongside the file (Cloudinary)
 }
 ```
 
@@ -44,7 +58,7 @@ This keeps media URL serving simple: the DB has the full URL, serve it directly 
 
 ## `getPresignedUploadUrl` per Adapter
 
-Each adapter implements presigned upload differently, but the `PresignedResult` shape is identical — the admin panel uses the same flow regardless of adapter.
+Each adapter implements presigned upload differently. The `PresignedResult` shape is shared, but its optional `method`/`fields` tell the admin uploader how to send the file (raw `PUT` for S3, multipart `POST` with signed fields for Cloudinary).
 
 ### Local adapter — simulated presigned URL
 
@@ -77,7 +91,7 @@ The admin panel's presigned URL flow works in local dev without any special-casi
 
 ### Cloudinary adapter — signed upload POST URL
 
-Cloudinary uses signed upload presets instead of presigned URLs. The HTTP method is `POST` rather than `PUT` — this is an adapter implementation detail, not exposed to the admin panel.
+Cloudinary uses a signed upload POST rather than a presigned PUT. The adapter returns `method: "POST"` and the signed `fields` (public_id, timestamp, signature, api_key) in `PresignedResult`, and the admin uploader posts a multipart form of those fields plus the file.
 
 ```
 1. CMS server generates a Cloudinary signed upload signature

@@ -51,7 +51,7 @@ Steps in order:
 3. **Seed system tables** — call `seedSystemTables()` with `testParsedSchema` from `test-utils/fixtures.ts`. Populates roles and base paths.
 4. **Insert role user fixtures** — insert one user per role (admin, manager, editor, writer, viewer) using `testRoleUsers` from `test-utils/fixtures.ts`. These users are available to all tests that need authenticated requests.
 
-These four steps are the only full-suite setup. The DB is not reset between test files.
+These four steps are the only full-suite setup. The DB is not reset between test files. A matching `teardown` disconnects the adapter — which closes the Postgres connection pool — so the test process exits cleanly instead of hanging on an open pool.
 
 ---
 
@@ -96,7 +96,7 @@ DB_URL=postgres://localhost:5432/manguito_test
 
 ## Vitest Configuration
 
-Root `vitest.config.ts` extended to include `globalSetup`:
+The root `vitest.config.ts` defines the shared `globalSetup`:
 
 ```ts
 import { defineConfig } from 'vitest/config'
@@ -104,9 +104,21 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     globals: true,
-    globalSetup: './globalSetup.ts',
+    globalSetup: path.resolve(__dirname, './globalSetup.ts'),
   },
 })
 ```
 
-Each package inherits this config. Packages that don't need DB access (e.g. `core`) are unaffected — the preflight check is a fast no-op if no integration tests are present in that package's run.
+A package-local `vitest.config.ts` **fully replaces** the root config — it does *not* inherit it. So the packages that need the test DB (`db`, `api`) explicitly re-compose the root with `mergeConfig(rootConfig, …)`; without that, `globalSetup` silently never runs and the integration suites hit an unmigrated DB. Those two also set `fileParallelism: false`, because their integration files share the single Postgres instance and must not issue concurrent DDL:
+
+```ts
+import { defineConfig, mergeConfig } from 'vitest/config'
+import rootConfig from '../../vitest.config'
+
+export default mergeConfig(
+  rootConfig,
+  defineConfig({ test: { fileParallelism: false } }),
+)
+```
+
+`core` has no integration tests, so it keeps its own standalone config (`globals: true`, no `globalSetup`) — `globalSetup` simply doesn't run there rather than running as a no-op. Each package's `test` script invokes `vitest` on its own (via `turbo run test --concurrency=1`), so `globalSetup` executes once per DB-backed package run (`db`, then `api`).

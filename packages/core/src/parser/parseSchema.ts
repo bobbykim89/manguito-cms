@@ -8,14 +8,12 @@ import {
   EnumTypeRawSchema,
 } from './validators'
 import type { RawField } from './validators'
-import type {
-  DbColumn,
-  FieldType,
-  FieldValidation,
-  ParsedField,
-  SystemField,
-  UiComponent,
-} from '../registry/types'
+import type { ParsedField, SystemField } from '../registry/types'
+import {
+  fieldTypeRegistry,
+  machineNameToTableName,
+  type AnyFieldBuilder,
+} from '../registry/fieldTypeRegistry'
 
 // ─── Output types ─────────────────────────────────────────────────────────────
 
@@ -140,29 +138,10 @@ const TAXONOMY_SYSTEM_FIELDS: SystemField[] = [
   { name: 'updated_at', db_type: 'timestamp', default: 'now()', nullable: false },
 ]
 
-// ─── Mime type constants (specific types for API validation) ──────────────────
-
-// Distinct from UiComponent.accepted_mime_types which uses wildcards (image/*).
-// FieldValidation.allowed_mime_types uses specific types for server-side validation.
-const MEDIA_ALLOWED_MIME: Record<'image' | 'video' | 'file', string[]> = {
-  image: ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml'],
-  video: ['video/mp4', 'video/webm', 'video/quicktime'],
-  file: ['application/pdf'],
-}
-
-// UI component uses wildcards for the HTML <input accept> attribute.
-const MEDIA_UI_MIME: Record<'image' | 'video' | 'file', string[]> = {
-  image: ['image/*'],
-  video: ['video/*'],
-  file: ['application/pdf'],
-}
-
 // ─── Pure helpers ─────────────────────────────────────────────────────────────
 
-// "content--blog_post" → "content_blog_post"
-function machineNameToTableName(machineName: string): string {
-  return machineName.replace('--', '_')
-}
+// machineNameToTableName lives with the field type registry (the reference builder
+// needs it too) and is imported above.
 
 // "blog_post" → "blog-post"
 function nameSegmentToKebab(segment: string): string {
@@ -173,20 +152,6 @@ function nameSegmentToKebab(segment: string): string {
 function getNameSegment(machineName: string): string {
   const idx = machineName.indexOf('--')
   return idx === -1 ? machineName : machineName.slice(idx + 2)
-}
-
-// "2MB" → 2097152, "512KB" → 524288
-function parseMaxSize(str: string): number {
-  const m = /^(\d+(?:\.\d+)?)\s*(B|KB|MB|GB)$/i.exec(str)
-  if (!m) return 0
-  const value = parseFloat(m[1]!)
-  switch (m[2]!.toUpperCase()) {
-    case 'B':  return Math.round(value)
-    case 'KB': return Math.round(value * 1_024)
-    case 'MB': return Math.round(value * 1_048_576)
-    case 'GB': return Math.round(value * 1_073_741_824)
-    default:   return 0
-  }
 }
 
 // Zod path array → "fields[0].name"
@@ -254,199 +219,39 @@ function buildParsedField(
   sourceFile: string,
   ownerTableName: string
 ): FieldResult {
-  const fieldType = rawField.type as FieldType
-  const { name, label, required } = rawField
-  const nullable = !required
-
-  let validation: FieldValidation
-  let db_column: DbColumn | null
-  let ui_component: UiComponent
-
-  switch (rawField.type) {
-    // ── Primitives ──────────────────────────────────────────────────────────
-
-    case 'text/plain': {
-      validation = {
-        required,
-        ...(rawField.limit !== undefined && { limit: rawField.limit }),
-        ...(rawField.pattern !== undefined && { pattern: rawField.pattern }),
-      }
-      db_column = { column_name: name, column_type: 'varchar', nullable }
-      ui_component = { component: 'text-input' }
-      break
-    }
-
-    case 'text/rich': {
-      validation = { required }
-      db_column = { column_name: name, column_type: 'text', nullable }
-      ui_component = { component: 'rich-text-editor' }
-      break
-    }
-
-    case 'integer': {
-      validation = {
-        required,
-        ...(rawField.min !== undefined && { min: rawField.min }),
-        ...(rawField.max !== undefined && { max: rawField.max }),
-      }
-      db_column = { column_name: name, column_type: 'integer', nullable }
-      ui_component = { component: 'number-input', step: 1 }
-      break
-    }
-
-    case 'float': {
-      validation = {
-        required,
-        ...(rawField.min !== undefined && { min: rawField.min }),
-        ...(rawField.max !== undefined && { max: rawField.max }),
-      }
-      db_column = { column_name: name, column_type: 'decimal', nullable }
-      ui_component = { component: 'number-input', step: 0.01 }
-      break
-    }
-
-    case 'boolean': {
-      validation = { required }
-      // Boolean columns are always NOT NULL — false is the natural empty value.
-      db_column = { column_name: name, column_type: 'boolean', nullable: false }
-      ui_component = { component: 'checkbox' }
-      break
-    }
-
-    case 'date': {
-      validation = { required }
-      db_column = { column_name: name, column_type: 'timestamp', nullable }
-      ui_component = { component: 'date-picker' }
-      break
-    }
-
-    // ── Media ───────────────────────────────────────────────────────────────
-
-    case 'image':
-    case 'video':
-    case 'file': {
-      const mediaType = rawField.type
-      const maxSizeBytes = rawField.max_size ? parseMaxSize(rawField.max_size) : undefined
-      validation = {
-        required,
-        ...(maxSizeBytes !== undefined && { max_size: maxSizeBytes }),
-        allowed_mime_types: MEDIA_ALLOWED_MIME[mediaType],
-      }
-      db_column = {
-        column_name: name,
-        column_type: 'uuid',
-        nullable,
-        foreign_key: { table: 'media', column: 'id', on_delete: 'SET NULL' },
-      }
-      ui_component = {
-        component: 'file-upload',
-        accepted_mime_types: MEDIA_UI_MIME[mediaType],
-      }
-      break
-    }
-
-    // ── Enum ────────────────────────────────────────────────────────────────
-
-    case 'enum': {
-      // Inline enum: values are already present on the field.
-      // Ref enum: values must be resolved by buildSchemaRegistry once the full
-      // registry is available. For now, allowed_values and check_constraint are
-      // empty; enum_ref is stored in ui_component so the registry builder can
-      // look up and populate the values.
-      const allowedValues = rawField.values ?? []
-      validation = { required, allowed_values: allowedValues }
-      db_column = {
-        column_name: name,
-        column_type: 'varchar',
-        nullable,
-        check_constraint: allowedValues,
-      }
-      ui_component = {
-        component: 'select',
-        options: allowedValues,
-        ...(rawField.ref !== undefined && { enum_ref: rawField.ref }),
-      }
-      break
-    }
-
-    // ── Paragraph ───────────────────────────────────────────────────────────
-
-    case 'paragraph': {
-      // No column on the owning table — the association is stored via system
-      // fields on the paragraph table (parent_id, parent_type, parent_field, order).
-      validation = {
-        required,
-        ...(rawField.max !== undefined && { max_items: rawField.max }),
-      }
-      db_column = null
-      ui_component = {
-        component: 'paragraph-embed',
-        ref: rawField.ref,
-        rel: rawField.rel,
-        ...(rawField.max !== undefined && { max: rawField.max }),
-      }
-      break
-    }
-
-    // ── Reference ───────────────────────────────────────────────────────────
-
-    case 'reference': {
-      const rel = rawField.rel
-      const targetTableName = machineNameToTableName(rawField.target)
-
-      validation = {
-        required,
-        ...(rawField.max !== undefined && { max_items: rawField.max }),
-      }
-
-      if (rel === 'many-to-many') {
-        // No FK column — junction table owns the association.
-        // table name: "junction_<owner>_<fieldName>"
-        db_column = {
-          column_name: '',
-          column_type: 'uuid',
-          nullable,
-          junction: {
-            table_name: `junction_${ownerTableName}_${name}`,
-            left_column: 'left_id',
-            right_column: 'right_id',
-            right_table: targetTableName,
-            order_column: false,
-          },
-        }
-      } else {
-        // FK column on the owning table. SET NULL on delete (references are independent).
-        db_column = {
-          column_name: name,
-          column_type: 'uuid',
-          nullable,
-          foreign_key: { table: targetTableName, column: 'id', on_delete: 'SET NULL' },
-        }
-      }
-
-      ui_component = {
-        component: 'typeahead-select',
-        ref: rawField.target,
-        rel: rawField.rel,
-      }
-      break
-    }
-
-    default: {
-      return {
-        ok: false,
-        errors: [{
-          file: sourceFile,
-          code: 'INVALID_FIELD_TYPE',
-          message: `Unknown field type: ${String((rawField as { type: unknown }).type)}`,
-        }],
-      }
+  // Dispatch to the field type's builder. The registry is keyed by the same type
+  // the raw field carries, so the lookup is sound by construction; the single cast
+  // erases the discriminant TypeScript can't correlate across the union.
+  const build = fieldTypeRegistry[rawField.type] as AnyFieldBuilder | undefined
+  if (!build) {
+    // Defensive: a validated RawField always has a registered type. Zod rejects
+    // unknown field types before this point — but guard rather than throw.
+    return {
+      ok: false,
+      errors: [{
+        file: sourceFile,
+        code: 'INVALID_FIELD_TYPE',
+        message: `Unknown field type: ${String((rawField as { type: unknown }).type)}`,
+      }],
     }
   }
 
+  const { name, label, required } = rawField
+  const { validation, db_column, ui_component } = build(rawField, { ownerTableName })
+
   return {
     ok: true,
-    value: { name, label, field_type: fieldType, required, nullable, order, validation, db_column, ui_component },
+    value: {
+      name,
+      label,
+      field_type: rawField.type,
+      required,
+      nullable: !required,
+      order,
+      validation,
+      db_column,
+      ui_component,
+    },
   }
 }
 

@@ -32,7 +32,7 @@ type MediaType = {
 
 | Endpoint | Accepted types |
 | -------- | -------------- |
-| `/admin/api/media/image` | `image/jpeg`, `image/png`, `image/webp`, `image/gif`, `image/svg+xml` |
+| `/admin/api/media/image` | `image/jpeg`, `image/png`, `image/webp`, `image/gif` |
 | `/admin/api/media/video` | `video/mp4`, `video/webm`, `video/quicktime` |
 | `/admin/api/media/file` | `application/pdf` |
 
@@ -109,8 +109,9 @@ Editor can:
         ↓
 On upload:
   → MIME type detected from file
-  → Small files: direct upload
-  → Large files: presigned URL flow (transparent)
+  → Cloud storage (s3/cloudinary): presigned URL flow — browser uploads
+    straight to the bucket, never through the server (works on serverless)
+  → Local storage: direct upload endpoint (the server writes the file)
   → Alt text input appears after upload
   → New item appears in grid, pre-selected
         ↓
@@ -118,6 +119,8 @@ Editor confirms → media ID stored in content field
 ```
 
 Field type pre-filters the grid (image field opens modal showing images only) but editor can clear the filter.
+
+**SVG safety.** `image/svg+xml` is **not accepted** — SVGs can carry active content (`<script>`, `on*`, `javascript:`) that runs when rendered inline, and the only robust way to sanitize them (a DOM library) does not survive the serverless deploy build. Uploads of `image/svg+xml` are rejected (`415`). Served local uploads carry `X-Content-Type-Options: nosniff`. See [ADR api/0008](../../adr/api/0008-media-upload-security.md).
 
 ---
 
