@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { sql } from 'drizzle-orm'
-import type { StorageAdapter, SchemaRegistry, ParsedContentType, ParsedTaxonomyType } from '@bobbykim/manguito-cms-core'
+import type { StorageAdapter, SchemaRegistry, ParsedContentType, ParsedTaxonomyType, ResolvedRateLimitConfig } from '@bobbykim/manguito-cms-core'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import { createCorsMiddleware } from './middleware/cors.js'
 import { errorHandler } from './middleware/error.js'
@@ -8,7 +8,7 @@ import { createAuthMiddleware } from './middleware/auth.js'
 import { mustChangePasswordCheck } from './middleware/must-change-password.js'
 import { createPermissionMiddleware } from './middleware/permission.js'
 import { createHierarchyMiddleware } from './middleware/hierarchy.js'
-import { createRateLimitMiddleware } from './middleware/rate-limit.js'
+import { resolveListRateLimit } from './middleware/rate-limit.js'
 import { buildRolesRegistry } from './auth/registry.js'
 import { registerPublicContentRoutes } from './routes/content.js'
 import { registerPublicMediaRoutes } from './routes/media.js'
@@ -33,14 +33,7 @@ export type CreateCmsAppOptions = {
     /** Optional upload size cap in bytes. Returned by GET /admin/api/config for client-side UX validation. */
     max_file_size?: number
   }
-  rateLimit?: {
-    /** Rate limiting applied to public list endpoints only (paginated collections, not single-item lookups). */
-    findAll?: {
-      windowMs?: number
-      maxPerIp?: number
-      maxGlobal?: number
-    }
-  }
+  rateLimit?: ResolvedRateLimitConfig
 }
 
 export interface ManguitoCmsAPIAdapter {
@@ -80,11 +73,8 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
 
   // Rate limiter for public list endpoints — threaded into route registrators,
   // applied only to paginated collection routes (not single-item lookups).
-  const listRateLimit = createRateLimitMiddleware({
-    windowMs: rateLimit?.findAll?.windowMs ?? 60_000,
-    maxPerIp: rateLimit?.findAll?.maxPerIp ?? 30,
-    maxGlobal: rateLimit?.findAll?.maxGlobal ?? 500,
-  })
+  // `undefined` when disabled via rateLimit.findAll === '*'.
+  const listRateLimit = resolveListRateLimit(rateLimit)
 
   // ── Middleware factories — all close over rolesRegistry built once at startup ──
 

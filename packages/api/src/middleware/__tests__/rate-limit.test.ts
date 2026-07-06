@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { Hono } from 'hono'
-import { createRateLimitMiddleware } from '../rate-limit'
+import { createRateLimitMiddleware, resolveListRateLimit } from '../rate-limit'
 
 function buildApp(options: Parameters<typeof createRateLimitMiddleware>[0]) {
   const app = new Hono()
@@ -76,5 +76,19 @@ describe('rate-limit middleware', () => {
     expect(res.headers.get('X-RateLimit-Limit')).toBeTruthy()
     expect(res.headers.get('X-RateLimit-Remaining')).toBe('0')
     expect(res.headers.get('X-RateLimit-Reset')).toBeTruthy()
+  })
+})
+
+describe('resolveListRateLimit', () => {
+  it("returns undefined (limiter disabled) when findAll is '*'", () => {
+    expect(resolveListRateLimit({ findAll: '*' })).toBeUndefined()
+  })
+
+  it('returns a middleware when rateLimit is undefined (uses defaults)', () => {
+    expect(typeof resolveListRateLimit(undefined)).toBe('function')
+  })
+
+  it('returns a middleware when findAll is a numeric config', () => {
+    expect(typeof resolveListRateLimit({ findAll: { maxPerIp: 5 } })).toBe('function')
   })
 })

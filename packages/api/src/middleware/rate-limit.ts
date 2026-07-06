@@ -1,4 +1,11 @@
 import type { MiddlewareHandler } from 'hono'
+import type { ResolvedRateLimitConfig } from '@bobbykim/manguito-cms-core'
+
+// Defaults for the public list-endpoint limiter. Single source of truth —
+// createCmsApp resolves its limiter through resolveListRateLimit below.
+const DEFAULT_WINDOW_MS = 60_000
+const DEFAULT_MAX_PER_IP = 30
+const DEFAULT_MAX_GLOBAL = 500
 
 export type RateLimitOptions = {
   windowMs: number
@@ -82,4 +89,24 @@ export function createRateLimitMiddleware(options: RateLimitOptions): Middleware
 
     return next()
   }
+}
+
+/**
+ * Resolves the public list-endpoint config into a middleware, or `undefined`
+ * when the limiter is disabled via the `findAll: '*'` wildcard. Route
+ * registrators skip registration when this is `undefined`, so a disabled
+ * limiter has zero request-path overhead.
+ */
+export function resolveListRateLimit(
+  rateLimit?: ResolvedRateLimitConfig,
+): MiddlewareHandler | undefined {
+  const findAll = rateLimit?.findAll
+  if (findAll === '*') {
+    return undefined
+  }
+  return createRateLimitMiddleware({
+    windowMs: findAll?.windowMs ?? DEFAULT_WINDOW_MS,
+    maxPerIp: findAll?.maxPerIp ?? DEFAULT_MAX_PER_IP,
+    maxGlobal: findAll?.maxGlobal ?? DEFAULT_MAX_GLOBAL,
+  })
 }
