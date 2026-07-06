@@ -108,9 +108,25 @@ export type ResolvedMediaConfig = {
   max_file_size?: number
 }
 
+export type ResolvedRateLimitConfig = {
+  /**
+   * Rate limiting for public list endpoints (paginated collections, not
+   * single-item lookups). Set `findAll: '*'` to disable the list-endpoint
+   * limiter entirely.
+   */
+  findAll?:
+    | '*'
+    | {
+        windowMs?: number
+        maxPerIp?: number
+        maxGlobal?: number
+      }
+}
+
 export interface APIAdapter {
   readonly prefix: string
   readonly media?: ResolvedMediaConfig
+  readonly rateLimit?: ResolvedRateLimitConfig
 }
 
 // ─── Admin Adapter ────────────────────────────────────────────────────────────
