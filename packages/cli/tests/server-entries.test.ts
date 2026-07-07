@@ -7,6 +7,12 @@ describe('appSetup codegen', () => {
       '...(config.api.rateLimit ? { rateLimit: config.api.rateLimit } : {})',
     )
   })
+
+  it('threads config.server.cors into the generated createCmsApp call', () => {
+    expect(appSetup()).toContain(
+      '...(config.server.cors ? { cors: config.server.cors } : {})',
+    )
+  })
 })
 
 describe('static serving hardening (codegen)', () => {

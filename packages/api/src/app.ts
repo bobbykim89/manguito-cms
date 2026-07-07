@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { sql } from 'drizzle-orm'
-import type { StorageAdapter, SchemaRegistry, ParsedContentType, ParsedTaxonomyType, ResolvedRateLimitConfig } from '@bobbykim/manguito-cms-core'
+import type { StorageAdapter, SchemaRegistry, ParsedContentType, ParsedTaxonomyType, ResolvedRateLimitConfig, CorsConfig } from '@bobbykim/manguito-cms-core'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import { createCorsMiddleware } from './middleware/cors.js'
 import { errorHandler } from './middleware/error.js'
@@ -34,6 +34,7 @@ export type CreateCmsAppOptions = {
     max_file_size?: number
   }
   rateLimit?: ResolvedRateLimitConfig
+  cors?: CorsConfig
 }
 
 export interface ManguitoCmsAPIAdapter {
@@ -57,7 +58,7 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
   }
 
   const prefix = options.prefix ?? '/api'
-  const { storage, registry, db, rateLimit, media } = options
+  const { storage, registry, db, rateLimit, media, cors } = options
   const cmsName = options.name ?? 'Manguito CMS'
   const maxFileSize = media?.max_file_size
 
@@ -68,7 +69,7 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
   const app = new Hono()
 
   // CORS for all routes
-  app.use('*', createCorsMiddleware({ origin: '*', enabled: true }))
+  app.use('*', createCorsMiddleware(cors ?? { origin: '*', enabled: true }))
   app.onError(errorHandler)
 
   // Rate limiter for public list endpoints — threaded into route registrators,

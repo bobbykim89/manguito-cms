@@ -36,6 +36,7 @@ const { app } = createCmsApp({
   prefix: config.api.prefix,
   ...(config.api.media ? { media: config.api.media } : {}),
   ...(config.api.rateLimit ? { rateLimit: config.api.rateLimit } : {}),
+  ...(config.server.cors ? { cors: config.server.cors } : {}),
 })`
 }
 
