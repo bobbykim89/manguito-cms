@@ -370,6 +370,11 @@ export function registerAdminContentRoutes(
           )
         }
 
+        if (body['published'] === true) {
+          const publishDeny = await requirePermission('content:edit')(c, async () => {})
+          if (publishDeny) return publishDeny
+        }
+
         // Classify fields
         const paragraphFields = contentType.fields.filter((f) => f.db_column === null)
         const junctionFields = contentType.fields.filter(
@@ -726,6 +731,11 @@ export function registerAdminContentRoutes(
             },
             422
           )
+        }
+
+        if (body['published'] === true) {
+          const publishDeny = await requirePermission('content:edit')(c, async () => {})
+          if (publishDeny) return publishDeny
         }
 
         // Filter to column-only fields
