@@ -69,8 +69,10 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
 
   const app = new Hono()
 
-  // Security headers for all routes — registered before CORS so every
-  // response (including CORS-rejected ones) carries the conservative defaults.
+  // Security headers for all routes — registered before CORS so normal and
+  // CORS-handled responses carry the conservative defaults. Responses produced
+  // by app.onError (thrown errors) bypass this middleware's post-next step;
+  // those are JSON error envelopes with no clickjacking/XSS surface.
   app.use('*', createSecurityHeadersMiddleware())
 
   // CORS for all routes

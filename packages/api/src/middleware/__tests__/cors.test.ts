@@ -20,7 +20,8 @@ describe('createCorsMiddleware', () => {
   it('does not reflect a non-allowed origin', async () => {
     const app = appWith({ origin: 'https://app.example.com', credentials: true })
     const res = await app.request('/x', { headers: { origin: 'https://evil.example.com' } })
-    expect(res.headers.get('Access-Control-Allow-Origin')).not.toBe('https://evil.example.com')
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBeNull()
+    expect(res.headers.get('Access-Control-Allow-Credentials')).toBeNull()
   })
 
   it('with wildcard origin, never sends credentials', async () => {
@@ -28,5 +29,21 @@ describe('createCorsMiddleware', () => {
     const res = await app.request('/x', { headers: { origin: 'https://anything.example.com' } })
     expect(res.headers.get('Access-Control-Allow-Origin')).toBe('*')
     expect(res.headers.get('Access-Control-Allow-Credentials')).toBeNull()
+  })
+
+  it('emits no CORS headers when disabled', async () => {
+    const app = appWith({ origin: 'https://app.example.com', enabled: false })
+    const res = await app.request('/x', { headers: { origin: 'https://app.example.com' } })
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBeNull()
+    expect(res.headers.get('Access-Control-Allow-Methods')).toBeNull()
+  })
+
+  it('answers an OPTIONS preflight with 204', async () => {
+    const app = appWith({ origin: 'https://app.example.com' })
+    const res = await app.request('/x', {
+      method: 'OPTIONS',
+      headers: { origin: 'https://app.example.com' },
+    })
+    expect(res.status).toBe(204)
   })
 })
