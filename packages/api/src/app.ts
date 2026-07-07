@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm'
 import type { StorageAdapter, SchemaRegistry, ParsedContentType, ParsedTaxonomyType, ResolvedRateLimitConfig, CorsConfig } from '@bobbykim/manguito-cms-core'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import { createCorsMiddleware } from './middleware/cors.js'
+import { createSecurityHeadersMiddleware } from './middleware/security-headers.js'
 import { errorHandler } from './middleware/error.js'
 import { createAuthMiddleware } from './middleware/auth.js'
 import { mustChangePasswordCheck } from './middleware/must-change-password.js'
@@ -67,6 +68,10 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
   const rolesRegistry = buildRolesRegistry(registry.roles.roles)
 
   const app = new Hono()
+
+  // Security headers for all routes — registered before CORS so every
+  // response (including CORS-rejected ones) carries the conservative defaults.
+  app.use('*', createSecurityHeadersMiddleware())
 
   // CORS for all routes
   app.use('*', createCorsMiddleware(cors ?? { origin: '*', enabled: true }))
