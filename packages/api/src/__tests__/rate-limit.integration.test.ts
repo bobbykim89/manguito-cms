@@ -124,6 +124,19 @@ function makeApp() {
   return app
 }
 
+// A second app whose list limiter is disabled via the '*' wildcard.
+function makeUnlimitedApp() {
+  const { app } = createCmsApp({
+    storage: createLocalAdapter(),
+    registry: TEST_REGISTRY,
+    db,
+    rateLimit: {
+      findAll: '*',
+    },
+  })
+  return app
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('rate limiting — integration', () => {
@@ -171,5 +184,19 @@ describe('rate limiting — integration', () => {
     const body = await first429!.json() as { ok: boolean; error: { code: string } }
     expect(body.ok).toBe(false)
     expect(body.error.code).toBe('RATE_LIMITED')
+  })
+
+  it("findAll: '*' disables the list limiter — many rapid requests all return 200", async () => {
+    const app = makeUnlimitedApp()
+    const statuses: number[] = []
+
+    // Far more than the default per-IP budget (30) — none should be limited.
+    for (let i = 0; i < 40; i++) {
+      const res = await app.request(`/api/${BASE_PATH}`)
+      statuses.push(res.status)
+    }
+
+    expect(statuses.every((s) => s === 200)).toBe(true)
+    expect(statuses).toHaveLength(40)
   })
 })
