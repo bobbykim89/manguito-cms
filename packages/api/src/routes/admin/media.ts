@@ -358,6 +358,37 @@ export function registerAdminMediaRoutes(
       )
     }
 
+    // Validate the actual uploaded object where the adapter supports it.
+    let fileSize = 0
+    if (storage.stat) {
+      const meta = await storage.stat(pending.key)
+      if (!meta) {
+        return c.json(
+          { ok: false, error: { code: 'STORAGE_ERROR', message: 'Uploaded object not found' } },
+          502,
+        )
+      }
+      const accepted =
+        pending.folder === 'image' ? IMAGE_MIME_TYPES
+        : pending.folder === 'video' ? VIDEO_MIME_TYPES
+        : FILE_MIME_TYPES
+      if (meta.content_type && !accepted.has(meta.content_type)) {
+        await storage.delete(pending.key)
+        return c.json(
+          { ok: false, error: { code: 'UNSUPPORTED_MIME_TYPE', message: `Stored object type '${meta.content_type}' is not accepted` } },
+          415,
+        )
+      }
+      if (maxFileSize !== undefined && meta.size > maxFileSize) {
+        await storage.delete(pending.key)
+        return c.json(
+          { ok: false, error: { code: 'FILE_TOO_LARGE', message: `Uploaded file exceeds the ${maxFileSize} byte limit` } },
+          413,
+        )
+      }
+      fileSize = meta.size
+    }
+
     const url = storage.getUrl(pending.key)
 
     const item = await mediaRepo.create({
@@ -365,7 +396,7 @@ export function registerAdminMediaRoutes(
       url,
       mime_type: pending.mime_type,
       ...(altValue !== undefined && { alt: altValue }),
-      file_size: 0,
+      file_size: fileSize,
     })
 
     return c.json({ ok: true, data: item }, 201)

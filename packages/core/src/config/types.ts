@@ -85,6 +85,8 @@ export interface StorageAdapter {
   getUrl(key: string): string
   getPresignedUploadUrl(options: PresignedOptions): Promise<PresignedResult>
   upload?(key: string, data: Uint8Array, mimeType: string): Promise<void>
+  /** Optional metadata lookup used to validate uploaded objects on confirm. */
+  stat?(key: string): Promise<{ size: number; content_type?: string } | null>
 }
 
 // ─── Server Adapter ───────────────────────────────────────────────────────────

@@ -74,5 +74,16 @@ export function createLocalAdapter(
         }
       }
     },
+
+    async stat(key: string): Promise<{ size: number; content_type?: string } | null> {
+      const { stat } = await import('node:fs/promises')
+      const filepath = path.join(upload_dir, key.startsWith('uploads/') ? key.slice('uploads/'.length) : key)
+      try {
+        const s = await stat(filepath)
+        return { size: s.size }
+      } catch {
+        return null
+      }
+    },
   }
 }

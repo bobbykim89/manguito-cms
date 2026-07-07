@@ -1,6 +1,11 @@
 import path from 'node:path'
 import crypto from 'node:crypto'
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
+import {
+  S3Client,
+  PutObjectCommand,
+  DeleteObjectCommand,
+  HeadObjectCommand,
+} from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import type {
   StorageAdapter,
@@ -78,6 +83,18 @@ export function createS3Adapter(options: S3AdapterOptions): StorageAdapter {
     async delete(key: string): Promise<void> {
       const command = new DeleteObjectCommand({ Bucket: bucket, Key: key })
       await client.send(command)
+    },
+
+    async stat(key: string): Promise<{ size: number; content_type?: string } | null> {
+      try {
+        const head = await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }))
+        return {
+          size: head.ContentLength ?? 0,
+          ...(head.ContentType !== undefined && { content_type: head.ContentType }),
+        }
+      } catch {
+        return null
+      }
     },
   }
 }

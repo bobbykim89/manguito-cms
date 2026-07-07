@@ -242,6 +242,38 @@ function makeAppWithMaxFileSize(max: number) {
   return app
 }
 
+// Variants that also hand back the storage adapter instance, for tests that
+// need to place bytes at the presigned key directly (simulating the client's
+// PUT/upload before calling confirm) and then inspect storage afterwards.
+function makeAppWithStorage() {
+  const storage = createLocalAdapter()
+  const { app } = createCmsApp({
+    storage,
+    registry: TEST_REGISTRY,
+    db,
+  })
+  return { app, storage }
+}
+
+function makeAppWithMaxFileSizeAndStorage(max: number) {
+  const storage = createLocalAdapter()
+  const { app } = createCmsApp({
+    storage,
+    registry: TEST_REGISTRY,
+    db,
+    media: { max_file_size: max },
+  })
+  return { app, storage }
+}
+
+// The local adapter's presigned upload_url encodes the storage key as
+// `http://.../_local_upload/{key}?token=...` — extract it so tests can write
+// bytes directly to that key via the adapter (there is no `_local_upload`
+// receiver route; see ADR api/0004's amendment).
+function keyFromLocalUploadUrl(uploadUrl: string): string {
+  return new URL(uploadUrl).pathname.replace(/^\/_local_upload\//, '')
+}
+
 type MediaRow = {
   id: string
   url: string
@@ -475,21 +507,53 @@ describe('admin media routes — integration', () => {
   // in-memory — so confirm works even when it lands on a different serverless
   // instance than presigned-url.
   it('presigned-url → confirm creates a media row via the stateless token', async () => {
-    const app = makeApp()
+    const { app, storage } = makeAppWithStorage()
     const params = new URLSearchParams({ type: 'image', filename: 'x.png', mime_type: 'image/png' })
     const presignedRes = await app.request(`/admin/api/media/presigned-url?${params.toString()}`, withAuth())
     expect(presignedRes.status).toBe(200)
     const presigned = await presignedRes.json() as { ok: boolean; data: { media_id: string; upload_url: string } }
     expect(presigned.data.media_id).toBeTruthy()
 
+    // Place the object at the presigned key — confirm now stats it (Finding #8).
+    const key = keyFromLocalUploadUrl(presigned.data.upload_url)
+    await storage.upload?.(key, new Uint8Array([1, 2, 3]), 'image/png')
+
     const confirmRes = await app.request(
       `/admin/api/media/confirm/${presigned.data.media_id}`,
       withAuth({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ alt: 'x' }) }),
     )
     expect(confirmRes.status).toBe(201)
-    const confirmed = await confirmRes.json() as { ok: boolean; data: { id: string; type: string } }
+    const confirmed = await confirmRes.json() as { ok: boolean; data: { id: string; type: string; file_size: number } }
     expect(confirmed.ok).toBe(true)
     expect(confirmed.data.type).toBe('image')
+    expect(confirmed.data.file_size).toBe(3)
+  })
+
+  // Finding #8: the confirm step previously trusted the token's mime_type and
+  // recorded file_size: 0 without ever looking at the object that landed in
+  // storage. Where the adapter supports stat() (local, S3 — not Cloudinary),
+  // confirm now rejects an oversized object and deletes it.
+  it('rejects confirm when the uploaded object exceeds max_file_size, and deletes the object', async () => {
+    const { app, storage } = makeAppWithMaxFileSizeAndStorage(4)
+    const params = new URLSearchParams({ type: 'image', filename: 'big.png', mime_type: 'image/png' })
+    const presignedRes = await app.request(`/admin/api/media/presigned-url?${params.toString()}`, withAuth())
+    expect(presignedRes.status).toBe(200)
+    const presigned = await presignedRes.json() as { ok: boolean; data: { media_id: string; upload_url: string } }
+
+    const key = keyFromLocalUploadUrl(presigned.data.upload_url)
+    await storage.upload?.(key, new Uint8Array([1, 2, 3, 4, 5]), 'image/png') // 5 bytes > max of 4
+
+    const confirmRes = await app.request(
+      `/admin/api/media/confirm/${presigned.data.media_id}`,
+      withAuth({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ alt: 'x' }) }),
+    )
+    expect(confirmRes.status).toBe(413)
+    const body = await confirmRes.json() as { ok: boolean; error: { code: string } }
+    expect(body.ok).toBe(false)
+    expect(body.error.code).toBe('FILE_TOO_LARGE')
+
+    // The offending object was deleted, not left orphaned in storage.
+    expect(await storage.stat?.(key)).toBeNull()
   })
 
   it('POST /admin/api/media/confirm with a tampered/invalid token → 410', async () => {
