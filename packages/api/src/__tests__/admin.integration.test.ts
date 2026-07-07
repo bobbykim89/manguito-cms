@@ -328,6 +328,20 @@ describe('admin content routes — integration', () => {
     expect(body.ok).toBe(true)
     expect(body.data.published).toBe(false)
   })
+
+  // Regression guard for Finding #6: content.ts used to default requirePermission
+  // to a no-op shim and carried a redundant route-level requireAuth (also a
+  // no-op). Both are gone now — the blanket authMiddleware (app.ts) must still
+  // reject unauthenticated writes with 401.
+  it('POST /admin/api/{type} without auth → 401 (blanket authMiddleware, not the removed shim)', async () => {
+    const app = makeApp()
+    const res = await app.request(`/admin/api/content/${BASE_PATH}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ slug: 'x' }),
+    })
+    expect(res.status).toBe(401)
+  })
 })
 
 describe('admin media routes — integration', () => {

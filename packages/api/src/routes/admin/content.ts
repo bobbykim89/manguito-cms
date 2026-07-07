@@ -25,7 +25,6 @@ import {
   deleteParagraphField,
   persistJunctionField,
 } from '../../relations.js'
-import { requireAuth, requirePermission as requirePermissionShim } from '../../middleware/auth.js'
 import type { createPermissionMiddleware } from '../../middleware/permission.js'
 import type { ContentRepos } from '../content.js'
 
@@ -169,7 +168,7 @@ export function registerAdminContentRoutes(
   registry: SchemaRegistry,
   repos: ContentRepos,
   mediaRepo: MediaRepository,
-  requirePermission: ReturnType<typeof createPermissionMiddleware> = requirePermissionShim,
+  requirePermission: ReturnType<typeof createPermissionMiddleware>,
   db?: DrizzlePostgresInstance,
 ): void {
   // ── Content type routes ───────────────────────────────────────────────────
@@ -211,7 +210,6 @@ export function registerAdminContentRoutes(
     // GET /admin/api/{base_path}
     app.get(
       `/admin/api/${basePath}`,
-      requireAuth,
       requirePermission('content:read'),
       async (c) => {
         const parsed = parseListQuery(c.req.url, schemaFieldNames, relationFieldNames)
@@ -245,7 +243,6 @@ export function registerAdminContentRoutes(
     // GET /admin/api/{base_path}/:id
     app.get(
       `/admin/api/${basePath}/:id`,
-      requireAuth,
       requirePermission('content:read'),
       async (c) => {
         const id = c.req.param('id')
@@ -295,7 +292,6 @@ export function registerAdminContentRoutes(
     // POST /admin/api/{base_path}
     app.post(
       `/admin/api/${basePath}`,
-      requireAuth,
       requirePermission('content:create'),
       async (c) => {
         const body = (await c.req.json()) as Record<string, unknown>
@@ -449,7 +445,6 @@ export function registerAdminContentRoutes(
     // PATCH /admin/api/{base_path}/:id
     app.patch(
       `/admin/api/${basePath}/:id`,
-      requireAuth,
       requirePermission('content:edit'),
       async (c) => {
         const id = c.req.param('id')
@@ -590,7 +585,6 @@ export function registerAdminContentRoutes(
     // DELETE /admin/api/{base_path}/:id
     app.delete(
       `/admin/api/${basePath}/:id`,
-      requireAuth,
       requirePermission('content:delete'),
       async (c) => {
         const id = c.req.param('id')
@@ -663,7 +657,6 @@ export function registerAdminContentRoutes(
     // GET /admin/api/taxonomy/{type}
     app.get(
       `/admin/api/taxonomy/${typeName}`,
-      requireAuth,
       requirePermission('content:read'),
       async (c) => {
         const parsed = parseListQuery(c.req.url, schemaFieldNames, relationFieldNames)
@@ -697,7 +690,6 @@ export function registerAdminContentRoutes(
     // GET /admin/api/taxonomy/{type}/:id
     app.get(
       `/admin/api/taxonomy/${typeName}/:id`,
-      requireAuth,
       requirePermission('content:read'),
       async (c) => {
         const id = c.req.param('id')
@@ -717,7 +709,6 @@ export function registerAdminContentRoutes(
     // POST /admin/api/taxonomy/{type}
     app.post(
       `/admin/api/taxonomy/${typeName}`,
-      requireAuth,
       requirePermission('content:create'),
       async (c) => {
         const body = (await c.req.json()) as Record<string, unknown>
@@ -776,7 +767,6 @@ export function registerAdminContentRoutes(
     // PATCH /admin/api/taxonomy/{type}/:id
     app.patch(
       `/admin/api/taxonomy/${typeName}/:id`,
-      requireAuth,
       requirePermission('content:edit'),
       async (c) => {
         const id = c.req.param('id')
@@ -858,7 +848,6 @@ export function registerAdminContentRoutes(
     // DELETE /admin/api/taxonomy/{type}/:id
     app.delete(
       `/admin/api/taxonomy/${typeName}/:id`,
-      requireAuth,
       requirePermission('content:delete'),
       async (c) => {
         const id = c.req.param('id')
@@ -896,7 +885,7 @@ export function registerAdminContentRoutes(
 
   // ── Config endpoint ───────────────────────────────────────────────────────
 
-  app.get('/admin/api/config', requireAuth, (c) => {
+  app.get('/admin/api/config', (c) => {
     return c.json({
       ok: true,
       data: {

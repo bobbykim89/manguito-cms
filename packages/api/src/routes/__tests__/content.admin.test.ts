@@ -8,6 +8,14 @@ import type {
   SchemaRegistry,
 } from '@bobbykim/manguito-cms-core'
 import type { ParsedContentType } from '@bobbykim/manguito-cms-core'
+import type { createPermissionMiddleware } from '../../middleware/permission'
+
+// This suite exercises route business logic directly (validation, media/paragraph
+// wiring), not permission enforcement — that's covered by the admin integration
+// suite. Stand in for the real requirePermission with an always-allow middleware
+// so it isn't the no-op shim (removed — Finding #6) but still lets requests through.
+const noopRequirePermission: ReturnType<typeof createPermissionMiddleware> = () => async (_c, next) =>
+  next()
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -191,7 +199,7 @@ describe('admin content routes', () => {
       'blog-post': mockBlogRepo,
       'home-page': mockSingletonRepo,
       'page-with-image': mockMediaTypeRepo,
-    }, mockMediaRepo)
+    }, mockMediaRepo, noopRequirePermission)
   })
 
   describe('PATCH — publish validation', () => {
