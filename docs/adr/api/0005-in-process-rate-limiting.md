@@ -16,3 +16,9 @@ Rate limiting is implemented as in-process Hono middleware with no external depe
 
 - **Known limitation:** in-process state resets on every serverless cold start, so on Lambda/Vercel the limit is per-instance, not global. Accepted for v1.
 - Rate-limit middleware runs *after* auth middleware so authenticated requests can be exempted before the limiter sees them. Limits are configurable via `createCmsApp({ rateLimit: { findAll: {...} } })`.
+- **Amendment (2026-07, security round):** login now also enforces a global
+  attempt ceiling (`GLOBAL_LOGIN_MAX`, 15-min window) across all IP+email keys,
+  matching the two-scope (per-key + global) model of the `findAll` limiter. This
+  blunts distributed email-spraying (audit Finding #5) while preserving the
+  no-account-lockout decision. Like all in-process state, the global ceiling is
+  per-instance on serverless; Redis-backed global limiting remains the v2 path.
