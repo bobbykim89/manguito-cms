@@ -66,8 +66,9 @@ describe('POST /admin/api/auth/login', () => {
     const body = await res.json() as { ok: boolean; error: { code: string } }
     expect(body.ok).toBe(false)
     expect(body.error.code).toBe('INVALID_CREDENTIALS')
-    // verifyPassword must never be called — no timing attack vector if user not found
-    expect(verifyPassword).not.toHaveBeenCalled()
+    // A dummy compare runs against a fixed hash so the not-found path pays the
+    // same bcrypt cost as a real user, closing the user-enumeration timing oracle
+    expect(verifyPassword).toHaveBeenCalledTimes(1)
   })
 
   it('wrong password → 401 INVALID_CREDENTIALS (same response as unknown email)', async () => {

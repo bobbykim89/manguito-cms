@@ -20,6 +20,11 @@ const loginAttempts = new Map<string, number[]>()
 const RATE_LIMIT_MAX = 10
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000
 
+// A valid cost-12 bcrypt hash used only to equalize timing on the
+// user-not-found path, so login response time cannot enumerate accounts.
+const DUMMY_PASSWORD_HASH =
+  '$2a$12$y.MZw/Q4Ceg3x1y3xrRaeuTaM09zSDx1nn78guO3bqc9vgOqGda42'
+
 function checkRateLimit(key: string): { allowed: boolean; retryAfterSeconds: number } {
   const now = Date.now()
   const windowStart = now - RATE_LIMIT_WINDOW_MS
@@ -100,6 +105,9 @@ export function registerAuthRoutes(app: Hono, db: DrizzlePostgresInstance): void
     const user = userResult.rows[0] as LoginUserRow | undefined
 
     if (!user) {
+      // Run a dummy comparison so this path pays the same bcrypt cost as a
+      // real user, closing the user-enumeration timing side-channel.
+      await verifyPassword(password, DUMMY_PASSWORD_HASH)
       return c.json(invalidCredentials, 401)
     }
 
