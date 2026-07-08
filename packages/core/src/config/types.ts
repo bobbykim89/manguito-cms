@@ -87,6 +87,13 @@ export interface StorageAdapter {
   upload?(key: string, data: Uint8Array, mimeType: string): Promise<void>
   /** Optional metadata lookup used to validate uploaded objects on confirm. */
   stat?(key: string): Promise<{ size: number; content_type?: string } | null>
+  /**
+   * Cross-origin hosts the browser connects to during a presigned upload,
+   * as CSP connect-src origins (scheme + host, no path). Used to build the
+   * Content-Security-Policy. Adapters whose uploads are same-origin (local)
+   * omit this.
+   */
+  getUploadOrigins?(): string[]
 }
 
 // ─── Server Adapter ───────────────────────────────────────────────────────────

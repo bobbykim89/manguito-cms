@@ -96,5 +96,9 @@ export function createS3Adapter(options: S3AdapterOptions): StorageAdapter {
         return null
       }
     },
+
+    getUploadOrigins(): string[] {
+      return [`https://${bucket}.s3.${region}.amazonaws.com`]
+    },
   }
 }
