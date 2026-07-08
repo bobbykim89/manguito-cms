@@ -72,8 +72,11 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
   // Security headers for all routes — registered before CORS so normal and
   // CORS-handled responses carry the conservative defaults. Responses produced
   // by app.onError (thrown errors) bypass this middleware's post-next step;
-  // those are JSON error envelopes with no clickjacking/XSS surface.
-  app.use('*', createSecurityHeadersMiddleware())
+  // those are JSON error envelopes with no clickjacking/XSS surface. CSP
+  // connect-src is derived from the storage adapter: presigned uploads go
+  // browser→storage directly, so that host must be allowlisted.
+  const uploadOrigins = storage.getUploadOrigins?.() ?? []
+  app.use('*', createSecurityHeadersMiddleware({ connectSrc: uploadOrigins }))
 
   // CORS for all routes
   app.use('*', createCorsMiddleware(cors ?? { origin: '*', enabled: true }))
