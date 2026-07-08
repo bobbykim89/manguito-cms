@@ -23,6 +23,8 @@
   },
   "dependencies": {
     "@bobbykim/manguito-cms-core": "workspace:*",
+    "@fontsource/jetbrains-mono": "^5.0.0",
+    "@fontsource/plus-jakarta-sans": "^5.0.0",
     "@tiptap/extension-link": "^2.0.0",
     "@tiptap/starter-kit": "^2.0.0",
     "@tiptap/vue-3": "^2.0.0",
