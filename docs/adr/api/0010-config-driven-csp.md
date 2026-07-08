@@ -41,3 +41,7 @@ disabled so `script-src 'self'` needs no inline exception.
   for the bundled Node/Lambda/Vercel deploys). A split-origin setup (admin on a
   separate CDN, API elsewhere) would need the admin's API origin added to
   `connect-src` — not supported today.
+- `font-src` allows `'self' data:`: the admin self-hosts fonts via `@fontsource`,
+  and Vite inlines the small per-subset `.woff2` files under `assetsInlineLimit`
+  as `data:` URIs in the built CSS. `data:` is permitted only for fonts (never
+  `script-src`/`object-src`), which carries no script-execution risk.

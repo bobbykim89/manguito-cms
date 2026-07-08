@@ -21,7 +21,8 @@ describe('createSecurityHeadersMiddleware', () => {
     const res = await app.request('/x')
     const csp = res.headers.get('Content-Security-Policy') ?? ''
     expect(csp).toContain("connect-src 'self'")
-    expect(csp).toContain("font-src 'self'")
+    // font-src allows data: — Vite inlines small @fontsource subsets as data: URIs.
+    expect(csp).toContain("font-src 'self' data:")
   })
 
   it('includes provided upload origins in connect-src', async () => {

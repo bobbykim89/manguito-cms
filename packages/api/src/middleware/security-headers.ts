@@ -21,7 +21,7 @@ export function createSecurityHeadersMiddleware(
     "media-src 'self' https:",
     "style-src 'self' 'unsafe-inline'",
     "script-src 'self'",
-    "font-src 'self'",
+    "font-src 'self' data:",
     `connect-src ${connectSrc}`,
     "frame-ancestors 'none'",
     "base-uri 'self'",
