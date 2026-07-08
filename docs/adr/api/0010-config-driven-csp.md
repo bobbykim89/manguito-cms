@@ -34,4 +34,10 @@ disabled so `script-src 'self'` needs no inline exception.
   `res.cloudinary.com`, already permitted by `img-src https:`.
 - A custom S3 endpoint (path-style, transfer acceleration, or a non-AWS S3) is
   not covered by the default virtual-hosted origin and would need the adapter to
-  return the matching host — tracked as a follow-up if such config is added.
+  return the matching host — tracked as a follow-up if such config is added. A
+  dotted bucket name likewise forces path-style presigning and would not match
+  the virtual-hosted origin (consistent with the same assumption in `getUrl`).
+- `connect-src` assumes the admin SPA and API are served **same-origin** (true
+  for the bundled Node/Lambda/Vercel deploys). A split-origin setup (admin on a
+  separate CDN, API elsewhere) would need the admin's API origin added to
+  `connect-src` — not supported today.
