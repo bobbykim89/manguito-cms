@@ -28,11 +28,11 @@
     "@changesets/cli": "latest",
     "@eslint/js": "^10.0.1",
     "dotenv-cli": "latest",
-    "drizzle-orm": "^0.45.0",
-    "eslint": "^10.0.0",
+    "drizzle-orm": "^0.45.2",
+    "eslint": "^10.6.0",
     "turbo": "latest",
-    "typescript": "^6.0.0",
-    "typescript-eslint": "^8.62.1",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.63.0",
     "vitest": "latest"
   }
 }

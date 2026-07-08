@@ -20,14 +20,14 @@
     "@bobbykim/manguito-cms-cli": "workspace:*",
     "@bobbykim/manguito-cms-core": "workspace:*",
     "@bobbykim/manguito-cms-db": "workspace:*",
-    "hono": "^4.12.0"
+    "hono": "^4.12.28"
   },
   "devDependencies": {
     "@bobbykim/manguito-cms-test-utils": "workspace:*",
-    "@types/node": "^25.6.0",
+    "@types/node": "^25.9.5",
     "dotenv-cli": "latest",
-    "drizzle-kit": "^0.31.0",
-    "typescript": "^6.0.0",
-    "vitest": "^4.1.0"
+    "drizzle-kit": "^0.31.10",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10"
   }
 }
