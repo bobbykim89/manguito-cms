@@ -124,6 +124,11 @@ createServer(async (req, res) => {
     }
     try {
       const data = await readFile(filePath)
+      // Hashed assets are content-addressed → cache forever. The SPA shell must
+      // revalidate so a new deploy's index.html (referencing new asset hashes)
+      // is picked up instead of a stale cached shell.
+      const isAsset = path.startsWith(ADMIN_PREFIX + '/assets/')
+      res.setHeader('Cache-Control', isAsset ? 'public, max-age=31536000, immutable' : 'no-cache')
       res.setHeader('Content-Type', ADMIN_MIME[extname(filePath).slice(1).toLowerCase()] ?? 'application/octet-stream')
       res.end(data)
     } catch { res.statusCode = 404; res.end('Not found') }
@@ -170,8 +175,14 @@ app.get(\`\${ADMIN_PREFIX}/*\`, async (c) => {
   }
   try {
     const data = await readFile(filePath)
+    // Hashed assets cache forever; the SPA shell revalidates every load so a
+    // new deploy's index.html is never served stale from cache.
+    const isAsset = c.req.path.startsWith(ADMIN_PREFIX + '/assets/')
     return new Response(data, {
-      headers: { 'Content-Type': ADMIN_MIME[extname(filePath).slice(1).toLowerCase()] ?? 'application/octet-stream' },
+      headers: {
+        'Content-Type': ADMIN_MIME[extname(filePath).slice(1).toLowerCase()] ?? 'application/octet-stream',
+        'Cache-Control': isAsset ? 'public, max-age=31536000, immutable' : 'no-cache',
+      },
     })
   } catch {
     return c.text('Not found', 404)

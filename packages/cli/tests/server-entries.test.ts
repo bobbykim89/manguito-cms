@@ -35,4 +35,11 @@ describe('static serving hardening (codegen)', () => {
     expect(node).toContain('SAFE_INLINE_MIME')
     expect(node).toContain('Content-Disposition')
   })
+
+  it('sets no-cache on the admin shell and immutable on hashed assets', () => {
+    for (const src of [node, shared]) {
+      expect(src).toContain('public, max-age=31536000, immutable')
+      expect(src).toContain('no-cache')
+    }
+  })
 })
