@@ -163,7 +163,7 @@ the env vars they read are verified against source:
 | Factory | Import path | Options (verified) | Reads env |
 | --- | --- | --- | --- |
 | `createPostgresAdapter()` | `@bobbykim/manguito-cms-db` | `{ url?, serverless?, pool? { max?, idle_timeout? } }` | `DB_URL` |
-| `createLocalAdapter()` | `@bobbykim/manguito-cms-api/storage` | `{ upload_dir? }` (default `./uploads`; throws in `NODE_ENV=production`) | `NODE_ENV` |
+| `createLocalAdapter()` | `@bobbykim/manguito-cms-api/storage` | `{ upload_dir? }` (default `./uploads`; only warns in `NODE_ENV=production` — does not throw, does not disable the adapter) | `NODE_ENV` |
 | `createS3Adapter()` | `@bobbykim/manguito-cms-api/storage` | `{ bucket, region, prefix?, access_key_id?, secret_access_key? }` | (creds via options or AWS SDK chain) |
 | `createCloudinaryAdapter()` | `@bobbykim/manguito-cms-api/storage` | `{ cloud_name?, folder?, access_key_id?, secret_access_key? }` | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` |
 | `createServer()` | `@bobbykim/manguito-cms-api` | `{ port?, base_url?, cors? { origin, methods?, credentials?, enabled? } }` | `PORT`, `ALLOWED_ORIGIN` |
@@ -179,8 +179,9 @@ Source: `packages/db/src/adapters/postgres.ts`, `packages/api/src/storage/adapte
 
 **Local** — writes to disk. Not recommended for production (files don't
 persist across container restarts or serverless invocations); the factory
-warns (and the CLI/build step treats it as unsupported) when `NODE_ENV` is
-`'production'`.
+only warns via `console.warn` when `NODE_ENV` is `'production'` — it does not
+throw and does not disable the adapter, and there is no CLI/build-step
+enforcement.
 
 ```ts
 import { createLocalAdapter } from '@bobbykim/manguito-cms-api/storage'
@@ -217,9 +218,9 @@ storage: createCloudinaryAdapter({ folder: 'my-cms' })
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
 | `DB_URL` | yes | — | Postgres connection string (`postgres://…`) |
-| `AUTH_SECRET` | yes (prod) | — | JWT signing secret |
+| `AUTH_SECRET` | yes | — | JWT signing secret; required by any token sign/verify path (`signToken`/`verifyToken`, admin media pending-upload tokens) regardless of environment |
 | `PORT` | no | `3000` | Node server port |
-| `NODE_ENV` | no | `development` | Env mode; `production` disables local storage adapter |
+| `NODE_ENV` | no | `development` | Env mode; `production` only makes the local storage adapter print a `console.warn` (no throw, no disable) |
 | `ALLOWED_ORIGIN` | no | `*` | CORS allowed origin |
 | `CLOUDINARY_CLOUD_NAME` | if Cloudinary | — | Cloudinary cloud name |
 | `CLOUDINARY_API_KEY` | if Cloudinary | — | Cloudinary API key |
