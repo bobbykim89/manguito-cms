@@ -25,7 +25,7 @@ export default defineConfig({
   // Storage — alternatives:
   //   createLocalAdapter({ upload_dir: process.env['STORAGE_LOCAL_UPLOAD_DIR'] })
   //   createS3Adapter({ bucket: process.env['STORAGE_S3_BUCKET'], region: process.env['STORAGE_S3_REGION'] })
-  //   createCloudinaryAdapter({ cloud_name: process.env['STORAGE_CLOUDINARY_CLOUD_NAME'], api_key: process.env['STORAGE_CLOUDINARY_API_KEY'], api_secret: process.env['STORAGE_CLOUDINARY_API_SECRET'] })
+  //   createCloudinaryAdapter({ cloud_name: process.env['CLOUDINARY_CLOUD_NAME'], access_key_id: process.env['CLOUDINARY_API_KEY'], secret_access_key: process.env['CLOUDINARY_API_SECRET'] })
   storage: {{storageAdapter}},
 
   server: createServer({

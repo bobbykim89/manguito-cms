@@ -2,6 +2,8 @@
   "name": "content--blog_post",
   "label": "Blog Post",
   "type": "content-type",
+  "default_base_path": "posts",
+  "only_one": false,
   "fields": [
     {
       "tab": {
