@@ -7,7 +7,15 @@ import type {
   PaginatedResult,
   SchemaRegistry,
 } from '@bobbykim/manguito-cms-core'
-import type { ParsedContentType } from '@bobbykim/manguito-cms-core'
+import type { ParsedContentType, ParsedTaxonomyType } from '@bobbykim/manguito-cms-core'
+import type { createPermissionMiddleware } from '../../middleware/permission'
+
+// This suite exercises route business logic directly (validation, media/paragraph
+// wiring), not permission enforcement — that's covered by the admin integration
+// suite. Stand in for the real requirePermission with an always-allow middleware
+// so it isn't the no-op shim (removed — Finding #6) but still lets requests through.
+const noopRequirePermission: ReturnType<typeof createPermissionMiddleware> = () => async (_c, next) =>
+  next()
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -117,6 +125,37 @@ const SINGLETON_TYPE: ParsedContentType = {
   },
 }
 
+const CATEGORY_TYPE: ParsedTaxonomyType = {
+  schema_type: 'taxonomy-type',
+  name: 'category',
+  label: 'Category',
+  source_file: 'category.yml',
+  system_fields: [
+    { name: 'id', db_type: 'uuid', primary_key: true, nullable: false },
+    { name: 'published', db_type: 'boolean', default: 'false', nullable: false },
+    { name: 'created_at', db_type: 'timestamp', nullable: false },
+    { name: 'updated_at', db_type: 'timestamp', nullable: false },
+  ],
+  fields: [
+    {
+      name: 'label',
+      label: 'Label',
+      field_type: 'text/plain',
+      required: true,
+      nullable: false,
+      order: 0,
+      validation: { required: true },
+      db_column: { column_name: 'label', column_type: 'varchar', nullable: false },
+      ui_component: { component: 'text-input' },
+    },
+  ],
+  db: { table_name: 'taxonomy_category' },
+  api: {
+    collection_path: '/api/taxonomy/category',
+    item_path: '/api/taxonomy/category/:id',
+  },
+}
+
 function makeEmptyPage(): PaginatedResult<unknown> {
   return {
     ok: true,
@@ -164,6 +203,7 @@ describe('admin content routes', () => {
   let mockBlogRepo: ContentRepository<unknown>
   let mockSingletonRepo: ContentRepository<unknown>
   let mockMediaTypeRepo: ContentRepository<unknown>
+  let mockCategoryRepo: ContentRepository<unknown>
   let mockMediaRepo: MediaRepository
 
   const registry: SchemaRegistry = {
@@ -176,7 +216,9 @@ describe('admin content routes', () => {
       'page-with-image': MEDIA_TYPE,
     },
     paragraph_types: {},
-    taxonomy_types: {},
+    taxonomy_types: {
+      category: CATEGORY_TYPE,
+    },
     enum_types: {},
     all_schemas: [],
   }
@@ -185,13 +227,15 @@ describe('admin content routes', () => {
     mockBlogRepo = makeMockRepo()
     mockSingletonRepo = makeMockRepo()
     mockMediaTypeRepo = makeMockRepo()
+    mockCategoryRepo = makeMockRepo()
     mockMediaRepo = makeMockMediaRepo()
     app = new Hono()
     registerAdminContentRoutes(app, registry, {
       'blog-post': mockBlogRepo,
       'home-page': mockSingletonRepo,
       'page-with-image': mockMediaTypeRepo,
-    }, mockMediaRepo)
+      category: mockCategoryRepo,
+    }, mockMediaRepo, noopRequirePermission)
   })
 
   describe('PATCH — publish validation', () => {
@@ -416,6 +460,115 @@ describe('admin content routes', () => {
       expect(res.status).toBe(200)
       expect(mockMediaRepo.incrementReferenceCount).not.toHaveBeenCalled()
       expect(mockMediaRepo.decrementReferenceCount).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('POST — publish gate (Finding #11)', () => {
+    // Mimics the real createPermissionMiddleware's denial shape (see
+    // middleware/permission.ts) but allows every permission except content:edit —
+    // there is no fixture role with content:create and not content:edit (all real
+    // roles hold both, or neither), so the gate can only be proven at this level.
+    // (Both the content and taxonomy create/update paths use content:edit as the
+    // publish permission, so this single stub exercises both surfaces.)
+    const selectiveRequirePermission: ReturnType<typeof createPermissionMiddleware> =
+      (permission) => async (c, next) => {
+        if (permission === 'content:edit') {
+          return c.json(
+            {
+              ok: false,
+              error: { code: 'INSUFFICIENT_PERMISSION', message: 'Insufficient permission' },
+            },
+            403
+          )
+        }
+        return next()
+      }
+
+    function makeCreateOnlyApp(): Hono {
+      const createOnlyApp = new Hono()
+      registerAdminContentRoutes(createOnlyApp, registry, {
+        'blog-post': mockBlogRepo,
+        'home-page': mockSingletonRepo,
+        'page-with-image': mockMediaTypeRepo,
+        category: mockCategoryRepo,
+      }, mockMediaRepo, selectiveRequirePermission)
+      return createOnlyApp
+    }
+
+    it('POST content with published: true is denied without content:edit', async () => {
+      const res = await makeCreateOnlyApp().request('/admin/api/content/blog-post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          slug: 'draft-attempt',
+          blog_title: 'Test',
+          blog_meta_title: 'Meta',
+          published: true,
+        }),
+      })
+
+      expect(res.status).toBe(403)
+      const body = await res.json() as { ok: boolean; error: { code: string } }
+      expect(body.ok).toBe(false)
+      expect(body.error.code).toBe('INSUFFICIENT_PERMISSION')
+      expect(mockBlogRepo.create).not.toHaveBeenCalled()
+    })
+
+    it('POST content with published: false succeeds under the same selective stub', async () => {
+      ;(mockBlogRepo.create as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'item-1',
+        slug: 'draft-attempt',
+        blog_title: 'Test',
+        blog_meta_title: 'Meta',
+        published: false,
+      })
+
+      const res = await makeCreateOnlyApp().request('/admin/api/content/blog-post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          slug: 'draft-attempt',
+          blog_title: 'Test',
+          blog_meta_title: 'Meta',
+          published: false,
+        }),
+      })
+
+      expect(res.status).toBe(201)
+      const body = await res.json() as { ok: boolean }
+      expect(body.ok).toBe(true)
+    })
+
+    it('POST taxonomy with published: true is denied without content:edit', async () => {
+      const res = await makeCreateOnlyApp().request('/admin/api/taxonomy/category', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label: 'News', published: true }),
+      })
+
+      expect(res.status).toBe(403)
+      const body = await res.json() as { ok: boolean; error: { code: string } }
+      expect(body.ok).toBe(false)
+      expect(body.error.code).toBe('INSUFFICIENT_PERMISSION')
+      expect(mockCategoryRepo.create).not.toHaveBeenCalled()
+    })
+
+    it('POST taxonomy with published: false succeeds under the same selective stub', async () => {
+      ;(mockCategoryRepo.create as ReturnType<typeof vi.fn>).mockResolvedValue({
+        id: 'term-1',
+        label: 'News',
+        published: false,
+      })
+
+      const res = await makeCreateOnlyApp().request('/admin/api/taxonomy/category', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label: 'News', published: false }),
+      })
+
+      expect(res.status).toBe(201)
+      const body = await res.json() as { ok: boolean }
+      expect(body.ok).toBe(true)
     })
   })
 

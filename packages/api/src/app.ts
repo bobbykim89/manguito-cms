@@ -1,14 +1,15 @@
 import { Hono } from 'hono'
 import { sql } from 'drizzle-orm'
-import type { StorageAdapter, SchemaRegistry, ParsedContentType, ParsedTaxonomyType } from '@bobbykim/manguito-cms-core'
+import type { StorageAdapter, SchemaRegistry, ParsedContentType, ParsedTaxonomyType, ResolvedRateLimitConfig, CorsConfig } from '@bobbykim/manguito-cms-core'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import { createCorsMiddleware } from './middleware/cors.js'
+import { createSecurityHeadersMiddleware } from './middleware/security-headers.js'
 import { errorHandler } from './middleware/error.js'
 import { createAuthMiddleware } from './middleware/auth.js'
 import { mustChangePasswordCheck } from './middleware/must-change-password.js'
 import { createPermissionMiddleware } from './middleware/permission.js'
 import { createHierarchyMiddleware } from './middleware/hierarchy.js'
-import { createRateLimitMiddleware } from './middleware/rate-limit.js'
+import { resolveListRateLimit } from './middleware/rate-limit.js'
 import { buildRolesRegistry } from './auth/registry.js'
 import { registerPublicContentRoutes } from './routes/content.js'
 import { registerPublicMediaRoutes } from './routes/media.js'
@@ -33,14 +34,8 @@ export type CreateCmsAppOptions = {
     /** Optional upload size cap in bytes. Returned by GET /admin/api/config for client-side UX validation. */
     max_file_size?: number
   }
-  rateLimit?: {
-    /** Rate limiting applied to public list endpoints only (paginated collections, not single-item lookups). */
-    findAll?: {
-      windowMs?: number
-      maxPerIp?: number
-      maxGlobal?: number
-    }
-  }
+  rateLimit?: ResolvedRateLimitConfig
+  cors?: CorsConfig
 }
 
 export interface ManguitoCmsAPIAdapter {
@@ -64,7 +59,7 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
   }
 
   const prefix = options.prefix ?? '/api'
-  const { storage, registry, db, rateLimit, media } = options
+  const { storage, registry, db, rateLimit, media, cors } = options
   const cmsName = options.name ?? 'Manguito CMS'
   const maxFileSize = media?.max_file_size
 
@@ -74,17 +69,23 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
 
   const app = new Hono()
 
+  // Security headers for all routes — registered before CORS so normal and
+  // CORS-handled responses carry the conservative defaults. Responses produced
+  // by app.onError (thrown errors) bypass this middleware's post-next step;
+  // those are JSON error envelopes with no clickjacking/XSS surface. CSP
+  // connect-src is derived from the storage adapter: presigned uploads go
+  // browser→storage directly, so that host must be allowlisted.
+  const uploadOrigins = storage.getUploadOrigins?.() ?? []
+  app.use('*', createSecurityHeadersMiddleware({ connectSrc: uploadOrigins }))
+
   // CORS for all routes
-  app.use('*', createCorsMiddleware({ origin: '*', enabled: true }))
+  app.use('*', createCorsMiddleware(cors ?? { origin: '*', enabled: true }))
   app.onError(errorHandler)
 
   // Rate limiter for public list endpoints — threaded into route registrators,
   // applied only to paginated collection routes (not single-item lookups).
-  const listRateLimit = createRateLimitMiddleware({
-    windowMs: rateLimit?.findAll?.windowMs ?? 60_000,
-    maxPerIp: rateLimit?.findAll?.maxPerIp ?? 30,
-    maxGlobal: rateLimit?.findAll?.maxGlobal ?? 500,
-  })
+  // `undefined` when disabled via rateLimit.findAll === '*'.
+  const listRateLimit = resolveListRateLimit(rateLimit)
 
   // ── Middleware factories — all close over rolesRegistry built once at startup ──
 

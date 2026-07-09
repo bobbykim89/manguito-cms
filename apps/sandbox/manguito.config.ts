@@ -51,6 +51,11 @@ export default defineConfig({
   api: createAPIAdapter({
     prefix: '/api',
     media: { max_file_size: 4 * 1024 * 1024 },
+    // Rate limiting for public list endpoints (paginated collections).
+    // Defaults: 30 req/IP and 500 req global per 60s window when omitted.
+    //   rateLimit: { findAll: { windowMs: 60_000, maxPerIp: 30, maxGlobal: 500 } },
+    // Set findAll to '*' to disable the list-endpoint limiter entirely:
+    //   rateLimit: { findAll: '*' },
   }),
 
   admin: createAdminAdapter({ prefix: '/admin' }),

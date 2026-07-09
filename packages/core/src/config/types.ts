@@ -85,6 +85,15 @@ export interface StorageAdapter {
   getUrl(key: string): string
   getPresignedUploadUrl(options: PresignedOptions): Promise<PresignedResult>
   upload?(key: string, data: Uint8Array, mimeType: string): Promise<void>
+  /** Optional metadata lookup used to validate uploaded objects on confirm. */
+  stat?(key: string): Promise<{ size: number; content_type?: string } | null>
+  /**
+   * Cross-origin hosts the browser connects to during a presigned upload,
+   * as CSP connect-src origins (scheme + host, no path). Used to build the
+   * Content-Security-Policy. Adapters whose uploads are same-origin (local)
+   * omit this.
+   */
+  getUploadOrigins?(): string[]
 }
 
 // ─── Server Adapter ───────────────────────────────────────────────────────────
@@ -108,9 +117,25 @@ export type ResolvedMediaConfig = {
   max_file_size?: number
 }
 
+export type ResolvedRateLimitConfig = {
+  /**
+   * Rate limiting for public list endpoints (paginated collections, not
+   * single-item lookups). Set `findAll: '*'` to disable the list-endpoint
+   * limiter entirely.
+   */
+  findAll?:
+    | '*'
+    | {
+        windowMs?: number
+        maxPerIp?: number
+        maxGlobal?: number
+      }
+}
+
 export interface APIAdapter {
   readonly prefix: string
   readonly media?: ResolvedMediaConfig
+  readonly rateLimit?: ResolvedRateLimitConfig
 }
 
 // ─── Admin Adapter ────────────────────────────────────────────────────────────

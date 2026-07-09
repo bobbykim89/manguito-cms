@@ -17,6 +17,7 @@ export type {
   ServerAdapter,
   ResolvedMediaConfig,
   APIAdapter,
+  ResolvedRateLimitConfig,
   AdminAdapter,
   ManguitoConfig,
   ResolvedManguitoConfig,

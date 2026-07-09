@@ -161,6 +161,8 @@ export async function runDev(
     storage: config.storage,
     ...(config.api.prefix ? { prefix: config.api.prefix } : {}),
     ...(config.api.media?.max_file_size ? { media: { max_file_size: config.api.media.max_file_size } } : {}),
+    ...(config.api.rateLimit ? { rateLimit: config.api.rateLimit } : {}),
+    ...(config.server.cors ? { cors: config.server.cors } : {}),
   })
 
   // Hot-swappable fetch handler — mutated by onSchemaFileChange
@@ -308,6 +310,8 @@ async function onSchemaFileChange(args: OnSchemaFileChangeArgs): Promise<void> {
     storage: config.storage,
     ...(config.api.prefix ? { prefix: config.api.prefix } : {}),
     ...(config.api.media?.max_file_size ? { media: { max_file_size: config.api.media.max_file_size } } : {}),
+    ...(config.api.rateLimit ? { rateLimit: config.api.rateLimit } : {}),
+    ...(config.server.cors ? { cors: config.server.cors } : {}),
   })
   updateFetch((req) => newAdapter.app.fetch(req))
 

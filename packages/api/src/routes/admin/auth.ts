@@ -16,16 +16,37 @@ import { createAuthMiddleware } from '../../middleware/auth.js'
 // ─── Rate limiting ────────────────────────────────────────────────────────────
 
 const loginAttempts = new Map<string, number[]>()
+const globalLoginAttempts: number[] = []
 
 const RATE_LIMIT_MAX = 10
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000
+// Global backstop across all IPs/emails — blunts distributed spraying without
+// per-account lockout (ADR api/0005). Sized well above legitimate concurrent
+// login volume for a self-hosted CMS.
+const GLOBAL_LOGIN_MAX = 100
+
+// A valid cost-12 bcrypt hash used only to equalize timing on the
+// user-not-found path, so login response time cannot enumerate accounts.
+const DUMMY_PASSWORD_HASH =
+  '$2a$12$y.MZw/Q4Ceg3x1y3xrRaeuTaM09zSDx1nn78guO3bqc9vgOqGda42'
 
 function checkRateLimit(key: string): { allowed: boolean; retryAfterSeconds: number } {
   const now = Date.now()
   const windowStart = now - RATE_LIMIT_WINDOW_MS
+
+  // Global ceiling first — purge, then evaluate before recording the per-key hit.
+  while (globalLoginAttempts.length > 0 && globalLoginAttempts[0]! <= windowStart) {
+    globalLoginAttempts.shift()
+  }
+  if (globalLoginAttempts.length >= GLOBAL_LOGIN_MAX) {
+    const retryAfterSeconds = Math.ceil((globalLoginAttempts[0]! + RATE_LIMIT_WINDOW_MS - now) / 1000)
+    return { allowed: false, retryAfterSeconds }
+  }
+
   const attempts = (loginAttempts.get(key) ?? []).filter((t) => t > windowStart)
   attempts.push(now)
   loginAttempts.set(key, attempts)
+  globalLoginAttempts.push(now)
 
   if (attempts.length > RATE_LIMIT_MAX) {
     const oldestInWindow = attempts[0]!
@@ -34,6 +55,12 @@ function checkRateLimit(key: string): { allowed: boolean; retryAfterSeconds: num
   }
 
   return { allowed: true, retryAfterSeconds: 0 }
+}
+
+/** Test-only: clears in-process login rate-limit state. Not part of the public API. */
+export function __resetLoginRateLimitStateForTests(): void {
+  loginAttempts.clear()
+  globalLoginAttempts.length = 0
 }
 
 // ─── DB row types ─────────────────────────────────────────────────────────────
@@ -100,6 +127,9 @@ export function registerAuthRoutes(app: Hono, db: DrizzlePostgresInstance): void
     const user = userResult.rows[0] as LoginUserRow | undefined
 
     if (!user) {
+      // Run a dummy comparison so this path pays the same bcrypt cost as a
+      // real user, closing the user-enumeration timing side-channel.
+      await verifyPassword(password, DUMMY_PASSWORD_HASH)
       return c.json(invalidCredentials, 401)
     }
 

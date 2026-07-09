@@ -2,7 +2,6 @@
 import type { Context, Hono } from 'hono'
 import type { MediaRepository, StorageAdapter } from '@bobbykim/manguito-cms-core'
 import { sign, verify } from 'hono/jwt'
-import { requireAuth } from '../../middleware/auth.js'
 import type { createPermissionMiddleware } from '../../middleware/permission.js'
 
 // ─── Accepted MIME types ──────────────────────────────────────────────────────
@@ -201,7 +200,6 @@ export function registerAdminMediaRoutes(
   // POST /admin/api/media/image
   app.post(
     '/admin/api/media/image',
-    requireAuth,
     requirePermission('media:create'),
     async (c) => {
       return handleDirectUpload('image', IMAGE_MIME_TYPES, mediaRepo, storage, c, false, maxFileSize)
@@ -211,7 +209,6 @@ export function registerAdminMediaRoutes(
   // POST /admin/api/media/video
   app.post(
     '/admin/api/media/video',
-    requireAuth,
     requirePermission('media:create'),
     async (c) => {
       return handleDirectUpload('video', VIDEO_MIME_TYPES, mediaRepo, storage, c, true, maxFileSize)
@@ -221,7 +218,6 @@ export function registerAdminMediaRoutes(
   // POST /admin/api/media/file
   app.post(
     '/admin/api/media/file',
-    requireAuth,
     requirePermission('media:create'),
     async (c) => {
       return handleDirectUpload('file', FILE_MIME_TYPES, mediaRepo, storage, c, true, maxFileSize)
@@ -229,7 +225,7 @@ export function registerAdminMediaRoutes(
   )
 
   // GET /admin/api/media/presigned-url
-  app.get('/admin/api/media/presigned-url', requireAuth, requirePermission('media:create'), async (c) => {
+  app.get('/admin/api/media/presigned-url', requirePermission('media:create'), async (c) => {
     const type = c.req.query('type') as 'image' | 'video' | 'file' | undefined
     const filename = c.req.query('filename')
     const mimeType = c.req.query('mime_type')
@@ -327,7 +323,7 @@ export function registerAdminMediaRoutes(
   })
 
   // POST /admin/api/media/confirm/:id
-  app.post('/admin/api/media/confirm/:id', requireAuth, requirePermission('media:create'), async (c) => {
+  app.post('/admin/api/media/confirm/:id', requirePermission('media:create'), async (c) => {
     const id = c.req.param('id')
 
     const pending = await verifyPendingUpload(id)
@@ -362,6 +358,37 @@ export function registerAdminMediaRoutes(
       )
     }
 
+    // Validate the actual uploaded object where the adapter supports it.
+    let fileSize = 0
+    if (storage.stat) {
+      const meta = await storage.stat(pending.key)
+      if (!meta) {
+        return c.json(
+          { ok: false, error: { code: 'STORAGE_ERROR', message: 'Uploaded object not found' } },
+          502,
+        )
+      }
+      const accepted =
+        pending.folder === 'image' ? IMAGE_MIME_TYPES
+        : pending.folder === 'video' ? VIDEO_MIME_TYPES
+        : FILE_MIME_TYPES
+      if (meta.content_type && !accepted.has(meta.content_type)) {
+        await storage.delete(pending.key)
+        return c.json(
+          { ok: false, error: { code: 'UNSUPPORTED_MIME_TYPE', message: `Stored object type '${meta.content_type}' is not accepted` } },
+          415,
+        )
+      }
+      if (maxFileSize !== undefined && meta.size > maxFileSize) {
+        await storage.delete(pending.key)
+        return c.json(
+          { ok: false, error: { code: 'FILE_TOO_LARGE', message: `Uploaded file exceeds the ${maxFileSize} byte limit` } },
+          413,
+        )
+      }
+      fileSize = meta.size
+    }
+
     const url = storage.getUrl(pending.key)
 
     const item = await mediaRepo.create({
@@ -369,7 +396,7 @@ export function registerAdminMediaRoutes(
       url,
       mime_type: pending.mime_type,
       ...(altValue !== undefined && { alt: altValue }),
-      file_size: 0,
+      file_size: fileSize,
     })
 
     return c.json({ ok: true, data: item }, 201)
@@ -378,7 +405,6 @@ export function registerAdminMediaRoutes(
   // PATCH /admin/api/media/:id
   app.patch(
     '/admin/api/media/:id',
-    requireAuth,
     requirePermission('media:edit'),
     async (c) => {
       const id = c.req.param('id')
@@ -412,7 +438,6 @@ export function registerAdminMediaRoutes(
   // DELETE /admin/api/media/:id
   app.delete(
     '/admin/api/media/:id',
-    requireAuth,
     requirePermission('media:delete'),
     async (c) => {
       const id = c.req.param('id')
@@ -469,7 +494,7 @@ export function registerAdminMediaRoutes(
   )
 
   // GET /admin/api/media
-  app.get('/admin/api/media', requireAuth, requirePermission('media:read'), async (c) => {
+  app.get('/admin/api/media', requirePermission('media:read'), async (c) => {
     const pageStr = c.req.query('page')
     const perPageStr = c.req.query('per_page')
     const page = pageStr !== undefined ? Number(pageStr) : 1
@@ -519,7 +544,7 @@ export function registerAdminMediaRoutes(
   })
 
   // GET /admin/api/media/:id
-  app.get('/admin/api/media/:id', requireAuth, requirePermission('media:read'), async (c) => {
+  app.get('/admin/api/media/:id', requirePermission('media:read'), async (c) => {
     const id = c.req.param('id')
     const item = await mediaRepo.findOne(id)
 

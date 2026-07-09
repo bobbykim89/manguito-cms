@@ -83,10 +83,3 @@ export function createAuthMiddleware(db: DrizzlePostgresInstance): MiddlewareHan
     await next()
   }
 }
-
-// Phase 5 compatibility shims — in use by routes/admin/content.ts and
-// routes/admin/media.ts until route wiring is completed in Phase 6.
-export const requireAuth: MiddlewareHandler = async (_c, next) => next()
-export function requirePermission(_permission: string): MiddlewareHandler {
-  return async (_c, next) => next()
-}

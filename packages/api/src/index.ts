@@ -1,4 +1,4 @@
-import type { APIAdapter } from '@bobbykim/manguito-cms-core'
+import type { APIAdapter, ResolvedRateLimitConfig } from '@bobbykim/manguito-cms-core'
 
 export { createCmsApp } from './app.js'
 export type { CreateCmsAppOptions } from './app.js'
@@ -13,6 +13,7 @@ export type APIAdapterOptions = {
   media?: {
     max_file_size?: number
   }
+  rateLimit?: ResolvedRateLimitConfig
 }
 
 export function createAPIAdapter(options: APIAdapterOptions = {}): APIAdapter {
@@ -21,5 +22,9 @@ export function createAPIAdapter(options: APIAdapterOptions = {}): APIAdapter {
     ? { max_file_size: options.media.max_file_size }
     : undefined
 
-  return { prefix, ...(media !== undefined && { media }) }
+  return {
+    prefix,
+    ...(media !== undefined && { media }),
+    ...(options.rateLimit !== undefined && { rateLimit: options.rateLimit }),
+  }
 }

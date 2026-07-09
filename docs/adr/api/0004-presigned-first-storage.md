@@ -31,3 +31,10 @@ Uploads go directly from the client to the storage backend via a presigned URL �
 - Delete is storage-first then DB: if the storage delete fails the DB row is kept, so a media row never points at a missing file; the reverse orphan (file with no row) is swept by `reference_count` orphan tracking.
 - The interface retains an optional `upload?()` that the local adapter uses internally for its simulated endpoint — the only place binary touches the server, and only in local dev.
 - `/storage` and `/runtime` are separate package entry points so consumers don't bundle cloud SDKs (AWS, Cloudinary) they don't use.
+
+> **Amendment (2026-07, security round):** `StorageAdapter` gained an optional
+> `stat(key)`; the media `confirm` step now uses it (where available) to reject
+> objects exceeding `max_file_size` (`413`) or whose stored content-type is
+> outside the accepted set (`415`), deleting the offending object, and to record
+> the true `file_size` (previously hardcoded `0`). Adapters without `stat`
+> (Cloudinary) skip enforcement — tracked as a follow-up. Refs audit Finding #8.

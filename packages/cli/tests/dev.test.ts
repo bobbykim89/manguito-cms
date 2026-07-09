@@ -193,4 +193,19 @@ describe('runDev', () => {
     expect(httpCreateServer).not.toHaveBeenCalled()
     exitSpy.mockRestore()
   })
+
+  it('forwards config.api.rateLimit to createCmsApp', async () => {
+    vi.mocked(resolveConfig).mockResolvedValue({
+      ...MOCK_CONFIG,
+      api: { prefix: '/api', rateLimit: { findAll: '*' } },
+    } as never)
+    const db = makeDb([{ rows: [{ count: 1 }] }])
+    vi.mocked(connectDb).mockResolvedValue(db as never)
+
+    await runDev({}, { cwd: FAKE_CWD })
+
+    expect(createCmsApp).toHaveBeenCalledWith(
+      expect.objectContaining({ rateLimit: { findAll: '*' } }),
+    )
+  })
 })

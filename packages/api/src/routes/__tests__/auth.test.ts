@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { Hono } from 'hono'
-import { registerAuthRoutes } from '../admin/auth'
+import { registerAuthRoutes, __resetLoginRateLimitStateForTests } from '../admin/auth'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 
 vi.mock('../../auth/password', () => ({
@@ -56,6 +56,13 @@ beforeEach(() => {
 })
 
 describe('POST /admin/api/auth/login', () => {
+  // loginAttempts / the global window are module-level state in auth.ts, shared
+  // across every test in this file. Reset it before each test so the rate-limit
+  // tests are order-independent (no test relies on running first or last).
+  beforeEach(() => {
+    __resetLoginRateLimitStateForTests()
+  })
+
   it('unknown email → 401 INVALID_CREDENTIALS', async () => {
     // DB returns no user row
     const app = buildApp(makeDbWith([]))
@@ -66,8 +73,9 @@ describe('POST /admin/api/auth/login', () => {
     const body = await res.json() as { ok: boolean; error: { code: string } }
     expect(body.ok).toBe(false)
     expect(body.error.code).toBe('INVALID_CREDENTIALS')
-    // verifyPassword must never be called — no timing attack vector if user not found
-    expect(verifyPassword).not.toHaveBeenCalled()
+    // A dummy compare runs against a fixed hash so the not-found path pays the
+    // same bcrypt cost as a real user, closing the user-enumeration timing oracle
+    expect(verifyPassword).toHaveBeenCalledTimes(1)
   })
 
   it('wrong password → 401 INVALID_CREDENTIALS (same response as unknown email)', async () => {
@@ -111,5 +119,24 @@ describe('POST /admin/api/auth/login', () => {
     expect(body.ok).toBe(false)
     expect(body.error.code).toBe('RATE_LIMITED')
     expect(res.headers.get('retry-after')).not.toBeNull()
+  })
+
+  it('applies a global login-attempt ceiling across distinct emails', async () => {
+    // GLOBAL_LOGIN_MAX is 100. Fire >100 login attempts across unique emails
+    // from unique IPs so neither the per-(ip,email) bucket trips; the global
+    // ceiling must eventually return 429.
+    // The module-level rate-limit state is cleared in beforeEach, so this test
+    // starts from an empty global window regardless of test ordering.
+    const app = buildApp(makeDbWith([]))
+    let saw429 = false
+    for (let i = 0; i < 105; i++) {
+      const res = await app.request('/admin/api/auth/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-forwarded-for': `10.1.${i}.1` },
+        body: JSON.stringify({ email: `u${i}@example.com`, password: 'x' }),
+      })
+      if (res.status === 429) { saw429 = true; break }
+    }
+    expect(saw429).toBe(true)
   })
 })

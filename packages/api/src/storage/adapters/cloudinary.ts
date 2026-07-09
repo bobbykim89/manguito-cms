@@ -143,5 +143,10 @@ export function createCloudinaryAdapter(
         `Cloudinary delete failed: ${json.error?.message ?? json.result ?? res.statusText}`
       )
     },
+
+    getUploadOrigins(): string[] {
+      // Uploads POST to api.cloudinary.com (cloud_name is in the path, not the host).
+      return ['https://api.cloudinary.com']
+    },
   }
 }
