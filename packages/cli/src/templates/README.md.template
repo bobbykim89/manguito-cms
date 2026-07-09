@@ -10,6 +10,8 @@ A headless CMS project powered by [Manguito CMS](https://github.com/bobbykim89/m
    cp .env.example .env
    ```
 
+   At minimum, set `DB_URL` and `AUTH_SECRET`.
+
 2. Install dependencies:
 
    ```bash
@@ -38,16 +40,24 @@ A headless CMS project powered by [Manguito CMS](https://github.com/bobbykim89/m
 | `pnpm migrate`    | Apply pending database migrations                     |
 | `pnpm validate`   | Validate all schemas and config                       |
 
+Other CLI commands (run via `pnpm exec manguito <command>`): `createsuperuser`, `users:promote`, `users:demote`, `migrate:status`.
+
 ## Project structure
 
 ```
 schemas/
 ├── content-types/    ← Content type schema definitions
 ├── paragraph-types/  ← Reusable paragraph block definitions
-└── taxonomy-types/   ← Taxonomy (tag/category) definitions
+├── taxonomy-types/   ← Taxonomy (tag/category) definitions
+└── enum-types/       ← Enum type definitions
 
-roles.json            ← Role hierarchy and permissions
-routes.json           ← Public API route configuration
+migrations/            ← Generated database migrations
 
-manguito.config.ts    ← CMS configuration
+.env.example           ← Environment variable template
+roles.json             ← Role hierarchy and permissions
+routes.json            ← Public API route configuration
+
+manguito.config.ts     ← CMS configuration
 ```
+
+Full documentation: https://github.com/bobbykim89/manguito-cms#readme
