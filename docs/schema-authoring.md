@@ -51,7 +51,9 @@ and it differs by document type:
   parser strips them to produce a flat field list internally.
 - **Paragraph types and taxonomy types use a flat `fields[]` array.** No
   tabs — each entry in `fields` is a field definition directly. An empty
-  `fields` array is valid (system fields like `id` are always injected).
+  `fields` array is valid (system fields like `id` are always injected) —
+  note this only applies to this top-level `fields[]`; a content-type
+  *tab's* internal `fields` array still requires at least one field.
 - **Enum types have no `fields` at all.** They have a `values[]` array of
   strings instead.
 
@@ -66,6 +68,8 @@ Content-type example (tabs **required**):
   "name": "content--blog_post",
   "label": "Blog Post",
   "type": "content-type",
+  "default_base_path": "posts",
+  "only_one": false,
   "fields": [
     { "tab": { "name": "content", "label": "Content", "fields": [
       { "name": "blog_title", "label": "Title", "type": "text/plain", "required": true },
