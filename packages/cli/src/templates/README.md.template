@@ -49,14 +49,13 @@ schemas/
 ├── content-types/    ← Content type schema definitions
 ├── paragraph-types/  ← Reusable paragraph block definitions
 ├── taxonomy-types/   ← Taxonomy (tag/category) definitions
-└── enum-types/       ← Enum type definitions
+├── enum-types/       ← Enum type definitions
+├── roles.json        ← Role hierarchy and permissions
+└── routes.json       ← Public API route configuration
 
 migrations/            ← Generated database migrations
 
 .env.example           ← Environment variable template
-roles.json             ← Role hierarchy and permissions
-routes.json            ← Public API route configuration
-
 manguito.config.ts     ← CMS configuration
 ```
 
