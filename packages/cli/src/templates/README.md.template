@@ -18,17 +18,16 @@ A headless CMS project powered by [Manguito CMS](https://github.com/bobbykim89/m
    pnpm install
    ```
 
-3. Create the first admin user:
-
-   ```bash
-   pnpm exec manguito createsuperuser
-   ```
-
-4. Start the development server:
+3. Start the development server:
 
    ```bash
    pnpm dev
    ```
+
+   The first run auto-migrates the database, seeds system roles, and prompts
+   you to create the first admin account.
+
+Alternatively, run `pnpm migrate` then `pnpm exec manguito createsuperuser` to set up without starting the dev server.
 
 ## Commands
 

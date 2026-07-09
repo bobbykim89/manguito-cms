@@ -129,7 +129,7 @@ Required. The result of `createAPIAdapter()` from `@bobbykim/manguito-cms-api`.
 ```ts
 api: createAPIAdapter({
   prefix: '/api',
-  media: { max_file_size: 4 * 1024 * 1024 }, // 4 MiB default
+  media: { max_file_size: 4 * 1024 * 1024 }, // set explicitly to enforce a cap
   rateLimit: {
     findAll: { windowMs: 60_000, maxPerIp: 60, maxGlobal: 600 },
   },
@@ -137,8 +137,9 @@ api: createAPIAdapter({
 ```
 
 - `prefix` — API route prefix. Defaults to `'/api'`.
-- `media.max_file_size` — max upload size in bytes. Defaults to 4 MiB
-  (`4 * 1024 * 1024`).
+- `media.max_file_size` — max upload size in bytes. **Has no default** — if
+  omitted, uploads are not size-capped by the API adapter. Set an explicit
+  value (e.g. `4 * 1024 * 1024` for 4 MiB) to enforce a limit.
 - `rateLimit.findAll` — rate limiting for public list endpoints (paginated
   collections, not single-item lookups). Set to `'*'` to disable the
   list-endpoint limiter entirely, or an object with `windowMs`, `maxPerIp`,
@@ -167,7 +168,7 @@ the env vars they read are verified against source:
 | `createS3Adapter()` | `@bobbykim/manguito-cms-api/storage` | `{ bucket, region, prefix?, access_key_id?, secret_access_key? }` | (creds via options or AWS SDK chain) |
 | `createCloudinaryAdapter()` | `@bobbykim/manguito-cms-api/storage` | `{ cloud_name?, folder?, access_key_id?, secret_access_key? }` | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` |
 | `createServer()` | `@bobbykim/manguito-cms-api` | `{ port?, base_url?, cors? { origin, methods?, credentials?, enabled? } }` | `PORT`, `ALLOWED_ORIGIN` |
-| `createAPIAdapter()` | `@bobbykim/manguito-cms-api` | `{ prefix?, media? { max_file_size? }, rateLimit? { findAll? } }` (prefix default `/api`; media default 4 MiB) | — |
+| `createAPIAdapter()` | `@bobbykim/manguito-cms-api` | `{ prefix?, media? { max_file_size? }, rateLimit? { findAll? } }` (prefix default `/api`; `media.max_file_size` has no default — uploads are uncapped unless set) | — |
 | `createAdminAdapter()` | `@bobbykim/manguito-cms-admin` | `{ prefix? }` (default `/admin`) | — |
 
 Source: `packages/db/src/adapters/postgres.ts`, `packages/api/src/storage/adapters/{local,s3,cloudinary}.ts`, `packages/api/src/server/node.ts`, `packages/api/src/index.ts:11-30`, `packages/admin/src/adapters/admin.ts`.

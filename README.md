@@ -143,9 +143,11 @@ npx @bobbykim/manguito-cms-cli init my-cms
 cd my-cms
 cp .env.example .env      # fill in DB_URL and AUTH_SECRET
 pnpm install
-pnpm exec manguito createsuperuser
-pnpm dev
+pnpm dev                  # first run auto-migrates, seeds system roles,
+                           # and prompts you to create the first admin account
 ```
+
+Prefer to set up without the dev server (e.g. for production)? Run `pnpm migrate` to create tables and seed roles, then `pnpm exec manguito createsuperuser` to create the admin.
 
 ---
 
