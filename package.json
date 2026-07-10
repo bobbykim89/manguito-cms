@@ -1,5 +1,7 @@
 {
   "private": true,
+  "license": "MIT",
+  "author": "Bobby Kim <bobby.sihun.kim@gmail.com>",
   "homepage": "https://github.com/bobbykim89/manguito-cms",
   "repository": {
     "type": "git",
@@ -18,6 +20,8 @@
     "lint": "turbo run lint",
     "changeset": "changeset",
     "version": "changeset version",
+  "license": "MIT",
+  "author": "Bobby Kim <bobby.sihun.kim@gmail.com>",
     "release": "changeset publish",
     "db:test:up": "docker compose up -d manguito-test-db",
     "db:test:down": "docker compose stop manguito-test-db && docker compose rm -f -v manguito-test-db",

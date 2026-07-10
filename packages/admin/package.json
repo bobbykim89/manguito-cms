@@ -1,6 +1,8 @@
 {
   "name": "@bobbykim/manguito-cms-admin",
   "version": "0.1.0",
+  "license": "MIT",
+  "author": "Bobby Kim <bobby.sihun.kim@gmail.com>",
   "homepage": "https://github.com/bobbykim89/manguito-cms",
   "repository": {
     "type": "git",

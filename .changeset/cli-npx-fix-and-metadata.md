@@ -12,4 +12,4 @@ Fix `manguito init` generating an invalid `manguito.config.ts`. The chosen stora
 
 Scaffolded projects now include `@types/node` and set `types: ["node"]` in `tsconfig.json`, so `manguito.config.ts` (which reads `process.env`) typechecks cleanly out of the box.
 
-Also add `homepage` and `repository` metadata (pointing to the GitHub repo) to all packages.
+Also add `homepage`, `repository`, `license` (MIT), and `author` metadata to all packages.
