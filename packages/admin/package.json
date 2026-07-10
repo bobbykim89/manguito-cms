@@ -1,6 +1,12 @@
 {
   "name": "@bobbykim/manguito-cms-admin",
   "version": "0.1.0",
+  "homepage": "https://github.com/bobbykim89/manguito-cms",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bobbykim89/manguito-cms.git",
+    "directory": "packages/admin"
+  },
   "engines": {
     "node": ">=22.0.0"
   },
