@@ -8,8 +8,6 @@ Architectural decisions are recorded as ADRs in docs/adr/ (cross-cutting at the 
 
 ## Current phase
 
-Phase 10 — Deployment — Lambda, Neon, CI/CD pipeline
-
 ## Completed phases
 
 Phase 1 — repo scaffold and tooling. No application logic yet.
@@ -21,6 +19,7 @@ Phase 6 — Auth module — JWT, roles, route protection
 Phase 7 — Testing — unit, integration, smoke tests
 Phase 8 — Admin panel — Vue 3, auto-generated forms
 Phase 9 — CLI — init, dev, build, start, validate commands
+Phase 10 — Deployment — Lambda, Neon, CI/CD pipeline
 
 ## Packages
 

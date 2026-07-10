@@ -6,6 +6,26 @@ Named after Manguito, a pet bird — and a sibling project to the [Manguito Comp
 
 ---
 
+## Table of Contents
+
+- [Problem Statement](#problem-statement)
+- [Approach](#approach)
+- [Core Principles](#core-principles)
+- [Quick Start](#quick-start)
+- [Configuration](#configuration)
+- [Defining Content](#defining-content)
+- [CLI Reference](#cli-reference)
+- [Deployment](#deployment)
+- [Auth & Users](#auth--users)
+- [Feature Scope](#feature-scope)
+- [Architecture Overview](#architecture-overview)
+- [Packages](#packages)
+- [Phases](#phases)
+- [Repository Structure](#repository-structure)
+- [Contributing](#contributing)
+
+---
+
 ## Problem Statement
 
 Teams building modern web products — particularly static site generators and JAMstack applications — face an uncomfortable dilemma when choosing a headless CMS.
@@ -24,13 +44,17 @@ Manguito CMS treats the **schema definition as the single source of truth**. Dev
 
 ```json
 {
-  "name": "blog-post",
-  "fields": {
-    "title": { "type": "text/plain", "limit": 255 },
-    "body": { "type": "text/rich" },
-    "cover": { "type": "image" },
-    "tags": { "type": "reference", "target": "tag", "rel": "many-to-many" }
-  }
+  "name": "content--blog_post",
+  "label": "Blog Post",
+  "type": "content-type",
+  "default_base_path": "posts",
+  "only_one": false,
+  "fields": [
+    { "tab": { "name": "content", "label": "Content", "fields": [
+      { "name": "blog_title", "label": "Title", "type": "text/plain", "required": true },
+      { "name": "blog_body", "label": "Body", "type": "text/rich", "required": true }
+    ] } }
+  ]
 }
 ```
 
@@ -51,7 +75,7 @@ npx @bobbykim/manguito-cms-cli init my-cms
 
   ? Database adapter     › Postgres
   ? Storage adapter      › Local (dev only) / S3 / Cloudinary
-  ? Deployment target    › Traditional server / AWS Lambda
+  ? Deployment target    › Node / AWS Lambda / Vercel
 
   Creating project in ./my-cms...
   ✓ Scaffolded project structure
@@ -68,30 +92,25 @@ npx @bobbykim/manguito-cms-cli init my-cms
 The user configures the CMS once in `manguito.config.ts` and the CLI handles the rest:
 
 ```ts
-// manguito.config.ts — the only file users need to write
+// manguito.config.ts
 import { defineConfig } from '@bobbykim/manguito-cms-core'
 import { createPostgresAdapter } from '@bobbykim/manguito-cms-db'
-import { createS3Adapter } from '@bobbykim/manguito-cms-api'
+import { createS3Adapter } from '@bobbykim/manguito-cms-api/storage'
+import { createServer, createAPIAdapter } from '@bobbykim/manguito-cms-api'
+import { createAdminAdapter } from '@bobbykim/manguito-cms-admin'
 
 export default defineConfig({
-  schema: {
-    basePath: './schemas',
-  },
-  db: {
-    adapter: createPostgresAdapter(),
-    url: process.env.DB_URL,
-  },
+  name: 'my-cms',
+  schema: { base_path: './schemas' },
+  db: createPostgresAdapter(),
+  migrations: { table: '__manguito_migrations', folder: './migrations' },
   storage: createS3Adapter({
-    bucket: process.env.S3_BUCKET,
-    region: process.env.AWS_REGION,
+    bucket: process.env['STORAGE_S3_BUCKET']!,
+    region: process.env['STORAGE_S3_REGION']!,
   }),
-  admin: {
-    prefix: '/admin',
-  },
-  api: {
-    prefix: '/api',
-    cors: { origin: process.env.ALLOWED_ORIGIN },
-  },
+  server: createServer({ cors: { origin: process.env['ALLOWED_ORIGIN'] ?? '*' } }),
+  api: createAPIAdapter({ prefix: '/api' }),
+  admin: createAdminAdapter({ prefix: '/admin' }),
 })
 ```
 
@@ -111,23 +130,130 @@ pnpm start    # run compiled output (production)
 
 **Build-time codegen, not runtime parsing.** In production, schemas are compiled to static TypeScript artifacts at build time. The runtime imports pre-generated code — no schema parsing on cold starts, no per-request overhead.
 
-**Serverless-first.** Designed for the burst-at-build, quiet-at-runtime traffic patterns of SSG projects, with a traditional server option available.
+**Serverless-first.** Designed for the burst-at-build, quiet-at-runtime traffic patterns of SSG projects, with a traditional Node server option available.
 
 **Minimal by default, extensible by design.** A working CMS should be runnable with a few lines of configuration. Advanced features (custom roles, webhooks, multi-language) are addable without touching the core.
 
 ---
 
-## CLI Commands
+## Quick Start
 
 ```bash
-manguito init [name]      # scaffold new project interactively
-manguito dev              # start dev server, dynamic mode, file watching
-manguito build            # codegen + compile → dist/
-manguito start            # run dist/ (production traditional server)
-manguito migrate          # run pending DB migrations manually
-manguito migrate:status   # show migration state
-manguito validate         # parse and validate all schemas, report errors
+npx @bobbykim/manguito-cms-cli init my-cms
+cd my-cms
+cp .env.example .env      # fill in DB_URL and AUTH_SECRET
+pnpm install
+pnpm dev                  # first run auto-migrates, seeds system roles,
+                           # and prompts you to create the first admin account
 ```
+
+Prefer to set up without the dev server (e.g. for production)? Run `pnpm migrate` to create tables and seed roles, then `pnpm exec manguito createsuperuser` to create the admin.
+
+---
+
+## Configuration
+
+Everything lives in a single `manguito.config.ts`, built with `defineConfig`. The config is a set of blocks: `db`, `storage`, `server`, `api`, and `admin` are required (each built from a factory adapter — see the example above); `name`, `schema`, and `migrations` are optional. Most values fall back to environment variables at runtime.
+
+| Variable | Required | Default | Purpose |
+| --- | --- | --- | --- |
+| `DB_URL` | yes | — | Postgres connection string (`postgres://…`) |
+| `AUTH_SECRET` | yes | — | JWT signing secret (required by any token sign/verify path, all environments) |
+| `PORT` | no | `3000` | Node server port |
+| `NODE_ENV` | no | `development` | Env mode; local storage adapter only warns (does not fail) in `production` |
+| `ALLOWED_ORIGIN` | no | `*` | CORS allowed origin |
+| `CLOUDINARY_CLOUD_NAME` | if Cloudinary | — | Cloudinary cloud name |
+| `CLOUDINARY_API_KEY` | if Cloudinary | — | Cloudinary API key |
+| `CLOUDINARY_API_SECRET` | if Cloudinary | — | Cloudinary API secret |
+| `SEEDER_DB_URL` | no | — | Separate DB URL for seeding, if used |
+
+→ See [docs/configuration.md](docs/configuration.md) for the full reference.
+
+---
+
+## Defining Content
+
+Content types live under `schemas/content-types/` as JSON or YAML. Fields are grouped into `tab` wrappers, and every content-type needs a `default_base_path` (matching a `name` in `routes.json`) and an `only_one` flag (`true` for a singleton, `false` for a collection):
+
+```json
+{
+  "name": "content--blog_post",
+  "label": "Blog Post",
+  "type": "content-type",
+  "default_base_path": "posts",
+  "only_one": false,
+  "fields": [
+    { "tab": { "name": "content", "label": "Content", "fields": [
+      { "name": "blog_title", "label": "Title", "type": "text/plain", "required": true },
+      { "name": "blog_body", "label": "Body", "type": "text/rich", "required": true }
+    ] } }
+  ]
+}
+```
+
+| Type | Extra options | Notes |
+| --- | --- | --- |
+| `text/plain` | `limit?`, `pattern?` | Single-line text |
+| `text/rich` | — | Rich text |
+| `integer` | `min?`, `max?` | Integer value bounds |
+| `float` | `min?`, `max?` | Float value bounds |
+| `boolean` | — | True/false |
+| `date` | — | Date |
+| `image` | `max_size?`, `alt?` | Media upload |
+| `video` | `max_size?`, `alt?` | Media upload |
+| `file` | `max_size?`, `alt?` | Media upload |
+| `enum` | `ref?` XOR `values?` | Exactly one of `ref` (standalone enum) or inline `values[]` |
+| `paragraph` | `ref`, `rel` (1:1/1:many), `max?` | Embedded paragraph blocks |
+| `reference` | `target`, `rel` (1:1/1:many/m:m), `max?` | Reference to content-type/taxonomy-type |
+
+Every field also has `name` (snake_case), `label`, and `required`.
+
+→ See [docs/schema-authoring.md](docs/schema-authoring.md) for the full guide.
+
+---
+
+## CLI Reference
+
+| Command | Options | Description |
+| --- | --- | --- |
+| `manguito init [name]` | `--env <path>` | Scaffold a new project interactively |
+| `manguito dev` | `--env <path>` | Dev server: file watching + auto-migration |
+| `manguito build` | `--env <path>` | Codegen + compile to `dist/` |
+| `manguito start` | `--env <path>` | Run production server from `dist/` |
+| `manguito validate` | `--env <path>` | Parse & validate schemas, config, roles, routes |
+| `manguito migrate` | `--env`, `--status`, `--dry-run`, `--force` | Apply pending migrations |
+| `manguito migrate:status` | `--env <path>` | Show migration state (shorthand for `migrate --status`) |
+| `manguito createsuperuser` | `--env <path>` | Create the initial admin user |
+| `manguito users:promote` | `--env`, `--email <email>` | Promote a user to admin |
+| `manguito users:demote` | `--env`, `--email <email>`, `--role <role>` | Demote an admin to a lower role |
+
+---
+
+## Deployment
+
+Manguito CMS is built serverless-first: `manguito build` compiles schemas to static artifacts so the runtime never parses schemas on a cold start. It targets AWS Lambda and Vercel for serverless deployment, AWS Fargate for a long-running containerized deployment, and a plain Node server for traditional hosting.
+
+- [docs/deployment/lambda.md](docs/deployment/lambda.md)
+- [docs/deployment/fargate.md](docs/deployment/fargate.md)
+- [docs/deployment/vercel.md](docs/deployment/vercel.md)
+
+---
+
+## Auth & Users
+
+Auth is JWT-based, signed and verified with the `AUTH_SECRET` environment variable (required in every environment). Every user is assigned one of five system roles:
+
+| Role | Level | Highlights |
+| --- | --- | --- |
+| `admin` | 0 | Full permissions incl. `users:*`, `roles:read` |
+| `manager` | 1 | Content/media/taxonomy CRUD + `users:read` |
+| `editor` | 2 | Content/media/taxonomy CRUD |
+| `writer` | 3 | `content:read/create`, `media:read/create` |
+| `viewer` | 4 | `content:read`, `media:read` |
+
+All system roles are fixed (`is_system: true`); custom roles are a v2+ item.
+
+The first admin user is created with `manguito createsuperuser`. Existing users can be promoted to admin with `manguito users:promote --email <email>`, or demoted from admin to a lower role with `manguito users:demote --email <email> --role <role>`.
 
 ---
 
@@ -139,14 +265,14 @@ manguito validate         # parse and validate all schemas, report errors
 - JSON and YAML schema parser with Zod validation
 - `defineConfig` — single config file, mode inferred from CLI command
 - Build-time codegen: schemas → static Drizzle + Hono + Vue artifacts
-- Field types: plain text, rich text, integer, float, boolean, date, image/file, reference
+- Field types: plain text, rich text, integer, float, boolean, date, image/video/file, enum, paragraph, reference
 - Relationship types: one-to-one, one-to-many, many-to-many
 - Postgres support via Drizzle ORM with programmatic migrations
 - REST API with auto-generated CRUD endpoints per content type
-- Role-based auth: Admin, Editor, Writer, Tester
+- Role-based auth: admin, manager, editor, writer, viewer
 - Storage adapters: local filesystem, AWS S3, Cloudinary
 - Minimalist admin panel (Vue 3 + Tailwind)
-- Serverless deployment target (AWS Lambda) and traditional server mode
+- Serverless deployment targets (AWS Lambda, Vercel), containerized (Fargate), and traditional Node server mode
 - Unit and integration test suite
 
 ### Planned for v2+
@@ -230,7 +356,7 @@ The **Field Type Registry** is the architectural keystone. Every supported field
 | [Phase 7](./docs/phase-07.md) | Testing — unit, integration, smoke tests                      |
 | [Phase 8](./docs/phase-08.md) | Admin panel — Vue 3, auto-generated forms                     |
 | [Phase 9](./docs/phase-09.md) | CLI — `init`, `dev`, `build`, `start`, `validate` commands    |
-| Phase 10                      | Deployment — Lambda, Neon, CI/CD pipeline                     |
+| Phase 10                      | Deployment — Lambda, Neon, CI/CD pipeline (done)               |
 
 ---
 
@@ -249,6 +375,11 @@ manguito-cms/
 ├── docs/
 │   ├── phase-01.md
 │   └── ...
+├── schemas/
+│   ├── content-types/
+│   ├── paragraph-types/
+│   ├── taxonomy-types/
+│   └── enum-types/
 ├── turbo.json
 ├── pnpm-workspace.yaml
 └── package.json

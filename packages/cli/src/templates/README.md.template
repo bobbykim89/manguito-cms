@@ -10,23 +10,24 @@ A headless CMS project powered by [Manguito CMS](https://github.com/bobbykim89/m
    cp .env.example .env
    ```
 
+   At minimum, set `DB_URL` and `AUTH_SECRET`.
+
 2. Install dependencies:
 
    ```bash
    pnpm install
    ```
 
-3. Create the first admin user:
-
-   ```bash
-   pnpm exec manguito createsuperuser
-   ```
-
-4. Start the development server:
+3. Start the development server:
 
    ```bash
    pnpm dev
    ```
+
+   The first run auto-migrates the database, seeds system roles, and prompts
+   you to create the first admin account.
+
+Alternatively, run `pnpm migrate` then `pnpm exec manguito createsuperuser` to set up without starting the dev server.
 
 ## Commands
 
@@ -38,16 +39,23 @@ A headless CMS project powered by [Manguito CMS](https://github.com/bobbykim89/m
 | `pnpm migrate`    | Apply pending database migrations                     |
 | `pnpm validate`   | Validate all schemas and config                       |
 
+Other CLI commands (run via `pnpm exec manguito <command>`): `createsuperuser`, `users:promote`, `users:demote`, `migrate:status`.
+
 ## Project structure
 
 ```
 schemas/
 ├── content-types/    ← Content type schema definitions
 ├── paragraph-types/  ← Reusable paragraph block definitions
-└── taxonomy-types/   ← Taxonomy (tag/category) definitions
+├── taxonomy-types/   ← Taxonomy (tag/category) definitions
+├── enum-types/       ← Enum type definitions
+├── roles.json        ← Role hierarchy and permissions
+└── routes.json       ← Public API route configuration
 
-roles.json            ← Role hierarchy and permissions
-routes.json           ← Public API route configuration
+migrations/            ← Generated database migrations
 
-manguito.config.ts    ← CMS configuration
+.env.example           ← Environment variable template
+manguito.config.ts     ← CMS configuration
 ```
+
+Full documentation: https://github.com/bobbykim89/manguito-cms#readme
