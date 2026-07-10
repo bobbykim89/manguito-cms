@@ -390,3 +390,11 @@ manguito-cms/
 ## Contributing
 
 This project is in active early development. If you're interested in collaborating, read through the phase docs in `/docs` to understand where things currently stand before diving in.
+
+Releases are cut with Changesets — see [RELEASE.md](./RELEASE.md) for the step-by-step process.
+
+---
+
+## License
+
+[MIT](./LICENSE.md) © Bobby Kim
