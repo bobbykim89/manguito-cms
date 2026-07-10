@@ -8,7 +8,7 @@ Named after Manguito, a pet bird — and a sibling project to the [Manguito Comp
 
 ## Table of Contents
 
-- [Problem Statement](#problem-statement)
+- [Why Manguito?](#why-manguito)
 - [Approach](#approach)
 - [Core Principles](#core-principles)
 - [Quick Start](#quick-start)
@@ -26,15 +26,15 @@ Named after Manguito, a pet bird — and a sibling project to the [Manguito Comp
 
 ---
 
-## Problem Statement
+## Why Manguito?
 
-Teams building modern web products — particularly static site generators and JAMstack applications — face an uncomfortable dilemma when choosing a headless CMS.
+Manguito CMS is a **code-first, self-hosted headless CMS** for developers who want their content model to live in their codebase rather than behind a GUI.
 
-**Legacy systems (Drupal, WordPress)** are painful for developers. Creating or updating a content type means navigating multiple admin screens, clicking through GUI wizards, and hoping nothing breaks. Schema changes are slow, error-prone, and impossible to version control meaningfully. Performance is poor.
+- **Code-first content management.** Content types are plain JSON or YAML files you can version, review, and diff like any other source. The schema is the single source of truth — the database tables, REST API, and admin panel are all generated from it.
+- **Serverless-friendly.** Schemas compile to static artifacts at build time, so there's no schema parsing on cold starts. It's built for the burst-at-build, quiet-at-runtime traffic of static-site and JAMstack projects, with a traditional server option when you want one.
+- **Minimal and lightweight.** A working CMS runs from a few lines of configuration. The core stays small and dependency-light; advanced features are opt-in rather than bundled in by default.
 
-**Modern SaaS headless CMS platforms (Contentful, Sanity, Prismic)** offer a great developer experience but charge several thousand dollars per month at team scale. For smaller teams or agencies managing multiple projects, this cost is simply prohibitive.
-
-The gap: developer teams that want a **clean, code-first content management workflow** without the overhead of legacy systems or the cost of modern SaaS platforms have no good self-hosted option.
+It's aimed at the space between GUI-driven legacy systems and subscription SaaS platforms: a self-hosted option with a clean, versionable, developer-owned workflow.
 
 ---
 
