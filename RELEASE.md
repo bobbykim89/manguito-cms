@@ -2,13 +2,14 @@
 
 Manguito CMS is a pnpm + Turborepo monorepo versioned with [Changesets](https://github.com/changesets/changesets). Releases are currently **manual** (no CI publish workflow yet).
 
-Five packages are published to npm under the public `@bobbykim` scope:
+Six packages are published to npm under the public `@bobbykim` scope:
 
 - `@bobbykim/manguito-cms-core`
 - `@bobbykim/manguito-cms-db`
 - `@bobbykim/manguito-cms-api`
 - `@bobbykim/manguito-cms-admin`
 - `@bobbykim/manguito-cms-cli`
+- `@bobbykim/create-manguito`
 
 `apps/sandbox` and `packages/test-utils` are `private` and are **never** published.
 
@@ -94,7 +95,7 @@ Then draft a GitHub release from the new tag(s), using the relevant `CHANGELOG.m
 
 ```bash
 npm view @bobbykim/manguito-cms-cli version    # should show the new version
-npx @bobbykim/manguito-cms-cli@latest init demo # smoke-test the published CLI
+npm create @bobbykim/manguito@latest demo      # smoke-test the published scaffolder
 ```
 
 ## Troubleshooting
