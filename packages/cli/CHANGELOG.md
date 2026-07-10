@@ -1,5 +1,23 @@
 # @bobbykim/manguito-cms-cli
 
+## 0.1.1
+
+### Patch Changes
+
+- 47e5bd6: Fix `npx @bobbykim/manguito-cms-cli` failing with "Cannot find module 'typescript'". The CLI uses `tsup`/`vite` at runtime to build user projects, but `typescript` (required by `tsup`) was only a devDependency, so it was missing from installs. `typescript` is now a runtime dependency, and the duplicated `tsup` devDependency was removed.
+
+  Fix `manguito init` generating an invalid `manguito.config.ts`. The chosen storage adapter was interpolated as a bare word (`storage: local,` — an undefined identifier) instead of a factory call. The scaffolder now emits the correct `createLocalAdapter()` / `createS3Adapter()` / `createCloudinaryAdapter()` call, imports only the chosen adapter, and writes the matching storage variables into `.env.example`.
+
+  Scaffolded projects now include `@types/node` and set `types: ["node"]` in `tsconfig.json`, so `manguito.config.ts` (which reads `process.env`) typechecks cleanly out of the box.
+
+  Also add `homepage`, `repository`, `license` (MIT), and `author` metadata to all packages.
+
+- Updated dependencies [47e5bd6]
+  - @bobbykim/manguito-cms-core@0.1.1
+  - @bobbykim/manguito-cms-db@0.1.1
+  - @bobbykim/manguito-cms-api@0.1.1
+  - @bobbykim/manguito-cms-admin@0.1.1
+
 ## 0.1.0
 
 ### Minor Changes
