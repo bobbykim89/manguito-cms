@@ -1,0 +1,32 @@
+import { defineConfig } from '@bobbykim/manguito-cms-core'
+import { createPostgresAdapter } from '@bobbykim/manguito-cms-db'
+{{storageImport}}
+import { createServer, createAPIAdapter } from '@bobbykim/manguito-cms-api'
+import { createAdminAdapter } from '@bobbykim/manguito-cms-admin'
+
+export default defineConfig({
+  name: '{{projectName}}',
+
+  schema: {
+    base_path: './schemas',
+  },
+
+  db: createPostgresAdapter(),
+
+  migrations: {
+    table: '__manguito_migrations',
+    folder: './migrations',
+  },
+
+  // Storage — configured for your chosen adapter. See docs/configuration.md to
+  // switch adapters or adjust options.
+  storage: {{storageAdapter}},
+
+  server: createServer({
+    cors: { origin: process.env['ALLOWED_ORIGIN'] ?? '*' },
+  }),
+
+  api: createAPIAdapter({ prefix: '/api' }),
+
+  admin: createAdminAdapter({ prefix: '/admin' }),
+})

@@ -1,0 +1,26 @@
+{
+  "name": "{{projectName}}",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "manguito dev",
+    "build": "manguito build",
+    "start": "manguito start",
+    "migrate": "manguito migrate",
+    "validate": "manguito validate"
+  },
+  "dependencies": {
+    "@bobbykim/manguito-cms-admin": "latest",
+    "@bobbykim/manguito-cms-api": "latest",
+    "@bobbykim/manguito-cms-cli": "latest",
+    "@bobbykim/manguito-cms-core": "latest",
+    "@bobbykim/manguito-cms-db": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

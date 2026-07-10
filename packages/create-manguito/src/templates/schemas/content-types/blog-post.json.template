@@ -1,0 +1,67 @@
+{
+  "name": "content--blog_post",
+  "label": "Blog Post",
+  "type": "content-type",
+  "default_base_path": "posts",
+  "only_one": false,
+  "fields": [
+    {
+      "tab": {
+        "name": "content",
+        "label": "Content",
+        "fields": [
+          {
+            "name": "blog_title",
+            "label": "Title",
+            "type": "text/plain",
+            "required": true
+          },
+          {
+            "name": "blog_slug",
+            "label": "Slug",
+            "type": "text/plain",
+            "required": true
+          },
+          {
+            "name": "blog_hero_image",
+            "label": "Hero Image",
+            "type": "image",
+            "required": false
+          },
+          {
+            "name": "blog_body",
+            "label": "Body",
+            "type": "text/rich",
+            "required": true
+          },
+          {
+            "name": "blog_published",
+            "label": "Published",
+            "type": "boolean",
+            "required": false
+          }
+        ]
+      }
+    },
+    {
+      "tab": {
+        "name": "seo",
+        "label": "SEO",
+        "fields": [
+          {
+            "name": "blog_meta_title",
+            "label": "Meta Title",
+            "type": "text/plain",
+            "required": false
+          },
+          {
+            "name": "blog_meta_desc",
+            "label": "Meta Description",
+            "type": "text/plain",
+            "required": false
+          }
+        ]
+      }
+    }
+  ]
+}

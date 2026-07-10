@@ -1,0 +1,60 @@
+{
+  "roles": [
+    {
+      "name": "admin",
+      "label": "Administrator",
+      "is_system": true,
+      "hierarchy_level": 0,
+      "permissions": [
+        "content:read",   "content:create",   "content:edit",   "content:delete",
+        "media:read",     "media:create",     "media:edit",     "media:delete",
+        "taxonomy:read",  "taxonomy:create",  "taxonomy:edit",  "taxonomy:delete",
+        "users:read",     "users:create",     "users:edit",     "users:delete",
+        "roles:read"
+      ]
+    },
+    {
+      "name": "manager",
+      "label": "Manager",
+      "is_system": true,
+      "hierarchy_level": 1,
+      "permissions": [
+        "content:read",   "content:create",   "content:edit",   "content:delete",
+        "media:read",     "media:create",     "media:edit",     "media:delete",
+        "taxonomy:read",  "taxonomy:create",  "taxonomy:edit",  "taxonomy:delete",
+        "users:read"
+      ]
+    },
+    {
+      "name": "editor",
+      "label": "Editor",
+      "is_system": true,
+      "hierarchy_level": 2,
+      "permissions": [
+        "content:read",   "content:create",   "content:edit",   "content:delete",
+        "media:read",     "media:create",     "media:edit",     "media:delete",
+        "taxonomy:read",  "taxonomy:create",  "taxonomy:edit",  "taxonomy:delete"
+      ]
+    },
+    {
+      "name": "writer",
+      "label": "Writer",
+      "is_system": true,
+      "hierarchy_level": 3,
+      "permissions": [
+        "content:read",  "content:create",
+        "media:read",    "media:create"
+      ]
+    },
+    {
+      "name": "viewer",
+      "label": "Viewer",
+      "is_system": true,
+      "hierarchy_level": 4,
+      "permissions": [
+        "content:read",
+        "media:read"
+      ]
+    }
+  ]
+}
