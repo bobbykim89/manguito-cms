@@ -1,6 +1,14 @@
 {
   "name": "@bobbykim/manguito-cms-cli",
   "version": "0.1.0",
+  "license": "MIT",
+  "author": "Bobby Kim <bobby.sihun.kim@gmail.com>",
+  "homepage": "https://github.com/bobbykim89/manguito-cms",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bobbykim89/manguito-cms.git",
+    "directory": "packages/cli"
+  },
   "type": "module",
   "bin": {
     "manguito": "./dist/index.js"
@@ -29,13 +37,12 @@
     "commander": "^12.1.0",
     "dotenv": "^16.6.1",
     "tsup": "^8.5.1",
+    "typescript": "^6.0.3",
     "vite": "^6.4.3"
   },
   "devDependencies": {
     "@types/node": "^25.9.5",
     "dotenv-cli": "latest",
-    "tsup": "^8.5.0",
-    "typescript": "^6.0.3",
     "vitest": "^4.1.10"
   }
 }

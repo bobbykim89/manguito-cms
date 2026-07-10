@@ -1,6 +1,14 @@
 {
   "name": "@bobbykim/manguito-cms-core",
   "version": "0.1.0",
+  "license": "MIT",
+  "author": "Bobby Kim <bobby.sihun.kim@gmail.com>",
+  "homepage": "https://github.com/bobbykim89/manguito-cms",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bobbykim89/manguito-cms.git",
+    "directory": "packages/core"
+  },
   "engines": {
     "node": ">=22.0.0"
   },

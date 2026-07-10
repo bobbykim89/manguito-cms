@@ -68,18 +68,79 @@ describe('runInit', () => {
     }
   })
 
-  it('substitutes projectName and storageAdapter in rendered file content', async () => {
+  it('substitutes projectName into rendered config', async () => {
     const prompt = makePrompt('acme-blog', 'Amazon S3')
     await runInit('acme-blog', { prompt, targetDir: tempDir })
 
-    const projectDir = join(tempDir, 'acme-blog')
-    const configContent = readFileSync(join(projectDir, 'manguito.config.ts'), 'utf8')
-    const envContent = readFileSync(join(projectDir, '.env.example'), 'utf8')
-
-    expect(configContent).toContain('acme-blog')
-    expect(configContent).toContain('s3')
-    expect(envContent).toContain('s3')
+    const configContent = readFileSync(
+      join(tempDir, 'acme-blog', 'manguito.config.ts'),
+      'utf8'
+    )
+    expect(configContent).toContain("name: 'acme-blog'")
   })
+
+  it('scaffolds @types/node so the config typechecks (process.env)', async () => {
+    const prompt = makePrompt('types-test')
+    await runInit('types-test', { prompt, targetDir: tempDir })
+
+    const pkg = JSON.parse(
+      readFileSync(join(tempDir, 'types-test', 'package.json'), 'utf8')
+    ) as { devDependencies?: Record<string, string> }
+    expect(pkg.devDependencies?.['@types/node']).toBeDefined()
+  })
+
+  it('leaves no unrendered {{placeholders}} in scaffold output', async () => {
+    const prompt = makePrompt('ph-test', 'Cloudinary')
+    await runInit('ph-test', { prompt, targetDir: tempDir })
+
+    const projectDir = join(tempDir, 'ph-test')
+    for (const file of ['manguito.config.ts', '.env.example']) {
+      const content = readFileSync(join(projectDir, file), 'utf8')
+      expect(content, `${file} still has a placeholder`).not.toMatch(/\{\{\w+\}\}/)
+    }
+  })
+
+  it.each([
+    {
+      choice: 'Local filesystem',
+      factory: 'createLocalAdapter(',
+      others: ['createS3Adapter', 'createCloudinaryAdapter'],
+      envVar: 'STORAGE_LOCAL_UPLOAD_DIR',
+    },
+    {
+      choice: 'Amazon S3',
+      factory: 'createS3Adapter(',
+      others: ['createLocalAdapter', 'createCloudinaryAdapter'],
+      envVar: 'STORAGE_S3_BUCKET',
+    },
+    {
+      choice: 'Cloudinary',
+      factory: 'createCloudinaryAdapter(',
+      others: ['createLocalAdapter', 'createS3Adapter'],
+      envVar: 'CLOUDINARY_CLOUD_NAME',
+    },
+  ])(
+    'wires a real $factory call and matching env vars for $choice',
+    async ({ choice, factory, others, envVar }) => {
+      const prompt = makePrompt('store-test', choice)
+      await runInit('store-test', { prompt, targetDir: tempDir })
+
+      const projectDir = join(tempDir, 'store-test')
+      const config = readFileSync(join(projectDir, 'manguito.config.ts'), 'utf8')
+      const env = readFileSync(join(projectDir, '.env.example'), 'utf8')
+
+      // storage is a real factory call, not a bare identifier like `storage: s3,`
+      expect(config).toContain(`storage: ${factory}`)
+      // the chosen factory is imported
+      expect(config).toContain(`import { ${factory.replace('(', '')} }`)
+      // the other adapters are NOT imported (only the chosen one)
+      for (const other of others) {
+        expect(config, `${other} should not be imported`).not.toContain(other)
+      }
+      // the .env.example carries the env var(s) for the chosen adapter
+      expect(env).toContain(envVar)
+    }
+  )
 
   it('strips the .template extension from output filenames', async () => {
     const prompt = makePrompt('strip-test')

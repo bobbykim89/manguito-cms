@@ -15,6 +15,31 @@ const TEMPLATES_DIR =
     ? join(_dirname, '..', 'templates')
     : join(_dirname, 'templates')
 
+// Per-adapter scaffold substitutions. Each choice supplies the import line, the
+// `storage:` factory call, and the .env.example variables — kept together so the
+// generated config, its import, and its env stay in sync. Note: with the
+// scaffold tsconfig's noUncheckedIndexedAccess, S3's required bucket/region must
+// use `!`, while Cloudinary/local options are optional and don't.
+type StorageTemplate = { import: string; factory: string; env: string }
+
+const STORAGE_ADAPTERS: Record<string, StorageTemplate> = {
+  'Local filesystem': {
+    import: `import { createLocalAdapter } from '@bobbykim/manguito-cms-api/storage'`,
+    factory: `createLocalAdapter({ upload_dir: process.env['STORAGE_LOCAL_UPLOAD_DIR'] })`,
+    env: `# Local filesystem storage (files persist under this directory; defaults to ./uploads)\n# STORAGE_LOCAL_UPLOAD_DIR=./uploads`,
+  },
+  'Amazon S3': {
+    import: `import { createS3Adapter } from '@bobbykim/manguito-cms-api/storage'`,
+    factory: `createS3Adapter({\n    bucket: process.env['STORAGE_S3_BUCKET']!,\n    region: process.env['STORAGE_S3_REGION']!,\n  })`,
+    env: `STORAGE_S3_BUCKET=\nSTORAGE_S3_REGION=`,
+  },
+  Cloudinary: {
+    import: `import { createCloudinaryAdapter } from '@bobbykim/manguito-cms-api/storage'`,
+    factory: `createCloudinaryAdapter({\n    cloud_name: process.env['CLOUDINARY_CLOUD_NAME'],\n    access_key_id: process.env['CLOUDINARY_API_KEY'],\n    secret_access_key: process.env['CLOUDINARY_API_SECRET'],\n  })`,
+    env: `CLOUDINARY_CLOUD_NAME=\nCLOUDINARY_API_KEY=\nCLOUDINARY_API_SECRET=`,
+  },
+}
+
 export function registerInit(program: Command): void {
   program
     .command('init [name]')
@@ -56,14 +81,14 @@ export async function runInit(
     'Cloudinary',
   ])
 
-  const adapterMap: Record<string, string> = {
-    'Local filesystem': 'local',
-    'Amazon S3': 's3',
-    Cloudinary: 'cloudinary',
-  }
-  const storageAdapter = adapterMap[adapterChoice]!
+  const storage = STORAGE_ADAPTERS[adapterChoice] ?? STORAGE_ADAPTERS['Local filesystem']!
 
-  const vars = { projectName, storageAdapter }
+  const vars = {
+    projectName,
+    storageImport: storage.import,
+    storageAdapter: storage.factory,
+    storageEnv: storage.env,
+  }
   const templateFiles = walkTemplates(TEMPLATES_DIR)
 
   for (const templatePath of templateFiles) {

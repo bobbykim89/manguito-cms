@@ -1,6 +1,8 @@
 {
   "name": "@bobbykim/manguito-cms-test-utils",
   "version": "0.0.1",
+  "license": "MIT",
+  "author": "Bobby Kim <bobby.sihun.kim@gmail.com>",
   "private": true,
   "exports": {
     ".": {
