@@ -17,6 +17,9 @@
     "@bobbykim/manguito-cms-core": "latest",
     "@bobbykim/manguito-cms-db": "latest"
   },
+  "devDependencies": {
+    "@types/node": "^22.0.0"
+  },
   "engines": {
     "node": ">=22.0.0"
   }

@@ -79,6 +79,16 @@ describe('runInit', () => {
     expect(configContent).toContain("name: 'acme-blog'")
   })
 
+  it('scaffolds @types/node so the config typechecks (process.env)', async () => {
+    const prompt = makePrompt('types-test')
+    await runInit('types-test', { prompt, targetDir: tempDir })
+
+    const pkg = JSON.parse(
+      readFileSync(join(tempDir, 'types-test', 'package.json'), 'utf8')
+    ) as { devDependencies?: Record<string, string> }
+    expect(pkg.devDependencies?.['@types/node']).toBeDefined()
+  })
+
   it('leaves no unrendered {{placeholders}} in scaffold output', async () => {
     const prompt = makePrompt('ph-test', 'Cloudinary')
     await runInit('ph-test', { prompt, targetDir: tempDir })
