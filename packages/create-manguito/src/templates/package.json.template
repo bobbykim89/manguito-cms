@@ -4,11 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "manguito dev",
-    "build": "manguito build",
-    "start": "manguito start",
-    "migrate": "manguito migrate",
-    "validate": "manguito validate"
+    "dev": "manguito dev --env .env",
+    "build": "manguito build --env .env",
+    "start": "manguito start --env .env",
+    "migrate": "manguito migrate --env .env",
+    "validate": "manguito validate --env .env"
   },
   "dependencies": {
     "@bobbykim/manguito-cms-admin": "latest",
@@ -18,7 +18,8 @@
     "@bobbykim/manguito-cms-db": "latest"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0"
+    "@types/node": "^22.0.0",
+    "drizzle-kit": "^0.31.10"
   },
   "engines": {
     "node": ">=22.0.0"
