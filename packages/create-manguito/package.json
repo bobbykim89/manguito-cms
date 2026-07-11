@@ -1,0 +1,35 @@
+{
+  "name": "@bobbykim/create-manguito",
+  "version": "0.1.0",
+  "license": "MIT",
+  "author": "Bobby Kim <bobby.sihun.kim@gmail.com>",
+  "homepage": "https://github.com/bobbykim89/manguito-cms",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bobbykim89/manguito-cms.git",
+    "directory": "packages/create-manguito"
+  },
+  "type": "module",
+  "bin": {
+    "create-manguito": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "lint": "eslint src"
+  },
+  "devDependencies": {
+    "@inquirer/prompts": "^7.10.1",
+    "@types/node": "^25.9.5",
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10"
+  }
+}

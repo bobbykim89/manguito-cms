@@ -67,7 +67,7 @@ From this file the system produces:
 **Getting started is a single command:**
 
 ```bash
-npx @bobbykim/manguito-cms-cli init my-cms
+npm create @bobbykim/manguito my-app
 ```
 
 ```
@@ -77,14 +77,14 @@ npx @bobbykim/manguito-cms-cli init my-cms
   ? Storage adapter      › Local (dev only) / S3 / Cloudinary
   ? Deployment target    › Node / AWS Lambda / Vercel
 
-  Creating project in ./my-cms...
+  Creating project in ./my-app...
   ✓ Scaffolded project structure
   ✓ Generated manguito.config.ts
   ✓ Created example schemas
   ✓ Installed dependencies
 
   Done! Next steps:
-    cd my-cms
+    cd my-app
     cp .env.example .env
     pnpm dev
 ```
@@ -139,8 +139,8 @@ pnpm start    # run compiled output (production)
 ## Quick Start
 
 ```bash
-npx @bobbykim/manguito-cms-cli init my-cms
-cd my-cms
+npm create @bobbykim/manguito my-app
+cd my-app
 cp .env.example .env      # fill in DB_URL and AUTH_SECRET
 pnpm install
 pnpm dev                  # first run auto-migrates, seeds system roles,
@@ -216,7 +216,6 @@ Every field also has `name` (snake_case), `label`, and `required`.
 
 | Command | Options | Description |
 | --- | --- | --- |
-| `manguito init [name]` | `--env <path>` | Scaffold a new project interactively |
 | `manguito dev` | `--env <path>` | Dev server: file watching + auto-migration |
 | `manguito build` | `--env <path>` | Codegen + compile to `dist/` |
 | `manguito start` | `--env <path>` | Run production server from `dist/` |
@@ -261,7 +260,7 @@ The first admin user is created with `manguito createsuperuser`. Existing users 
 
 ### Included in v1
 
-- `manguito init` CLI with interactive project scaffolding
+- `npm create @bobbykim/manguito` scaffolder with interactive project setup
 - JSON and YAML schema parser with Zod validation
 - `defineConfig` — single config file, mode inferred from CLI command
 - Build-time codegen: schemas → static Drizzle + Hono + Vue artifacts
@@ -340,6 +339,7 @@ The **Field Type Registry** is the architectural keystone. Every supported field
 | `manguito-cms-api`   | `@bobbykim/manguito-cms-api`   | Hono app, route generation, storage adapters       |
 | `manguito-cms-admin` | `@bobbykim/manguito-cms-admin` | Vue 3 admin panel                                  |
 | `manguito-cms-cli`   | `@bobbykim/manguito-cms-cli`   | CLI binary — `manguito` command                    |
+| `create-manguito`    | `@bobbykim/create-manguito`    | `npm create @bobbykim/manguito` project scaffolder |
 
 ---
 

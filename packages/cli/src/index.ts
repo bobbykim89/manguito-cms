@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { createRequire } from 'node:module'
 import { Command } from 'commander'
-import { registerInit } from './commands/init.js'
 import { registerBuild } from './commands/build.js'
 import { registerDev } from './commands/dev.js'
 import { registerStart } from './commands/start.js'
@@ -18,7 +17,6 @@ const program = new Command()
   .description('Manguito CMS — developer lifecycle CLI')
   .version(version)
 
-registerInit(program)
 registerBuild(program)
 registerDev(program)
 registerStart(program)

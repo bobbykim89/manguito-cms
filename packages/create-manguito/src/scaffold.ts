@@ -1,19 +1,26 @@
 import { readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
-import { join, dirname, basename, relative } from 'node:path'
+import { join, dirname, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { Command } from 'commander'
-import { renderTemplate } from '../utils/template.js'
-import { printGuidedError, printSuccess } from '../utils/error.js'
-import { loadEnvFile } from '../utils/env.js'
-import { createPromptAdapter, type PromptAdapter } from '../utils/prompt.js'
+import type { PromptAdapter } from './prompt.js'
 
-const _filename = fileURLToPath(import.meta.url)
-const _dirname = dirname(_filename)
-// In the tsup bundle, __dirname is dist/. In source (tests), it's src/commands/.
-const TEMPLATES_DIR =
-  basename(_dirname) === 'commands'
-    ? join(_dirname, '..', 'templates')
-    : join(_dirname, 'templates')
+// scaffold.ts lives at the package root of src/, so the templates sit beside it
+// at src/templates in source and dist/templates in the tsup bundle.
+const TEMPLATES_DIR = join(dirname(fileURLToPath(import.meta.url)), 'templates')
+
+function printGuidedError(message: string, hint?: string): void {
+  process.stderr.write(`✖ ${message}\n`)
+  if (hint !== undefined) {
+    process.stderr.write(`  ${hint}\n`)
+  }
+}
+
+function printSuccess(message: string): void {
+  process.stdout.write(`✔ ${message}\n`)
+}
+
+export function renderTemplate(content: string, vars: Record<string, string>): string {
+  return content.replace(/\{\{(\w+)\}\}/g, (_, key: string) => vars[key] ?? `{{${key}}}`)
+}
 
 // Per-adapter scaffold substitutions. Each choice supplies the import line, the
 // `storage:` factory call, and the .env.example variables — kept together so the
@@ -40,18 +47,7 @@ const STORAGE_ADAPTERS: Record<string, StorageTemplate> = {
   },
 }
 
-export function registerInit(program: Command): void {
-  program
-    .command('init [name]')
-    .description('Scaffold a new Manguito CMS project')
-    .option('--env <path>', 'path to .env file to load')
-    .action(async (name: string | undefined, options: { env?: string }) => {
-      loadEnvFile(options.env)
-      await runInit(name, { prompt: createPromptAdapter() })
-    })
-}
-
-export async function runInit(
+export async function scaffold(
   name: string | undefined,
   deps: { prompt: PromptAdapter; targetDir?: string }
 ): Promise<void> {
@@ -65,7 +61,7 @@ export async function runInit(
     if (entries.length > 0) {
       printGuidedError(
         `Directory "${displayName}" already exists and is not empty.`,
-        'Choose a different name, or run `manguito init` inside an empty directory.'
+        'Choose a different name, or run `npm create @bobbykim/manguito` inside an empty directory.'
       )
       return
     }
@@ -112,9 +108,9 @@ export async function runInit(
     process.stdout.write(`  cd ${name}\n`)
   }
   process.stdout.write('  cp .env.example .env\n')
-  process.stdout.write('  # Fill in DB_URL in .env\n')
+  process.stdout.write('  # Fill in DB_URL and AUTH_SECRET in .env\n')
   process.stdout.write('  pnpm install\n')
-  process.stdout.write('  manguito dev\n')
+  process.stdout.write('  pnpm dev\n')
 }
 
 function walkTemplates(dir: string): string[] {
