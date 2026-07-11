@@ -96,10 +96,13 @@ export async function scaffold(
     writeFileSync(outputPath, renderTemplate(readFileSync(templatePath, 'utf8'), vars), 'utf8')
   }
 
-  // paragraph-types has no template files — create the dir with a .gitkeep
-  const paragraphTypesDir = join(targetDir, 'schemas', 'paragraph-types')
-  mkdirSync(paragraphTypesDir, { recursive: true })
-  writeFileSync(join(paragraphTypesDir, '.gitkeep'), '', 'utf8')
+  // paragraph-types and enum-types have no example template files, but the
+  // parser errors on a missing schema folder — create each with a .gitkeep.
+  for (const folder of ['paragraph-types', 'enum-types']) {
+    const dir = join(targetDir, 'schemas', folder)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, '.gitkeep'), '', 'utf8')
+  }
 
   printSuccess('Project scaffolded.')
 

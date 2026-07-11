@@ -49,13 +49,36 @@ describe('scaffold', () => {
       'README.md',
       'schemas/roles.json',
       'schemas/routes.json',
-      'schemas/content-types/blog-post.json',
-      'schemas/taxonomy-types/tag.json',
+      // Schema files must carry the folder's machine-name prefix, or the parser
+      // rejects them (SCHEMA_FILENAME_PREFIX).
+      'schemas/content-types/content--blog_post.json',
+      'schemas/taxonomy-types/taxonomy--tag.json',
       'schemas/paragraph-types/.gitkeep',
+      // enum-types must exist as a folder — the parser errors on a missing
+      // schema folder (SCHEMA_FOLDER_NOT_FOUND).
+      'schemas/enum-types/.gitkeep',
     ]
     for (const file of expectedFiles) {
       expect(existsSync(join(projectDir, file)), `expected ${file} to exist`).toBe(true)
     }
+  })
+
+  it('scripts pass --env .env so pnpm dev/migrate load the env file', async () => {
+    await scaffold('env-test', { prompt: makePrompt('env-test'), targetDir: tempDir })
+    const pkg = JSON.parse(
+      readFileSync(join(tempDir, 'env-test', 'package.json'), 'utf8')
+    ) as { scripts: Record<string, string> }
+    for (const cmd of ['dev', 'build', 'start', 'migrate', 'validate']) {
+      expect(pkg.scripts[cmd], `${cmd} script`).toContain('--env .env')
+    }
+  })
+
+  it('scaffolds drizzle-kit so migrations resolve its bin under pnpm', async () => {
+    await scaffold('dk-test', { prompt: makePrompt('dk-test'), targetDir: tempDir })
+    const pkg = JSON.parse(
+      readFileSync(join(tempDir, 'dk-test', 'package.json'), 'utf8')
+    ) as { devDependencies?: Record<string, string> }
+    expect(pkg.devDependencies?.['drizzle-kit']).toBeDefined()
   })
 
   it('substitutes projectName into rendered config', async () => {
