@@ -44,10 +44,12 @@ Rejected alternatives (from brainstorming):
 Change `files` from `["dist"]` to include everything Vite needs to build the app from source, while keeping `dist/` (still the library surface — `createAdminAdapter` and `./codegen`, imported by the CLI/api):
 
 ```
-files: ["dist", "src", "public", "index.html", "vite.config.ts", "tsconfig.json"]
+files: ["dist", "src", "public", "index.html", "vite.config.ts"]
 ```
 
-Excluded (build/test-only, not needed to `viteBuild` from source): `tests/`, `vitest.config.ts`, `tsup.config.ts`, `tsconfig.adapter.json`, `tsconfig.codegen.json`, `CONTEXT.md`.
+`tsconfig.json` is deliberately **not** published: it `extends ../../tsconfig.base.json` (a monorepo path that won't exist in an installed package), and `viteBuild` does not need it (verified — `vite build` from the admin root succeeds with `tsconfig.json` absent; the admin has no path aliases). The admin's own `build` script runs `vue-tsc` for type-checking, but the CLI calls `viteBuild` directly, which uses esbuild defaults.
+
+Excluded (build/test-only, not needed to `viteBuild` from source): `tests/`, `vitest.config.ts`, `tsup.config.ts`, `tsconfig*.json`, `CONTEXT.md`.
 
 Verification during implementation: `npm pack` the admin and confirm the tarball contains `index.html`, `src/main.ts`, `vite.config.ts`, and that a Vite build from the extracted tarball root succeeds.
 
@@ -82,7 +84,7 @@ The CLI pins `vite ^6`; the admin uses `vite ^8`. The CLI runs `viteBuild`/`crea
 
 - A freshly scaffolded project installed with **pnpm** (not the monorepo) runs `manguito dev` and `GET /admin` returns the admin panel (HTTP 200, the SPA — not 404), with Vite HMR active.
 - `manguito build` in that project produces `dist/admin/index.html` + assets; `manguito start` serves the panel.
-- `npm pack @bobbykim/manguito-cms-admin` includes `index.html`, `src/`, `vite.config.ts`, `public/`, `tsconfig.json`, and `dist/`.
+- `npm pack @bobbykim/manguito-cms-admin` includes `index.html`, `src/`, `vite.config.ts`, `public/`, and `dist/` (not `tsconfig.json`).
 - The admin's promoted deps (`vite`, `@vitejs/plugin-vue`, `@tailwindcss/vite`, `tailwindcss`) appear in `dependencies`.
 - CLI and admin resolve the same vite major (8); both vite call sites run without error.
 - Sandbox still serves the admin (regression check).
