@@ -33,6 +33,7 @@ vi.mock('../src/codegen/forms.js', () => ({ generateForms: vi.fn().mockResolvedV
 vi.mock('../src/codegen/nav.js', () => ({ generateNav: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('vite', () => ({
   createServer: vi.fn().mockResolvedValue({ middlewares: vi.fn() }),
+  searchForWorkspaceRoot: vi.fn((cwd: string) => cwd),
 }))
 vi.mock('node:http', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:http')>()
@@ -148,6 +149,9 @@ describe('runDev', () => {
     expect(generateNav).toHaveBeenCalled()
     expect(createCmsApp).toHaveBeenCalled()
     expect(createViteServer).toHaveBeenCalled()
+    // fs.allow must include the project cwd so Vite can serve sibling deps
+    // (e.g. @fontsource fonts) that live outside the admin package root.
+    expect(vi.mocked(createViteServer).mock.calls[0]?.[0]?.server?.fs?.allow).toContain(FAKE_CWD)
     expect(httpCreateServer).toHaveBeenCalled()
   })
 
