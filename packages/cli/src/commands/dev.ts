@@ -6,7 +6,7 @@ import { mkdir, writeFile, watch, readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import type { Command } from 'commander'
 import { sql } from '@bobbykim/manguito-cms-db'
-import { createServer as createViteServer } from 'vite'
+import { createServer as createViteServer, searchForWorkspaceRoot } from 'vite'
 import {
   runDevMigration,
   seedSystemTables,
@@ -171,7 +171,15 @@ export async function runDev(
   // 9. Mount Vite dev server as Hono middleware for admin routes
   const vite = await createViteServer({
     root: resolveAdminRoot(cwd),
-    server: { middlewareMode: true },
+    server: {
+      middlewareMode: true,
+      // The admin package (Vite root) lives deep in node_modules/.pnpm, so Vite's
+      // default file-serving allow list does not cover sibling deps like the
+      // @fontsource font files. Allow the project root (covers cwd/node_modules
+      // in installed projects) and the workspace root (covers hoisted deps +
+      // packages/admin in the monorepo).
+      fs: { allow: [searchForWorkspaceRoot(cwd), cwd] },
+    },
     appType: 'spa',
     logLevel: 'warn',
   })
