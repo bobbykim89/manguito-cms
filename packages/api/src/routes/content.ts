@@ -3,6 +3,7 @@ import type {
   SchemaRegistry,
   ContentRepository,
 } from '@bobbykim/manguito-cms-core'
+import type { ProgrammaticResolver } from '../programmatic/resolve.js'
 import {
   SORTABLE_FIELDS,
   RELATION_FIELD_TYPES,
@@ -21,7 +22,8 @@ export function registerPublicContentRoutes(
   app: Hono,
   registry: SchemaRegistry,
   repos: ContentRepos,
-  listRateLimit?: MiddlewareHandler
+  listRateLimit?: MiddlewareHandler,
+  resolver?: ProgrammaticResolver
 ): void {
   // ── Meta-endpoints: list available schema types ───────────────────────────
   // Registered before the dynamic per-type routes to avoid path conflicts.
@@ -58,16 +60,18 @@ export function registerPublicContentRoutes(
     const repo = repos[typeName]
     if (!repo) continue
 
-    const schemaFieldNames = new Set<string>([
-      ...contentType.fields.map((f) => f.name),
-      ...contentType.system_fields.map((f) => f.name),
-    ])
-
     const relationFieldNames = new Set<string>(
       contentType.fields
         .filter((f) => RELATION_FIELD_TYPES.has(f.field_type))
         .map((f) => f.name)
     )
+
+    // Programmatic fields have no db column — filtering one would be a SQL
+    // error, so they're excluded from the filterable set.
+    const filterableFieldNames = new Set<string>([
+      ...contentType.fields.filter((f) => f.field_type !== 'programmatic').map((f) => f.name),
+      ...contentType.system_fields.map((f) => f.name),
+    ])
 
     if (contentType.only_one) {
       app.get(`/api/${basePath}`, async (c) => {
@@ -78,7 +82,9 @@ export function registerPublicContentRoutes(
             404
           )
         }
-        return c.json({ ok: true, data: result.data[0] })
+        let data = result.data[0] as Record<string, unknown>
+        if (resolver?.hasSchema(typeName)) data = await resolver.resolveItem(typeName, data)
+        return c.json({ ok: true, data })
       })
     } else {
       registerListRoute(`/api/${basePath}`, async (c) => {
@@ -124,7 +130,7 @@ export function registerPublicContentRoutes(
           )
         }
 
-        const filtersResult = parseFilters(c.req.url, schemaFieldNames)
+        const filtersResult = parseFilters(c.req.url, filterableFieldNames)
         if (!filtersResult.ok) {
           return c.json(
             {
@@ -164,6 +170,10 @@ export function registerPublicContentRoutes(
           include,
         })
 
+        if (resolver?.hasSchema(typeName)) {
+          const resolved = await resolver.resolveList(typeName, result.data as Record<string, unknown>[])
+          return c.json({ ...result, data: resolved })
+        }
         return c.json(result)
       })
 
@@ -198,7 +208,9 @@ export function registerPublicContentRoutes(
           )
         }
 
-        return c.json({ ok: true, data: item })
+        let data = item as Record<string, unknown>
+        if (resolver?.hasSchema(typeName)) data = await resolver.resolveItem(typeName, data)
+        return c.json({ ok: true, data })
       })
     }
   }
@@ -228,6 +240,10 @@ export function registerPublicContentRoutes(
         per_page: pagination.per_page,
       })
 
+      if (resolver?.hasSchema(typeName)) {
+        const resolved = await resolver.resolveList(typeName, result.data as Record<string, unknown>[])
+        return c.json({ ...result, data: resolved })
+      }
       return c.json(result)
     })
 
@@ -245,7 +261,9 @@ export function registerPublicContentRoutes(
         )
       }
 
-      return c.json({ ok: true, data: item })
+      let data = item as Record<string, unknown>
+      if (resolver?.hasSchema(typeName)) data = await resolver.resolveItem(typeName, data)
+      return c.json({ ok: true, data })
     })
   }
 }

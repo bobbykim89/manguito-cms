@@ -29,6 +29,11 @@
             "label": "Description",
             "type": "text/rich",
             "required": true
+          },
+          {
+            "name": "blog_summary",
+            "label": "Summary",
+            "type": "programmatic"
           }
         ]
       }

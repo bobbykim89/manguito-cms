@@ -13,6 +13,7 @@ import type {
   RawEnumField,
   RawParagraphField,
   RawReferenceField,
+  RawProgrammaticField,
 } from '../parser/validators'
 
 // ─── Build context and result ─────────────────────────────────────────────────
@@ -46,6 +47,7 @@ type RawByType = {
   enum: RawEnumField
   paragraph: RawParagraphField
   reference: RawReferenceField
+  programmatic: RawProgrammaticField
 }
 
 export type FieldBuilder<T extends FieldType> = (
@@ -264,4 +266,12 @@ export const fieldTypeRegistry: FieldTypeRegistry = {
       ui_component: { component: 'typeahead-select', ref: raw.target, rel: raw.rel },
     }
   },
+
+  // ── Programmatic — computed at read time, no column ─────────────────────────
+  // Inert marker: the value is produced by a user resolver in the api layer.
+  programmatic: () => ({
+    validation: { required: false },
+    db_column: null,
+    ui_component: { component: 'computed-display' },
+  }),
 }

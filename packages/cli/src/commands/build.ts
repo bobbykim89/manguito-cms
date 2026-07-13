@@ -19,6 +19,7 @@ import { generateSchemaRegistry } from '../codegen/registry.js'
 import { generateRoutes } from '../codegen/routes.js'
 import { generateForms } from '../codegen/forms.js'
 import { generateServerEntries } from '../codegen/server-entries.js'
+import { generateProgrammaticRegistry } from '../codegen/programmatic-registry.js'
 import { resolveConfig } from '../utils/config.js'
 import { loadEnvFile } from '../utils/env.js'
 import { printGuidedError, printSuccess, printValidationErrors } from '../utils/error.js'
@@ -123,6 +124,13 @@ export async function runBuild(
   await generateSchemaRegistry(registry, generatedDir)
   await generateRoutes(registry, generatedDir)
   await generateForms(registry, join(generatedDir, 'forms'))
+
+  const programmaticDir = resolve(cwd, config.programmatic.dir)
+  const resolverFiles = existsSync(programmaticDir)
+    ? walkFiles(programmaticDir).filter((f) => /\.(ts|mjs|js)$/.test(f))
+    : []
+  await generateProgrammaticRegistry(resolverFiles, generatedDir)
+
   await generateServerEntries(
     { adminPrefix: config.admin.prefix, apiPrefix: config.api.prefix },
     generatedDir,

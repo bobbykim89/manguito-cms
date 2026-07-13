@@ -140,8 +140,9 @@ field's `type` determines which extra options it accepts:
 | `enum` | `ref?` XOR `values?` | Exactly one of `ref` (standalone enum) or inline `values[]` |
 | `paragraph` | `ref`, `rel` (1:1/1:many), `max?` | Embedded paragraph blocks |
 | `reference` | `target`, `rel` (1:1/1:many/m:m), `max?` | Reference to content-type/taxonomy-type |
+| `programmatic` | — | Value computed at read time by a resolver — no column. See [programmatic-fields.md](./programmatic-fields.md) |
 
-That's 12 field types in total.
+That's 13 field types in total.
 
 ### The `enum` field's XOR rule
 
@@ -162,6 +163,21 @@ never neither:
 ```json
 { "name": "status", "label": "Status", "type": "enum", "required": true, "values": ["draft", "published"] }
 ```
+
+### Programmatic fields
+
+A `programmatic` field has no column and no input — its value is computed at read
+time by a resolver function you write in TypeScript. In the schema you only
+declare that the field exists (`required` is ignored, since there is nothing to
+author):
+
+```json
+{ "name": "blog_summary", "label": "Summary", "type": "programmatic" }
+```
+
+The resolver itself lives in a separate file and is bound to the field by machine
+name. Programmatic fields are supported on content and taxonomy types. See
+[`programmatic-fields.md`](./programmatic-fields.md) for the full guide.
 
 ## Relationships
 
@@ -241,3 +257,5 @@ Each entry in `base_paths` has a `name` and a `path` (must start with `/`).
 - [`README.md`](../README.md) — project overview and quick start.
 - [`configuration.md`](./configuration.md) — the full config reference:
   `manguito.config.ts` blocks, adapter factories, and environment variables.
+- [`programmatic-fields.md`](./programmatic-fields.md) — computed, read-time
+  fields backed by TypeScript resolvers.

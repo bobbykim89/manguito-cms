@@ -96,6 +96,15 @@ export const RawDateFieldSchema = RawFieldBase.extend({
   type: z.literal('date'),
 })
 
+// ─── Programmatic field schema ────────────────────────────────────────────────
+
+// Value computed at read time — no DB column. `required` is accepted for
+// authoring uniformity but ignored (a programmatic field has no write path).
+export const RawProgrammaticFieldSchema = RawFieldBase.extend({
+  type: z.literal('programmatic'),
+  required: z.boolean().optional(),
+})
+
 // ─── Media field schemas ──────────────────────────────────────────────────────
 
 export const RawImageFieldSchema = RawFieldBase.extend({
@@ -154,7 +163,7 @@ export const RawReferenceFieldSchema = RawFieldBase.extend({
 
 // ─── Field union ──────────────────────────────────────────────────────────────
 
-// The 11 non-enum field types form a proper discriminated union on 'type'.
+// The 12 non-enum field types form a proper discriminated union on 'type'.
 // RawEnumFieldSchema is excluded here because .refine() makes it ZodEffects,
 // which z.discriminatedUnion() does not accept.
 const RawNonEnumFieldSchema = z.discriminatedUnion('type', [
@@ -169,6 +178,7 @@ const RawNonEnumFieldSchema = z.discriminatedUnion('type', [
   RawFileFieldSchema,
   RawParagraphFieldSchema,
   RawReferenceFieldSchema,
+  RawProgrammaticFieldSchema,
 ])
 
 // Complete field union. z.union() tries RawNonEnumFieldSchema first via the
@@ -257,4 +267,5 @@ export type RawFileField = z.infer<typeof RawFileFieldSchema>
 export type RawEnumField = z.infer<typeof RawEnumFieldSchema>
 export type RawParagraphField = z.infer<typeof RawParagraphFieldSchema>
 export type RawReferenceField = z.infer<typeof RawReferenceFieldSchema>
+export type RawProgrammaticField = z.infer<typeof RawProgrammaticFieldSchema>
 export type RawField = z.infer<typeof RawFieldSchema>

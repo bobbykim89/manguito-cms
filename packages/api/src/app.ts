@@ -11,6 +11,7 @@ import { createPermissionMiddleware } from './middleware/permission.js'
 import { createHierarchyMiddleware } from './middleware/hierarchy.js'
 import { resolveListRateLimit } from './middleware/rate-limit.js'
 import { buildRolesRegistry } from './auth/registry.js'
+import { createProgrammaticResolver, validateResolverBindings, type ResolverMap } from './programmatic/resolve.js'
 import { registerPublicContentRoutes } from './routes/content.js'
 import { registerPublicMediaRoutes } from './routes/media.js'
 import { registerAdminContentRoutes } from './routes/admin/content.js'
@@ -36,6 +37,8 @@ export type CreateCmsAppOptions = {
   }
   rateLimit?: ResolvedRateLimitConfig
   cors?: CorsConfig
+  /** Programmatic field resolvers, keyed `${schema}::${field}`. */
+  resolvers?: ResolverMap
 }
 
 export interface ManguitoCmsAPIAdapter {
@@ -66,6 +69,12 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
   // Build roles registry — throws immediately if roles are missing or invalid.
   // The server must not start with a broken registry.
   const rolesRegistry = buildRolesRegistry(registry.roles.roles)
+
+  // Validate programmatic-field bindings at startup (throws on mismatch, like
+  // the storage/roles checks above). Undefined resolvers ⇒ empty map.
+  const resolverMap = options.resolvers ?? new Map()
+  validateResolverBindings(registry, resolverMap)
+  const programmaticResolver = createProgrammaticResolver(resolverMap)
 
   const app = new Hono()
 
@@ -201,7 +210,7 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
 
   // ── Public routes ─────────────────────────────────────────────────────────────
 
-  registerPublicContentRoutes(app, registry, publicRepos, listRateLimit)
+  registerPublicContentRoutes(app, registry, publicRepos, listRateLimit, programmaticResolver)
   registerPublicMediaRoutes(app, mediaRepo, listRateLimit)
 
   // ── Admin routes — all registered AFTER the blanket use() so auth middleware

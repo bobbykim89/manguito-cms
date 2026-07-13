@@ -17,6 +17,7 @@ const COMPONENT_NAME: Record<string, string> = {
   select: 'EnumSelect',
   'typeahead-select': 'ReferenceSelect',
   'paragraph-embed': 'ParagraphEmbed',
+  'computed-display': 'ComputedDisplay',
 }
 
 const COMPONENT_IMPORT: Record<string, string> = {
@@ -29,6 +30,7 @@ const COMPONENT_IMPORT: Record<string, string> = {
   EnumSelect: `${ADMIN_PKG}/src/components/fields/EnumSelect.vue`,
   ReferenceSelect: `${ADMIN_PKG}/src/components/fields/ReferenceSelect.vue`,
   ParagraphEmbed: `${ADMIN_PKG}/src/components/fields/ParagraphEmbed.vue`,
+  ComputedDisplay: `${ADMIN_PKG}/src/components/fields/ComputedDisplay.vue`,
 }
 
 // Escape backslashes and single quotes for use inside JS single-quoted string literals.
@@ -90,6 +92,10 @@ function renderField(field: ParsedField, indent: string): string {
   const compName = COMPONENT_NAME[field.ui_component.component]!
   const fieldObj = buildFieldObject(field)
   const attr = indent + '  '
+
+  if (field.ui_component.component === 'computed-display') {
+    return [`${indent}<${compName}`, `${attr}:field="${fieldObj}"`, `${indent}/>`].join('\n')
+  }
 
   const lines: string[] = [`${indent}<${compName}`]
   lines.push(`${attr}:field="${fieldObj}"`)

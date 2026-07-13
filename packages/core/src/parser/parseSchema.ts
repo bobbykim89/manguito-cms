@@ -236,8 +236,13 @@ function buildParsedField(
     }
   }
 
-  const { name, label, required } = rawField
+  const { name, label } = rawField
   const { validation, db_column, ui_component } = build(rawField, { ownerTableName })
+  // Source of truth for `required` is the builder's validation output, not the raw
+  // field: every builder mirrors raw.required here except `programmatic`, which
+  // hardcodes `false` — an authored `required: true` on a programmatic field must
+  // still resolve to false (no write path exists for a computed value).
+  const required = validation.required
 
   return {
     ok: true,

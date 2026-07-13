@@ -194,3 +194,17 @@ describe('defineConfig — name field', () => {
     expect(resolved.name).toBe('My Headless CMS')
   })
 })
+
+// ─── Programmatic config defaults ─────────────────────────────────────────────
+
+describe('defineConfig — programmatic config', () => {
+  it('defaults programmatic.dir to ./src/programmatic', () => {
+    const resolved = defineConfig(minimalConfig())
+    expect(resolved.programmatic).toEqual({ dir: './src/programmatic' })
+  })
+
+  it('honors a custom programmatic.dir', () => {
+    const resolved = defineConfig(minimalConfig({ programmatic: { dir: './resolvers' } }))
+    expect(resolved.programmatic).toEqual({ dir: './resolvers' })
+  })
+})

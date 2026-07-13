@@ -15,6 +15,7 @@ import NumberInput from '../../components/fields/NumberInput.vue'
 import BooleanToggle from '../../components/fields/BooleanToggle.vue'
 import DatePicker from '../../components/fields/DatePicker.vue'
 import EnumSelect from '../../components/fields/EnumSelect.vue'
+import ComputedDisplay from '../../components/fields/ComputedDisplay.vue'
 import ConfirmDialog from '../../components/shared/ConfirmDialog.vue'
 
 const route = useRoute()
@@ -56,6 +57,7 @@ const FIELD_COMP = {
   boolean: BooleanToggle,
   date: DatePicker,
   enum: EnumSelect,
+  programmatic: ComputedDisplay,
 } as const
 
 function componentFor(field: ParsedField): Component {
@@ -87,6 +89,9 @@ function defaultForField(field: ParsedField): unknown {
 function initForm(source?: Record<string, unknown>) {
   const f: Record<string, unknown> = {}
   for (const field of allFields.value) {
+    // Programmatic fields are computed at read time — never edited or submitted,
+    // so they stay out of the form state (and therefore the save payload).
+    if (field.field_type === 'programmatic') continue
     f[field.name] = source?.[field.name] ?? defaultForField(field)
   }
   form.value = f
