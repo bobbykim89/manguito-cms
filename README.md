@@ -205,8 +205,11 @@ Content types live under `schemas/content-types/` as JSON or YAML. Fields are gr
 | `enum` | `ref?` XOR `values?` | Exactly one of `ref` (standalone enum) or inline `values[]` |
 | `paragraph` | `ref`, `rel` (1:1/1:many), `max?` | Embedded paragraph blocks |
 | `reference` | `target`, `rel` (1:1/1:many/m:m), `max?` | Reference to content-type/taxonomy-type |
+| `programmatic` | — | Value computed at read time by a TypeScript resolver — no column |
 
 Every field also has `name` (snake_case), `label`, and `required`.
+
+Need a value that isn't stored — a constant, something derived from other fields, or a value fetched from an external API? A **`programmatic` field** is computed at read time by a resolver function you write. See [docs/programmatic-fields.md](docs/programmatic-fields.md).
 
 → See [docs/schema-authoring.md](docs/schema-authoring.md) for the full guide.
 
@@ -264,7 +267,7 @@ The first admin user is created with `manguito createsuperuser`. Existing users 
 - JSON and YAML schema parser with Zod validation
 - `defineConfig` — single config file, mode inferred from CLI command
 - Build-time codegen: schemas → static Drizzle + Hono + Vue artifacts
-- Field types: plain text, rich text, integer, float, boolean, date, image/video/file, enum, paragraph, reference
+- Field types: plain text, rich text, integer, float, boolean, date, image/video/file, enum, paragraph, reference, programmatic (read-time computed)
 - Relationship types: one-to-one, one-to-many, many-to-many
 - Postgres support via Drizzle ORM with programmatic migrations
 - REST API with auto-generated CRUD endpoints per content type
