@@ -41,7 +41,8 @@ describe('createProgrammaticResolver', () => {
   })
 
   it('caches by item id for the ttl window', async () => {
-    const fn = vi.fn(() => Date.now())
+    let counter = 0
+    const fn = vi.fn(() => ++counter)
     const def = programmaticField({ schema: SCHEMA, field: 'ts', cache: { ttl: 60 } }, fn)
     const { resolveItem } = createProgrammaticResolver(mapOf(def))
     const a = await resolveItem(SCHEMA, { id: '1' })
