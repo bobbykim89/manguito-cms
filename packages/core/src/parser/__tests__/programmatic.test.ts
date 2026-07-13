@@ -26,6 +26,8 @@ describe('programmatic field parsing', () => {
     const result = parseSchema(CONTENT_WITH_PROGRAMMATIC, 'content-type', 'example.json')
     expect(result.ok).toBe(true)
     if (!result.ok) return
+    expect(result.schema.schema_type).toBe('content-type')
+    if (result.schema.schema_type !== 'content-type') return
     const field = result.schema.fields.find((f) => f.name === 'blog_summary')!
     expect(field.field_type).toBe('programmatic')
     expect(field.db_column).toBeNull()
@@ -40,6 +42,8 @@ describe('programmatic field parsing', () => {
     const result = parseSchema(raw, 'content-type', 'example.json')
     expect(result.ok).toBe(true)
     if (!result.ok) return
+    expect(result.schema.schema_type).toBe('content-type')
+    if (result.schema.schema_type !== 'content-type') return
     const field = result.schema.fields.find((f) => f.name === 'blog_summary')!
     expect(field.required).toBe(false)
   })
