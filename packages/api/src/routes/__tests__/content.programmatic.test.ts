@@ -156,9 +156,18 @@ describe('programmatic resolution in public routes', () => {
       resolverFor()
     )
     const res = await app.request('/api/blog')
-    const body = (await res.json()) as { data: Record<string, unknown>[] }
+    const body = (await res.json()) as { ok: boolean; data: Record<string, unknown>[]; meta: unknown }
+    expect(body.ok).toBe(true)
     expect(body.data[0]?.['live']).toBe('L')
     expect(body.data[0]?.['summary']).toBeUndefined()
+    expect(body.meta).toEqual({
+      total: 1,
+      page: 1,
+      per_page: 10,
+      total_pages: 1,
+      has_next: false,
+      has_prev: false,
+    })
   })
 
   it('rejects a filter on a programmatic field with 400', async () => {
