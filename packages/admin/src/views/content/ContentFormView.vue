@@ -18,6 +18,7 @@ import MediaUpload from '../../components/fields/MediaUpload.vue'
 import EnumSelect from '../../components/fields/EnumSelect.vue'
 import ReferenceSelect from '../../components/fields/ReferenceSelect.vue'
 import ParagraphEmbed from '../../components/fields/ParagraphEmbed.vue'
+import ComputedDisplay from '../../components/fields/ComputedDisplay.vue'
 import ConfirmDialog from '../../components/shared/ConfirmDialog.vue'
 import { useTabIndicator } from '../../composables/useTabIndicator'
 
@@ -102,6 +103,7 @@ const FIELD_COMP: Record<string, Component> = {
   enum: markRaw(EnumSelect),
   reference: markRaw(ReferenceSelect),
   paragraph: markRaw(ParagraphEmbed),
+  programmatic: markRaw(ComputedDisplay),
 }
 
 function componentFor(field: ParsedField): Component {
@@ -209,6 +211,9 @@ function initForm(source?: Record<string, unknown>) {
     f.slug = source?.slug ?? ''
   }
   for (const field of allFields.value) {
+    // Programmatic fields are computed at read time — never edited or submitted,
+    // so they stay out of the form state (and therefore the save payload).
+    if (field.field_type === 'programmatic') continue
     f[field.name] = source?.[field.name] ?? defaultForField(field)
   }
   form.value = f

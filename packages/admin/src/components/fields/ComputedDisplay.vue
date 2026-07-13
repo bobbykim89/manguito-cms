@@ -2,6 +2,11 @@
      read time by the public API, so the admin shows the label only and never
      contributes this field to the submit payload. -->
 <script setup lang="ts">
+// The form renders every field with the same :model-value / :disabled / :error /
+// @update:model-value bindings. This field consumes none of them, so drop the
+// fallthrough attrs rather than letting them render onto the root element.
+defineOptions({ inheritAttrs: false })
+
 defineProps<{
   field: { label: string }
 }>()
