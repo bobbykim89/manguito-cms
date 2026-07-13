@@ -1,6 +1,7 @@
 // manguito dev — start dev server with schema watching and Vite admin panel
 import { createServer as createHttpServer } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { existsSync } from 'node:fs'
 import { resolve, join, dirname, extname } from 'node:path'
 import { mkdir, writeFile, watch, readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
@@ -14,6 +15,7 @@ import {
   createPostgresAdapter,
 } from '@bobbykim/manguito-cms-db'
 import { createCmsApp } from '@bobbykim/manguito-cms-api'
+import type { ResolverMap } from '@bobbykim/manguito-cms-api'
 import {
   walkSchemaDirectory,
   parseSchema,
@@ -35,6 +37,7 @@ import { resolveConfig } from '../utils/config.js'
 import { connectDb } from '../utils/db.js'
 import { printGuidedError, printSuccess } from '../utils/error.js'
 import { createPromptAdapter } from '../utils/prompt.js'
+import { loadProgrammaticResolvers } from '../utils/programmatic-loader.js'
 
 type HonoFetch = (request: Request) => Response | Promise<Response>
 
@@ -154,11 +157,13 @@ export async function runDev(
   await generateNav(registry, manguitoDir)
 
   // 8. Create Hono app via createCmsApp
+  const resolverMap = await loadProgrammaticResolvers(cwd, config.programmatic.dir)
   const adapter = createCmsApp({
     name: config.name,
     registry,
     db: db.getDb(),
     storage: config.storage,
+    resolvers: resolverMap,
     ...(config.api.prefix ? { prefix: config.api.prefix } : {}),
     ...(config.api.media?.max_file_size ? { media: { max_file_size: config.api.media.max_file_size } } : {}),
     ...(config.api.rateLimit ? { rateLimit: config.api.rateLimit } : {}),
@@ -266,10 +271,37 @@ export async function runDev(
           updateFetch: (fetch) => {
             honoFetch = fetch
           },
+          getResolvers: () => loadProgrammaticResolvers(cwd, config.programmatic.dir),
         })
       }
     }
   })()
+
+  // 11b. Start a second fs.watch on the programmatic resolvers directory (if it
+  // exists) — resolver file edits should hot-swap the app the same way schema
+  // edits do. Re-running onSchemaFileChange for a resolver-only edit is cheap
+  // (schema re-parse is idempotent) and it re-loads resolvers via getResolvers.
+  const programmaticDir = resolve(cwd, config.programmatic.dir)
+  if (existsSync(programmaticDir)) {
+    const progWatcher = watch(programmaticDir, { recursive: true })
+    void (async () => {
+      for await (const event of progWatcher) {
+        if (event.filename && /\.(ts|mjs|js)$/.test(event.filename)) {
+          await onSchemaFileChange({
+            cwd,
+            config,
+            manguitoDir,
+            drizzleConfigPath,
+            db,
+            updateFetch: (fetch) => {
+              honoFetch = fetch
+            },
+            getResolvers: () => loadProgrammaticResolvers(cwd, config.programmatic.dir),
+          })
+        }
+      }
+    })()
+  }
 }
 
 // ─── Schema file change handler ───────────────────────────────────────────────
@@ -281,10 +313,11 @@ type OnSchemaFileChangeArgs = {
   drizzleConfigPath: string
   db: ReturnType<typeof createPostgresAdapter>
   updateFetch: (fetch: HonoFetch) => void
+  getResolvers: () => Promise<ResolverMap>
 }
 
 async function onSchemaFileChange(args: OnSchemaFileChangeArgs): Promise<void> {
-  const { cwd, config, manguitoDir, drizzleConfigPath, db, updateFetch } = args
+  const { cwd, config, manguitoDir, drizzleConfigPath, db, updateFetch, getResolvers } = args
 
   let registry: SchemaRegistry
   try {
@@ -310,12 +343,14 @@ async function onSchemaFileChange(args: OnSchemaFileChangeArgs): Promise<void> {
     return
   }
 
-  // Hot-swap Hono app with updated registry
+  // Hot-swap Hono app with updated registry (and freshly reloaded resolvers)
+  const resolverMap = await getResolvers()
   const newAdapter = createCmsApp({
     name: config.name,
     registry,
     db: db.getDb(),
     storage: config.storage,
+    resolvers: resolverMap,
     ...(config.api.prefix ? { prefix: config.api.prefix } : {}),
     ...(config.api.media?.max_file_size ? { media: { max_file_size: config.api.media.max_file_size } } : {}),
     ...(config.api.rateLimit ? { rateLimit: config.api.rateLimit } : {}),

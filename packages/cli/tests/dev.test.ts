@@ -77,6 +77,7 @@ const MOCK_CONFIG = {
   server: {},
   api: { prefix: '/api' },
   admin: { prefix: '/admin' },
+  programmatic: { dir: './src/programmatic' },
 }
 
 function makeDb(executeResponses: Array<{ rows: unknown[] }> = [], tableExists = true) {

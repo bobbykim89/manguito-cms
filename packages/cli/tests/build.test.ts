@@ -9,6 +9,7 @@ vi.mock('../src/utils/config.js', () => ({
     server: {},
     api: { prefix: '/api', media: undefined },
     admin: { prefix: '/admin' },
+    programmatic: { dir: './src/programmatic' },
   }),
 }))
 vi.mock('@bobbykim/manguito-cms-core', () => ({
@@ -23,6 +24,7 @@ vi.mock('../src/codegen/registry.js', () => ({ generateSchemaRegistry: vi.fn().m
 vi.mock('../src/codegen/routes.js', () => ({ generateRoutes: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('../src/codegen/forms.js', () => ({ generateForms: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('../src/codegen/server-entries.js', () => ({ generateServerEntries: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('../src/codegen/programmatic-registry.js', () => ({ generateProgrammaticRegistry: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('vite', () => ({ build: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('tsup', () => ({ build: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('node:fs', async (importOriginal) => {
@@ -59,6 +61,7 @@ describe('runBuild', () => {
       server: {},
       api: { prefix: '/api', media: undefined },
       admin: { prefix: '/admin' },
+      programmatic: { dir: './src/programmatic' },
     } as never)
     vi.mocked(walkSchemaDirectory).mockReturnValue({ ok: true, value: [] })
     vi.mocked(loadSchemaFile).mockReturnValue({ ok: true, value: '{}' })
