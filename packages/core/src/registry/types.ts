@@ -56,6 +56,7 @@ export type UiComponent =
   | { component: 'select'; options: string[]; enum_ref?: string }
   | { component: 'typeahead-select'; ref: string; rel: RelationType }
   | { component: 'paragraph-embed'; ref: string; rel: RelationType; max?: number }
+  | { component: 'computed-display' }
 
 // ─── Field Type ───────────────────────────────────────────────────────────────
 
@@ -72,6 +73,7 @@ export type FieldType =
   | 'enum'
   | 'paragraph'
   | 'reference'
+  | 'programmatic'
 
 // ─── Parsed Field ─────────────────────────────────────────────────────────────
 

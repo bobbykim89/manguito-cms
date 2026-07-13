@@ -20,7 +20,7 @@ const ctx = { ownerTableName: 'content_blog_post' }
 
 const ALL_FIELD_TYPES: FieldType[] = [
   'text/plain', 'text/rich', 'integer', 'float', 'boolean', 'date',
-  'image', 'video', 'file', 'enum', 'paragraph', 'reference',
+  'image', 'video', 'file', 'enum', 'paragraph', 'reference', 'programmatic',
 ]
 
 describe('fieldTypeRegistry — completeness', () => {
@@ -180,6 +180,20 @@ describe('field builders — reference', () => {
       },
     })
     expect(built.validation).toEqual({ required: false, max_items: 10 })
+  })
+})
+
+// ─── Programmatic ─────────────────────────────────────────────────────────────
+
+describe('field builders — programmatic', () => {
+  it('produces no column, required: false, and a computed-display ui component', () => {
+    const built = fieldTypeRegistry['programmatic'](
+      { name: 'blog_summary', label: 'Summary', type: 'programmatic' },
+      ctx
+    )
+    expect(built.db_column).toBeNull()
+    expect(built.validation).toEqual({ required: false })
+    expect(built.ui_component).toEqual({ component: 'computed-display' })
   })
 })
 
