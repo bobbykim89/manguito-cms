@@ -5,6 +5,8 @@ export type {
   SchemaFolders,
   SchemaConfig,
   ResolvedSchemaConfig,
+  ProgrammaticConfig,
+  ResolvedProgrammaticConfig,
   MigrationsConfig,
   ResolvedMigrationsConfig,
   MigrationResult,
@@ -103,3 +105,13 @@ export type {
 } from './types.js'
 
 export { hashPassword, verifyPassword } from './auth.js'
+
+export { programmaticField } from './programmatic/defineProgrammaticField.js'
+
+export type {
+  JsonValue,
+  ResolverContext,
+  Resolver,
+  ProgrammaticFieldOptions,
+  ProgrammaticFieldDefinition,
+} from './programmatic/defineProgrammaticField.js'

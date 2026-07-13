@@ -19,6 +19,16 @@ export type ResolvedSchemaConfig = {
   folders: SchemaFolders
 }
 
+// ─── Programmatic Fields Config ───────────────────────────────────────────────
+
+export type ProgrammaticConfig = {
+  dir?: string
+}
+
+export type ResolvedProgrammaticConfig = {
+  dir: string
+}
+
 // ─── Migrations Config ────────────────────────────────────────────────────────
 
 export type MigrationsConfig = {
@@ -149,6 +159,7 @@ export interface AdminAdapter {
 export type ManguitoConfig = {
   name?: string
   schema?: SchemaConfig
+  programmatic?: ProgrammaticConfig
   db: DbAdapter
   migrations?: MigrationsConfig
   storage: StorageAdapter
@@ -160,6 +171,7 @@ export type ManguitoConfig = {
 export type ResolvedManguitoConfig = {
   name: string
   schema: ResolvedSchemaConfig
+  programmatic: ResolvedProgrammaticConfig
   db: DbAdapter
   migrations: ResolvedMigrationsConfig | null
   storage: StorageAdapter

@@ -12,6 +12,7 @@ export function defineConfig(config: ManguitoConfig): ResolvedManguitoConfig {
   return {
     name: config.name ?? 'Manguito CMS',
     schema: resolveSchemaConfig(config.schema),
+    programmatic: { dir: config.programmatic?.dir ?? './src/programmatic' },
     db: config.db,
     migrations: resolveMigrationsConfig(config.migrations, config.db),
     storage: config.storage,
