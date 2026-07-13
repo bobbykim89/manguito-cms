@@ -25,7 +25,7 @@ describe('createProgrammaticResolver', () => {
 
   it('returns fallback when the resolver throws', async () => {
     const def = programmaticField({ schema: SCHEMA, field: 'x', fallback: 'N/A' }, () => { throw new Error('boom') })
-    const { resolveItem } = createProgrammaticResolver(mapOf(def))
+    const { resolveItem } = createProgrammaticResolver(mapOf(def), { onError: () => {} })
     const out = await resolveItem(SCHEMA, { id: '1' })
     expect(out['x']).toBe('N/A')
   })
@@ -35,9 +35,27 @@ describe('createProgrammaticResolver', () => {
       { schema: SCHEMA, field: 'x', timeout: 20 },
       () => new Promise((r) => setTimeout(() => r('late'), 200)),
     )
-    const { resolveItem } = createProgrammaticResolver(mapOf(def))
+    const { resolveItem } = createProgrammaticResolver(mapOf(def), { onError: () => {} })
     const out = await resolveItem(SCHEMA, { id: '1' })
     expect(out['x']).toBeNull()
+  })
+
+  it('does not cache a failed result (retries on next read)', async () => {
+    let calls = 0
+    const def = programmaticField(
+      { schema: SCHEMA, field: 'x', cache: { ttl: 60 }, fallback: 'FB' },
+      () => {
+        calls++
+        if (calls === 1) throw new Error('boom')
+        return 'ok'
+      },
+    )
+    const { resolveItem } = createProgrammaticResolver(mapOf(def), { onError: () => {} })
+    const a = await resolveItem(SCHEMA, { id: '1' })
+    expect(a['x']).toBe('FB')   // first call failed -> fallback, not cached
+    const b = await resolveItem(SCHEMA, { id: '1' })
+    expect(b['x']).toBe('ok')   // retried -> success
+    expect(calls).toBe(2)
   })
 
   it('caches by item id for the ttl window', async () => {

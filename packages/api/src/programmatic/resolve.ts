@@ -83,19 +83,20 @@ async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 async function runOne(
   def: ProgrammaticFieldDefinition,
   row: Record<string, unknown>,
-): Promise<unknown> {
+  onError: (message: string) => void,
+): Promise<{ value: unknown; failed: boolean }> {
   const fallback = def.fallback ?? null
   try {
     const result = await withTimeout(
       Promise.resolve(def.resolve(buildContext(row))),
       def.timeout ?? DEFAULT_TIMEOUT_MS,
     )
-    return result === undefined ? null : result
+    return { value: result === undefined ? null : result, failed: false }
   } catch (err) {
-    process.stderr.write(
-      `⚠ programmatic field ${resolverKey(def.schema, def.field)} failed: ${err instanceof Error ? err.message : String(err)}\n`,
+    onError(
+      `⚠ programmatic field ${resolverKey(def.schema, def.field)} failed: ${err instanceof Error ? err.message : String(err)}`,
     )
-    return fallback
+    return { value: fallback, failed: true }
   }
 }
 
@@ -112,7 +113,16 @@ async function runPool<T>(items: T[], limit: number, fn: (item: T) => Promise<vo
   await Promise.all(workers)
 }
 
-export function createProgrammaticResolver(resolvers: ResolverMap) {
+export function createProgrammaticResolver(
+  resolvers: ResolverMap,
+  options?: { onError?: (message: string) => void },
+) {
+  const onError =
+    options?.onError ??
+    ((message: string) => {
+      process.stderr.write(message + '\n')
+    })
+
   // Group definitions by schema once.
   const bySchema = new Map<string, ProgrammaticFieldDefinition[]>()
   for (const def of resolvers.values()) {
@@ -134,11 +144,12 @@ export function createProgrammaticResolver(resolvers: ResolverMap) {
       const now = Date.now()
       const hit = cache.get(key)
       if (hit && hit.expires > now) return hit.value
-      const value = await runOne(def, row)
-      cache.set(key, { value, expires: now + def.cache.ttl * 1000 })
+      const { value, failed } = await runOne(def, row, onError)
+      if (!failed) cache.set(key, { value, expires: now + def.cache.ttl * 1000 })
       return value
     }
-    return runOne(def, row)
+    const { value } = await runOne(def, row, onError)
+    return value
   }
 
   async function resolveItem(
@@ -146,7 +157,7 @@ export function createProgrammaticResolver(resolvers: ResolverMap) {
     row: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
     const defs = bySchema.get(schema)
-    if (!defs || defs.length === 0) return row
+    if (!defs || defs.length === 0) return { ...row }
     const out: Record<string, unknown> = { ...row }
     await Promise.all(
       defs.map(async (def) => {
@@ -161,7 +172,7 @@ export function createProgrammaticResolver(resolvers: ResolverMap) {
     rows: Record<string, unknown>[],
   ): Promise<Record<string, unknown>[]> {
     const defs = (bySchema.get(schema) ?? []).filter((d) => d.on_list === true)
-    if (defs.length === 0) return rows
+    if (defs.length === 0) return rows.map((r) => ({ ...r }))
     const out = rows.map((r) => ({ ...r }))
     const tasks: Array<{ rowIndex: number; def: ProgrammaticFieldDefinition }> = []
     for (let i = 0; i < rows.length; i++) {
