@@ -93,11 +93,16 @@ export async function setup(): Promise<void> {
 
   for (const user of testRoleUsers) {
     const hash = await hashPassword(user.password)
+    // Idempotent seed: clear any prior row occupying this fixture's id or email
+    // before inserting. An `ON CONFLICT (email)` upsert alone can't absorb a
+    // primary-key collision, so an orphaned row left at a fixture id by an
+    // interrupted run (e.g. users.integration.test.ts reuses id …0002) would
+    // otherwise fail the whole suite here on a re-run against a persistent DB.
+    await db.execute(sql`DELETE FROM users WHERE id = ${user.id} OR email = ${user.email}`)
     await db.execute(
       sql`INSERT INTO users (id, email, password_hash, role_id, token_version, must_change_password)
           SELECT ${user.id}, ${user.email}, ${hash}, r.id, ${user.token_version}, ${user.must_change_password}
-          FROM roles r WHERE r.name = ${user.role}
-          ON CONFLICT (email) DO NOTHING`,
+          FROM roles r WHERE r.name = ${user.role}`,
     )
   }
 }
