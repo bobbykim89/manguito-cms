@@ -3,10 +3,12 @@
 ## Project
 
 Self-hosted schema-driven headless CMS.
-Read docs/phase-XX.md before making changes.
+Read docs/phase-XX.md for v1/MVP context; for v2 feature work, read the relevant design in docs/v2/ before making changes.
 Architectural decisions are recorded as ADRs in docs/adr/ (cross-cutting at the root, per-package in subfolders); see CONTEXT-MAP.md for the package map and per-package CONTEXT.md glossaries.
 
 ## Current phase
+
+**v2 — progressive feature delivery.** MVP (v1, phases 1–10) is complete and released. New features are designed as docs in docs/v2/ (e.g. graphql-module.md), each following its own design → plan → implementation cycle.
 
 ## Completed phases
 
