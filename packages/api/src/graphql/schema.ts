@@ -109,12 +109,20 @@ export function buildGraphQLSchema(registry: SchemaRegistry): GraphQLSchema {
     if (field.field_type === 'paragraph') {
       const ref = field.ui_component.component === 'paragraph-embed' ? field.ui_component.ref : undefined
       const target = ref ? objectTypes.get(ref) : undefined
+      if (ref && !target) {
+        process.stderr.write(
+          `⚠ paragraph field '${field.name}' targets unknown paragraph type '${ref}'; exposing as Media\n`
+        )
+      }
       return new GraphQLList(new GraphQLNonNull(target ?? MEDIA))
     }
 
     if (field.field_type === 'reference') {
       const ref = field.ui_component.component === 'typeahead-select' ? field.ui_component.ref : undefined
       const target = ref ? objectTypes.get(ref) : undefined
+      if (ref && !target) {
+        process.stderr.write(`⚠ reference field '${field.name}' targets unknown type '${ref}'; exposing as Media\n`)
+      }
       const rel = field.ui_component.component === 'typeahead-select' ? field.ui_component.rel : undefined
       const isMany = rel === 'many-to-many' || rel === 'one-to-many'
       const t = (target ?? MEDIA) as GraphQLObjectType
@@ -170,13 +178,32 @@ export function buildGraphQLSchema(registry: SchemaRegistry): GraphQLSchema {
   }
 
   // Pass 1: create every object type (empty-safe thunks resolve later).
+  // Track GraphQL type name → machine name so two schemas that collapse to the
+  // same GraphQL type name (e.g. content--author / taxonomy--author both → "Author")
+  // fail loud here instead of surfacing as a cryptic GraphQLSchema build error.
+  const typeNameOwners = new Map<string, string>() // graphqlTypeName → machineName
+  function registerTypeName(machineName: string): void {
+    const gqlName = graphqlTypeName(machineName)
+    const owner = typeNameOwners.get(gqlName)
+    if (owner !== undefined && owner !== machineName) {
+      throw new Error(
+        `GraphQL type name collision: '${gqlName}' is produced by both '${owner}' and '${machineName}'. ` +
+          `Rename one schema's machine name segment so their GraphQL type names differ.`
+      )
+    }
+    typeNameOwners.set(gqlName, machineName)
+  }
+
   for (const [name, ct] of Object.entries(registry.content_types)) {
+    registerTypeName(name)
     objectTypes.set(name, buildObjectType(name, ct))
   }
   for (const [name, tt] of Object.entries(registry.taxonomy_types)) {
+    registerTypeName(name)
     objectTypes.set(name, buildObjectType(name, tt))
   }
   for (const [name, pt] of Object.entries(registry.paragraph_types)) {
+    registerTypeName(name)
     objectTypes.set(name, buildObjectType(name, pt))
   }
 

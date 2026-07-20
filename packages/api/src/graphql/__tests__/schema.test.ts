@@ -51,6 +51,68 @@ describe('buildGraphQLSchema', () => {
     expect(sdl).toContain('createdAt: DateTime')
   })
 
+  it('builds multiple types across content and taxonomy namespaces', () => {
+    const multiRegistry = {
+      content_types: {
+        'content--post': {
+          schema_type: 'content-type',
+          name: 'content--post',
+          label: 'Post',
+          only_one: false,
+          fields: [],
+          system_fields: [],
+        },
+      },
+      taxonomy_types: {
+        'taxonomy--category': {
+          schema_type: 'taxonomy-type',
+          name: 'taxonomy--category',
+          label: 'Category',
+          fields: [],
+          system_fields: [],
+        },
+      },
+      paragraph_types: {},
+      enum_types: {},
+    } as unknown as SchemaRegistry
+
+    const sdl = printSchema(buildGraphQLSchema(multiRegistry))
+    expect(sdl).toContain('type Post')
+    expect(sdl).toContain('type Category')
+    expect(sdl).toContain('posts(')
+    expect(sdl).toContain('categories(')
+  })
+
+  it('throws a clear error when two schemas produce the same GraphQL type name', () => {
+    const collidingRegistry = {
+      content_types: {
+        'content--author': {
+          schema_type: 'content-type',
+          name: 'content--author',
+          label: 'Author',
+          only_one: false,
+          fields: [],
+          system_fields: [],
+        },
+      },
+      taxonomy_types: {
+        'taxonomy--author': {
+          schema_type: 'taxonomy-type',
+          name: 'taxonomy--author',
+          label: 'Author',
+          fields: [],
+          system_fields: [],
+        },
+      },
+      paragraph_types: {},
+      enum_types: {},
+    } as unknown as SchemaRegistry
+
+    expect(() => buildGraphQLSchema(collidingRegistry)).toThrow(/Author/)
+    expect(() => buildGraphQLSchema(collidingRegistry)).toThrow(/content--author/)
+    expect(() => buildGraphQLSchema(collidingRegistry)).toThrow(/taxonomy--author/)
+  })
+
   it('resolves a list query mapping snake_case rows to camelCase fields', async () => {
     const schema = buildGraphQLSchema(registry)
     const rows = [{ id: '1', slug: 'hi', published: true, blog_title: 'Hello', created_at: new Date('2026-07-19T00:00:00Z') }]
