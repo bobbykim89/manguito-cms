@@ -92,7 +92,7 @@ Driven by the `FieldType` union in `packages/core/src/registry/types.ts`:
 | `image`, `video`, `file` | `Media` — always resolved |
 | `reference` | target type: `Ref!` or `[Ref!]` per `ui_component.rel` |
 | `paragraph` | `[ParaType!]` — ordered; one paragraph type per field (`paragraph-embed.ref`) |
-| `programmatic` | mapped from the declared return type; lazy resolver (§4) |
+| `programmatic` | `JSON` scalar — the resolver returns `JsonValue`; lazy resolver (§4) |
 
 Notes:
 
@@ -198,21 +198,36 @@ All resolvers close over the **published-only `publicRepos`** built once in
 
 ### Relations
 
-Relation fields resolve **lazily** through the existing request-scoped
-**dataloader** on `publicRepos`. Nested selections traverse arbitrarily deep, each
-level batched as `WHERE id IN (…)`; the dataloader cache is discarded after each
-response. This reuses the exact machinery the REST `?include=` path uses — no
-second copy of relation resolution. Media relation fields are always resolved to
-the `Media` object.
+Relation fields resolve **lazily** through a **per-request DataLoader** (one per
+`(type, relationField)`), whose batch function delegates to the existing
+`resolveRelationField` in [relations.ts](../../packages/api/src/relations.ts) with
+a request-shared cache. This reuses the exact relation SQL the REST `?include=`
+path uses — no second copy of relation resolution — while giving **arbitrary
+nesting depth** with `WHERE id IN (…)` batching at every level. Loaders and cache
+are created fresh per request in the GraphQL context and discarded after the
+response.
 
-Arbitrary nesting depth is why depth/complexity limiting is mandatory (§5).
+> **Correction to the decision docs:** the earlier claim that GraphQL "reuses the
+> existing dataloader" was imprecise — the repository's batching is internal to a
+> single `findMany`/`findBySlug` call (eager, one level via `include`), not a
+> standalone request-scoped loader. The module therefore adds the npm `dataloader`
+> package and a `dataloaders.ts` that wraps `resolveRelationField`. See
+> [graphql-decisions.md#d10](./graphql-decisions.md).
+
+Media relation fields are always resolved to the `Media` object. Arbitrary nesting
+depth is why depth/complexity limiting is mandatory (§5).
 
 ### Programmatic fields
 
 Programmatic fields become **field resolvers** calling the existing
-`programmaticResolver`. Because GraphQL resolves fields lazily, a programmatic
-field is computed **only when the query selects it** — strictly better than REST,
-which runs the resolver for every returned item regardless of client need.
+`programmaticResolver`. The public resolver exposes `resolveItem(schema, row)`
+(all programmatic fields of a row at once), so the GraphQL context carries a
+per-request `WeakMap<parentRow, Promise<resolvedRow>>` memo: the first programmatic
+field selected on a given parent triggers `resolveItem` once, and every other
+programmatic field on that same parent reads the memoized result. A parent's
+programmatic fields are therefore computed **only when at least one is selected**,
+and **only once** per parent — better than REST, which runs them for every item
+regardless of client need.
 
 ---
 
@@ -235,6 +250,14 @@ createAPIAdapter({
 
 The resolved options flow through `APIAdapterOptions` into `createCmsApp`, which
 mounts `app.all('/graphql', …)` only when `enabled` is true.
+
+> **Correction to the decision docs:** carrying this option through the config in a
+> type-safe way requires **one additive, optional field** — `graphql?:
+> ResolvedGraphQLConfig` — on core's `APIAdapter` interface (and the resolved-config
+> types), exactly how `rateLimit?` already lives there. This is a minimal core edit
+> (no parser, dependency, or runtime-behavior change), so the "core untouched"
+> phrasing in D2/D7 is refined to "core touched only by one additive optional
+> field." See [graphql-decisions.md#d7](./graphql-decisions.md).
 
 ### Production-mode detection
 
@@ -260,19 +283,27 @@ All under `packages/api/src/graphql/`:
 
 | File | Responsibility |
 |------|----------------|
-| `naming.ts` | `graphqlName ↔ schemaName` map, type/query name derivation, pluralization |
+| `naming.ts` | `graphqlName ↔ schemaName` map, type/query name derivation, pluralization, GraphQL-name validity |
 | `scalars.ts` | `DateTime` and `JSON` custom scalars |
 | `type-mapping.ts` | `field_type` → GraphQL output type; enum validity check + fallback |
 | `filters.ts` | per-type filter input + sort enum construction; translate camelCase→column |
+| `context.ts` | `GraphQLContext` type (db, registry, repos, resolver, loaders, programmatic memo) |
+| `dataloaders.ts` | per-request relation loaders wrapping `resolveRelationField` |
 | `schema.ts` | assembles `GraphQLSchema` from the registry using the modules above |
-| `resolvers.ts` | root query, relation (dataloader), and programmatic field resolvers |
-| `security.ts` | depth / complexity / alias limit configuration |
-| `handler.ts` | Yoga instance + `createGraphQLHandler(registry, publicRepos, resolver, options)` |
+| `resolvers.ts` | root query, relation (dataloader), and programmatic field resolver factories |
+| `security.ts` | depth / complexity / alias limits (GraphQL Armor) + introspection rule |
+| `handler.ts` | Yoga instance + `createGraphQLHandler(registry, publicRepos, resolver, db, options)` |
 | `index.ts` | subpath public API surface (`./graphql`) |
 
-Plus: a new `tsup` entry for `./graphql`, the `package.json` export, and the
-opt-in mount in `app.ts`. Consistent with the ~7–9 file / ~600–1000 LOC estimate
-in [graphql-module.md](./graphql-module.md#4-estimated-module-size).
+**New dependencies** (all in `api` only): `graphql`, `graphql-yoga`,
+`@escape.tech/graphql-armor`, `dataloader`.
+
+Plus: a new `tsup` entry for `./graphql`, the `package.json` export, the opt-in
+mount in `app.ts`, and the config wiring (core `APIAdapter.graphql?`, api
+`createAPIAdapter`, CLI dev + build codegen). Slightly above the original ~7–9
+file / ~600–1000 LOC estimate in
+[graphql-module.md](./graphql-module.md#4-estimated-module-size) once `context.ts`
+and `dataloaders.ts` are counted (≈11 source files).
 
 ---
 

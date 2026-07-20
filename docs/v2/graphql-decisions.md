@@ -163,18 +163,51 @@ and directive limits too, out of the box.
   `./runtime`, `./codegen`) are unchanged; `./graphql` is new.
 - **Opt-in mount, defaulting off** — `createCmsApp` only mounts `/graphql` when
   `graphql.enabled` is set. Existing configs behave identically.
-- **New dependencies land in `api` only** (`graphql`, `graphql-yoga`, the
-  query-limiting plugin), isolated behind the subpath so consumers who never
-  import `./graphql` never bundle them — the exact rationale ADR api/0006 exists
-  for. The `api` package already carries heavy deps (aws-sdk), so this is
-  consistent with its role; it does **not** touch `core`'s deliberately minimal
-  shared-kernel dependency set
+- **New dependencies land in `api` only** (`graphql`, `graphql-yoga`,
+  `@escape.tech/graphql-armor`, `dataloader`), isolated behind the subpath so
+  consumers who never import `./graphql` never bundle them — the exact rationale
+  ADR api/0006 exists for. The `api` package already carries heavy deps (aws-sdk),
+  so this is consistent with its role; it does **not** touch `core`'s deliberately
+  minimal shared-kernel dependency set
   ([ADR core/0006](../adr/core/0006-core-shared-kernel-dependencies.md)).
-- **`core`, `db`, `admin`, `cli` are untouched.** Admin stays REST-only.
+- **`db`, `admin`, `cli` are otherwise untouched** (the CLI dev + build codegen
+  gain a pass-through of the new option). Admin stays REST-only.
+- **`core` is touched by exactly one additive, optional field.** Refinement of the
+  original "core untouched" claim: carrying a typed `graphql` option through the
+  `config.api` path requires `graphql?: ResolvedGraphQLConfig` on core's
+  `APIAdapter` interface (plus the option/resolved types), mirroring the existing
+  `rateLimit?`. No parser change, no new core dependency, no runtime-behavior
+  change — `defineConfig`'s validation is unaffected.
 
 **Ongoing cost:** a second public contract that must track schema changes —
 mitigated because it is generated from the registry, not hand-written, and so
 cannot drift.
+
+---
+
+## D10 — Nested relations: per-request DataLoader wrapping `resolveRelationField` {#d10}
+
+**Decision:** Add the npm `dataloader` package and a `graphql/dataloaders.ts` that
+creates, per request, one `DataLoader` per `(type, relationField)`. Each loader's
+batch function delegates to the existing `resolveRelationField` (in
+`packages/api/src/relations.ts`) with a request-shared cache, then returns each
+parent's resolved relation value.
+
+**Why:** The impl-design doc originally assumed GraphQL could "reuse the existing
+dataloader," but the repository's batching is internal to a single
+`findMany`/`findBySlug` call and resolves relations **eagerly, one level deep** via
+`include`. GraphQL's value proposition is *arbitrarily deep* nested relations in
+one round-trip, which requires request-scoped batching across field resolvers at
+every level. Wrapping `resolveRelationField` in a `DataLoader` gets that while
+reusing all existing relation SQL — no second copy of relation resolution.
+
+**Rejected — selection-set-driven eager `include` (no new dependency).** The root
+resolver would inspect the query's selection set, build `include: […]`, and pass
+it to the repository. But the repository's `include` is flat (depth 1), so nested
+relations beyond the first level would return bare IDs, not objects — gutting the
+arbitrary-depth motivation (drivers #1 and #2 in
+[graphql-module.md](./graphql-module.md#1-is-it-worth-it)). The small `dataloader`
+dependency is worth the correct behavior.
 
 ---
 

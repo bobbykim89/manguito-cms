@@ -21,6 +21,7 @@ default and reference contract. The admin surface is unaffected.
 | [graphql-security.md](./graphql-security.md) | Damage control — depth/complexity limits, published-only guarantee, rate limiting, introspection posture |
 | [graphql-decisions.md](./graphql-decisions.md) | Decision log — stack picks and rejected alternatives |
 | [graphql-implementation-design.md](./graphql-implementation-design.md) | Implementation-ready design — concrete naming, type mapping, query args, resolver wiring, config, and the test plan |
+| [graphql-module-plan.md](./graphql-module-plan.md) | Task-by-task TDD implementation plan (14 tasks) |
 
 ---
 
@@ -111,7 +112,7 @@ Every item in the case against is contained by the design:
 | Pagination | Offset/page — mirrors REST `findMany` |
 | Published / auth | Reuses `publicRepos` — inherits ADR api/0002 guarantee |
 | Damage control | Depth + complexity + alias limits, route rate limit, dev-only introspection/GraphiQL |
-| Breaking changes | None — additive, opt-in, core/db/admin/cli untouched |
+| Breaking changes | None — additive & opt-in; core touched only by one additive optional `APIAdapter.graphql?` field (see [decisions D7](./graphql-decisions.md)) |
 
 See [graphql-decisions.md](./graphql-decisions.md) for the reasoning behind each,
 including rejected alternatives.
