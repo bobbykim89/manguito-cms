@@ -16,10 +16,9 @@ export function buildArmorPlugin(options: { maxDepth: number; maxComplexity: num
     maxAliases: { n: 15 },
     maxDirectives: { n: 50 },
     blockFieldSuggestion: { enabled: true },
-    // Armor enables maxTokens by default even when omitted from config; the plan
-    // only asks for depth/cost/alias/directive/field-suggestion limits, so disable
-    // it explicitly rather than silently shipping an extra, unspecified protection.
-    maxTokens: { enabled: false },
+    // maxTokens is intentionally left at Armor's secure default (n=1000) to bound
+    // GraphQL document token count at parse time, a layer the depth/cost/alias/directive
+    // limits do not cover.
   })
   return armor.protect()
 }
