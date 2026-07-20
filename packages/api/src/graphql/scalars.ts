@@ -1,4 +1,4 @@
-import { GraphQLScalarType, Kind } from 'graphql'
+import { GraphQLScalarType, Kind, valueFromASTUntyped } from 'graphql'
 
 export const DateTimeScalar = new GraphQLScalarType({
   name: 'DateTime',
@@ -24,18 +24,5 @@ export const JSONScalar = new GraphQLScalarType({
   description: 'Arbitrary JSON value',
   serialize: (value) => value,
   parseValue: (value) => value,
-  parseLiteral(ast) {
-    switch (ast.kind) {
-      case Kind.STRING:
-      case Kind.BOOLEAN:
-        return ast.value
-      case Kind.INT:
-      case Kind.FLOAT:
-        return Number(ast.value)
-      case Kind.NULL:
-        return null
-      default:
-        return null
-    }
-  },
+  parseLiteral: (ast, variables) => valueFromASTUntyped(ast, variables ?? undefined),
 })
