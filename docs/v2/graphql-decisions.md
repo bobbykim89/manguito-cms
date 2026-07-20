@@ -163,15 +163,96 @@ and directive limits too, out of the box.
   `./runtime`, `./codegen`) are unchanged; `./graphql` is new.
 - **Opt-in mount, defaulting off** — `createCmsApp` only mounts `/graphql` when
   `graphql.enabled` is set. Existing configs behave identically.
-- **New dependencies land in `api` only** (`graphql`, `graphql-yoga`, the
-  query-limiting plugin), isolated behind the subpath so consumers who never
-  import `./graphql` never bundle them — the exact rationale ADR api/0006 exists
-  for. The `api` package already carries heavy deps (aws-sdk), so this is
-  consistent with its role; it does **not** touch `core`'s deliberately minimal
-  shared-kernel dependency set
+- **New dependencies land in `api` only** (`graphql`, `graphql-yoga`,
+  `@escape.tech/graphql-armor`, `dataloader`), isolated behind the subpath so
+  consumers who never import `./graphql` never bundle them — the exact rationale
+  ADR api/0006 exists for. The `api` package already carries heavy deps (aws-sdk),
+  so this is consistent with its role; it does **not** touch `core`'s deliberately
+  minimal shared-kernel dependency set
   ([ADR core/0006](../adr/core/0006-core-shared-kernel-dependencies.md)).
-- **`core`, `db`, `admin`, `cli` are untouched.** Admin stays REST-only.
+- **`db`, `admin`, `cli` are otherwise untouched** (the CLI dev + build codegen
+  gain a pass-through of the new option). Admin stays REST-only.
+- **`core` is touched by exactly one additive, optional field.** Refinement of the
+  original "core untouched" claim: carrying a typed `graphql` option through the
+  `config.api` path requires `graphql?: ResolvedGraphQLConfig` on core's
+  `APIAdapter` interface (plus the option/resolved types), mirroring the existing
+  `rateLimit?`. No parser change, no new core dependency, no runtime-behavior
+  change — `defineConfig`'s validation is unaffected.
 
 **Ongoing cost:** a second public contract that must track schema changes —
 mitigated because it is generated from the registry, not hand-written, and so
 cannot drift.
+
+---
+
+## D10 — Nested relations: per-request DataLoader wrapping `resolveRelationField` {#d10}
+
+**Decision:** Add the npm `dataloader` package and a `graphql/dataloaders.ts` that
+creates, per request, one `DataLoader` per `(type, relationField)`. Each loader's
+batch function delegates to the existing `resolveRelationField` (in
+`packages/api/src/relations.ts`) with a request-shared cache, then returns each
+parent's resolved relation value.
+
+**Why:** The impl-design doc originally assumed GraphQL could "reuse the existing
+dataloader," but the repository's batching is internal to a single
+`findMany`/`findBySlug` call and resolves relations **eagerly, one level deep** via
+`include`. GraphQL's value proposition is *arbitrarily deep* nested relations in
+one round-trip, which requires request-scoped batching across field resolvers at
+every level. Wrapping `resolveRelationField` in a `DataLoader` gets that while
+reusing all existing relation SQL — no second copy of relation resolution.
+
+**Rejected — selection-set-driven eager `include` (no new dependency).** The root
+resolver would inspect the query's selection set, build `include: […]`, and pass
+it to the repository. But the repository's `include` is flat (depth 1), so nested
+relations beyond the first level would return bare IDs, not objects — gutting the
+arbitrary-depth motivation (drivers #1 and #2 in
+[graphql-module.md](./graphql-module.md#1-is-it-worth-it)). The small `dataloader`
+dependency is worth the correct behavior.
+
+---
+
+## D8 — Field naming: camelCase, with a name-mapping layer {#d8}
+
+**Decision:** GraphQL field names are **camelCase** (`createdAt`, `perPage`) and
+type names **PascalCase** (`BlogPost`), even though the registry, repositories, and
+DB columns are snake_case. The schema builder carries a per-type
+`graphqlName ↔ schemaName` map used to translate output reads, `sortBy`, and
+`filter` back to snake_case. Detailed in
+[graphql-implementation-design.md](./graphql-implementation-design.md#1-naming-and-the-name-mapping-layer).
+
+**Why:** Consumers who choose a GraphQL endpoint bring GraphQL tooling (Code
+Generator, Apollo/urql/Relay, GraphiQL) that assumes camelCase; the major public
+GraphQL APIs are camelCase. The friction of non-idiomatic snake_case outweighs the
+benefit of field-name parity with REST — and introspection makes the two surfaces
+self-documenting, so cross-surface translation cost is minimal.
+
+**Rejected — preserve snake_case.** One naming model across REST and GraphQL, but
+non-idiomatic and at odds with the GraphQL ecosystem's tooling defaults.
+
+**Cost recorded:** a small, mechanical, bidirectional name-mapping layer. Contained
+in `naming.ts`; note that field-name remapping is safe because names are
+identifiers, unlike enum *value* remapping (see D9).
+
+---
+
+## D9 — Enum mapping: real enum when valid, else String; never translate values {#d9}
+
+**Decision:** A schema enum maps to a `GraphQLEnumType` **only when all its values
+are valid GraphQL identifiers** (`^[_A-Za-z][_0-9A-Za-z]*$`); otherwise the field
+is exposed as `String`. Enum **values are never transformed** — the GraphQL wire
+value always equals the stored/REST value. A dev-time warning is emitted on
+fallback.
+
+**Why:** The two public surfaces must agree on wire *values* (data), a stronger
+constraint than field-name parity. Translating enum values would make a GraphQL
+result (`HIGH_PRIORITY`) differ from the REST result (`high priority`), breaking
+client-side equality checks. The conditional mapping gains first-class enum typing
+wherever it is free (well-formed enums) and degrades only where a valid
+`GraphQLEnumType` is impossible anyway.
+
+**Rejected — always String.** Consistent and simple, but discards free type safety
+(introspection, validation, codegen unions) even when values are clean.
+
+**Rejected — always enum with sanitized values.** Consistent enum typing
+everywhere, but the GraphQL wire value would differ from the stored/REST value,
+requiring a bidirectional value map and diverging from REST — the dealbreaker.

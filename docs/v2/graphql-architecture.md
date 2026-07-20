@@ -145,13 +145,14 @@ The module respects every boundary in `CLAUDE.md`:
 
 | Package | Change |
 |---------|--------|
-| `core` | **None** |
+| `core` | One additive, optional field — `graphql?: ResolvedGraphQLConfig` on the `APIAdapter` interface (+ option/resolved types), mirroring `rateLimit?`. No parser/dependency/behavior change. |
 | `db` | **None** |
-| `api` | New `./graphql` subpath, new deps (isolated), opt-in mount in `app.ts`, `graphql` field on `APIAdapterOptions` |
+| `api` | New `./graphql` subpath, new deps (isolated: `graphql`, `graphql-yoga`, `@escape.tech/graphql-armor`, `dataloader`), opt-in mount in `app.ts`, `graphql` field on `APIAdapterOptions` + `createAPIAdapter` |
 | `admin` | **None** |
-| `cli` | **None** |
+| `cli` | Pass the resolved `graphql` option through `createCmsApp` in the dev server and the build codegen |
 
 Because the mount is opt-in and defaults off, and the subpath isolates the
-dependencies, this is an **additive, non-breaking** change. See
-[graphql-decisions.md](./graphql-decisions.md#d7) for the breaking-change
-analysis.
+dependencies, this is an **additive, non-breaking** change (the one core edit is an
+optional field). See [graphql-decisions.md](./graphql-decisions.md#d7) for the
+breaking-change analysis and [#d10](./graphql-decisions.md#d10) for the relation
+dataloader.
