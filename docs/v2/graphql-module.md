@@ -20,6 +20,7 @@ default and reference contract. The admin surface is unaffected.
 | [graphql-schema-mapping.md](./graphql-schema-mapping.md) | How the parsed registry becomes a GraphQL schema — types, query surface, pagination, relations, programmatic fields |
 | [graphql-security.md](./graphql-security.md) | Damage control — depth/complexity limits, published-only guarantee, rate limiting, introspection posture |
 | [graphql-decisions.md](./graphql-decisions.md) | Decision log — stack picks and rejected alternatives |
+| [graphql-implementation-design.md](./graphql-implementation-design.md) | Implementation-ready design — concrete naming, type mapping, query args, resolver wiring, config, and the test plan |
 
 ---
 

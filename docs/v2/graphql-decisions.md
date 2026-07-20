@@ -175,3 +175,51 @@ and directive limits too, out of the box.
 **Ongoing cost:** a second public contract that must track schema changes —
 mitigated because it is generated from the registry, not hand-written, and so
 cannot drift.
+
+---
+
+## D8 — Field naming: camelCase, with a name-mapping layer {#d8}
+
+**Decision:** GraphQL field names are **camelCase** (`createdAt`, `perPage`) and
+type names **PascalCase** (`BlogPost`), even though the registry, repositories, and
+DB columns are snake_case. The schema builder carries a per-type
+`graphqlName ↔ schemaName` map used to translate output reads, `sortBy`, and
+`filter` back to snake_case. Detailed in
+[graphql-implementation-design.md](./graphql-implementation-design.md#1-naming-and-the-name-mapping-layer).
+
+**Why:** Consumers who choose a GraphQL endpoint bring GraphQL tooling (Code
+Generator, Apollo/urql/Relay, GraphiQL) that assumes camelCase; the major public
+GraphQL APIs are camelCase. The friction of non-idiomatic snake_case outweighs the
+benefit of field-name parity with REST — and introspection makes the two surfaces
+self-documenting, so cross-surface translation cost is minimal.
+
+**Rejected — preserve snake_case.** One naming model across REST and GraphQL, but
+non-idiomatic and at odds with the GraphQL ecosystem's tooling defaults.
+
+**Cost recorded:** a small, mechanical, bidirectional name-mapping layer. Contained
+in `naming.ts`; note that field-name remapping is safe because names are
+identifiers, unlike enum *value* remapping (see D9).
+
+---
+
+## D9 — Enum mapping: real enum when valid, else String; never translate values {#d9}
+
+**Decision:** A schema enum maps to a `GraphQLEnumType` **only when all its values
+are valid GraphQL identifiers** (`^[_A-Za-z][_0-9A-Za-z]*$`); otherwise the field
+is exposed as `String`. Enum **values are never transformed** — the GraphQL wire
+value always equals the stored/REST value. A dev-time warning is emitted on
+fallback.
+
+**Why:** The two public surfaces must agree on wire *values* (data), a stronger
+constraint than field-name parity. Translating enum values would make a GraphQL
+result (`HIGH_PRIORITY`) differ from the REST result (`high priority`), breaking
+client-side equality checks. The conditional mapping gains first-class enum typing
+wherever it is free (well-formed enums) and degrades only where a valid
+`GraphQLEnumType` is impossible anyway.
+
+**Rejected — always String.** Consistent and simple, but discards free type safety
+(introspection, validation, codegen unions) even when values are clean.
+
+**Rejected — always enum with sanitized values.** Consistent enum typing
+everywhere, but the GraphQL wire value would differ from the stored/REST value,
+requiring a bidirectional value map and diverging from REST — the dealbreaker.
