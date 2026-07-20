@@ -5,6 +5,8 @@ import {
   GraphQLNonNull,
   GraphQLString,
   GraphQLBoolean,
+  GraphQLInt,
+  GraphQLFloat,
   type GraphQLInputType,
 } from 'graphql'
 import type {
@@ -12,6 +14,7 @@ import type {
   ParsedTaxonomyType,
   FilterValue,
   FilterOperator,
+  FieldType,
 } from '@bobbykim/manguito-cms-core'
 import { graphqlTypeName, buildFieldNameMap } from './naming.js'
 import { scalarOutputType } from './type-mapping.js'
@@ -69,20 +72,18 @@ const BooleanFilter = new GraphQLInputObjectType({
 })
 const DateTimeFilter = comparableFilterInput('DateTimeFilter', DateTimeScalar)
 const IDFilter = equalityFilterInput('IDFilter', GraphQLString)
+const IntFilter = comparableFilterInput('IntFilter', GraphQLInt)
+const FloatFilter = comparableFilterInput('FloatFilter', GraphQLFloat)
 
 // Choose a filter input for a field based on its scalar output type.
-function filterInputForField(fieldType: string): GraphQLInputObjectType | null {
-  const scalar = scalarOutputType(fieldType as never)
+function filterInputForField(fieldType: FieldType): GraphQLInputObjectType | null {
+  const scalar = scalarOutputType(fieldType)
   if (fieldType === 'boolean') return BooleanFilter
   if (fieldType === 'date') return DateTimeFilter
-  if (fieldType === 'integer' || fieldType === 'float') {
-    return comparableFilterInput(
-      fieldType === 'integer' ? 'IntFilter' : 'FloatFilter',
-      scalar ?? GraphQLString
-    )
-  }
+  if (fieldType === 'integer') return IntFilter
+  if (fieldType === 'float') return FloatFilter
   if (fieldType === 'reference') return IDFilter
-  if (scalar === null) return null // enum/paragraph/media/programmatic → not filterable here
+  if (scalar === null) return null // only 'enum' reaches here — not filterable via a scalar input
   return StringFilter
 }
 
@@ -124,6 +125,8 @@ export function translateFilters(
     const column = nameMap.toSchema(gqlField)
     const spec = raw as Record<string, unknown>
 
+    // eq/in take priority over range operators (gt/gte/lt/lte) when a client sends
+    // both in one field filter — the range operators are silently dropped.
     if (spec['eq'] !== undefined) {
       out[column] = spec['eq'] as FilterValue
     } else if (Array.isArray(spec['in'])) {
