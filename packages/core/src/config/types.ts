@@ -142,10 +142,27 @@ export type ResolvedRateLimitConfig = {
       }
 }
 
+export type GraphQLModuleConfig = {
+  enabled?: boolean
+  maxDepth?: number
+  maxComplexity?: number
+  graphiql?: boolean
+  introspection?: boolean
+}
+
+export type ResolvedGraphQLConfig = {
+  enabled: boolean
+  maxDepth: number
+  maxComplexity: number
+  graphiql: boolean
+  introspection: boolean
+}
+
 export interface APIAdapter {
   readonly prefix: string
   readonly media?: ResolvedMediaConfig
   readonly rateLimit?: ResolvedRateLimitConfig
+  readonly graphql?: ResolvedGraphQLConfig
 }
 
 // ─── Admin Adapter ────────────────────────────────────────────────────────────
