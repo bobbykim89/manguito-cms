@@ -38,6 +38,7 @@ const { app } = createCmsApp({
   resolvers: programmaticResolvers,
   ...(config.api.media ? { media: config.api.media } : {}),
   ...(config.api.rateLimit ? { rateLimit: config.api.rateLimit } : {}),
+  ...(config.api.graphql ? { graphql: config.api.graphql } : {}),
   ...(config.server.cors ? { cors: config.server.cors } : {}),
 })`
 }
