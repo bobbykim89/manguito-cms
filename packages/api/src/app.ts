@@ -228,15 +228,36 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
   // Unauthenticated by design: it sits alongside /api/*, not behind the
   // /admin/api/* auth middleware registered above, and only ever reads through
   // `publicRepos` (published-only, same as the REST public routes).
+  //
+  // `buildGraphQLSchema` can throw synchronously (e.g. a GraphQL type-name
+  // collision between a content type and a taxonomy type) — since that throw
+  // happens inside a `.then()` callback, it rejects `ready`. A `.catch` is
+  // attached below so that rejection is HANDLED: an unhandled rejection here
+  // would otherwise crash the entire Node process at startup, taking down all
+  // REST routes with it, regardless of whether any client ever hits /graphql.
+  // Init failure is instead contained to a 500 on /graphql itself.
   if (options.graphql?.enabled) {
     const gqlOptions = options.graphql
     let gqlHandler: Handler | null = null
-    const ready = import('./graphql/handler.js').then(({ createGraphQLHandler }) => {
-      gqlHandler = createGraphQLHandler(registry, publicRepos, programmaticResolver, db, gqlOptions)
-    })
+    let initError: unknown = null
+    const ready = import('./graphql/handler.js')
+      .then(({ createGraphQLHandler }) => {
+        gqlHandler = createGraphQLHandler(registry, publicRepos, programmaticResolver, db, gqlOptions)
+      })
+      .catch((err: unknown) => {
+        initError = err
+        const message = err instanceof Error ? err.message : String(err)
+        process.stderr.write(`✗ GraphQL schema failed to initialize; /graphql will return 500. ${message}\n`)
+      })
     const invokeGraphQL: Handler = async (c) => {
-      if (!gqlHandler) await ready
-      return gqlHandler!(c, async () => {})
+      if (!gqlHandler && !initError) await ready
+      if (!gqlHandler) {
+        return c.json(
+          { ok: false, error: { code: 'GRAPHQL_INIT_FAILED', message: 'GraphQL schema failed to initialize' } },
+          500
+        )
+      }
+      return gqlHandler(c, async () => {})
     }
     if (listRateLimit) {
       app.all('/graphql', listRateLimit, invokeGraphQL)
