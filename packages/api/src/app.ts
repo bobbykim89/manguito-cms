@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
+import type { Handler } from 'hono'
 import { sql } from 'drizzle-orm'
-import type { StorageAdapter, SchemaRegistry, ParsedContentType, ParsedTaxonomyType, ResolvedRateLimitConfig, CorsConfig } from '@bobbykim/manguito-cms-core'
+import type { StorageAdapter, SchemaRegistry, ParsedContentType, ParsedTaxonomyType, ResolvedRateLimitConfig, CorsConfig, ResolvedGraphQLConfig } from '@bobbykim/manguito-cms-core'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import { createCorsMiddleware } from './middleware/cors.js'
 import { createSecurityHeadersMiddleware } from './middleware/security-headers.js'
@@ -39,6 +40,8 @@ export type CreateCmsAppOptions = {
   cors?: CorsConfig
   /** Programmatic field resolvers, keyed `${schema}::${field}`. */
   resolvers?: ResolverMap
+  /** GraphQL module config (resolved). When enabled, mounts POST /graphql. */
+  graphql?: ResolvedGraphQLConfig
 }
 
 export interface ManguitoCmsAPIAdapter {
@@ -212,6 +215,35 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
 
   registerPublicContentRoutes(app, registry, publicRepos, listRateLimit, programmaticResolver)
   registerPublicMediaRoutes(app, mediaRepo, listRateLimit)
+
+  // ── GraphQL (opt-in) ──────────────────────────────────────────────────────────
+  //
+  // Loaded via a DYNAMIC import so `graphql`/`graphql-yoga` never load unless a
+  // consumer opts in — the `.` entry (this file) must stay free of a static
+  // dependency on the graphql/ subpath (ADR api/0006). The import kicks off
+  // immediately (schema-building and Armor-plugin setup are synchronous once the
+  // module is loaded; only the `import()` itself is async), and any request that
+  // lands on /graphql before it resolves awaits the same in-flight promise —
+  // there's a single shared `ready` promise, never a re-import per request.
+  // Unauthenticated by design: it sits alongside /api/*, not behind the
+  // /admin/api/* auth middleware registered above, and only ever reads through
+  // `publicRepos` (published-only, same as the REST public routes).
+  if (options.graphql?.enabled) {
+    const gqlOptions = options.graphql
+    let gqlHandler: Handler | null = null
+    const ready = import('./graphql/handler.js').then(({ createGraphQLHandler }) => {
+      gqlHandler = createGraphQLHandler(registry, publicRepos, programmaticResolver, db, gqlOptions)
+    })
+    const invokeGraphQL: Handler = async (c) => {
+      if (!gqlHandler) await ready
+      return gqlHandler!(c, async () => {})
+    }
+    if (listRateLimit) {
+      app.all('/graphql', listRateLimit, invokeGraphQL)
+    } else {
+      app.all('/graphql', invokeGraphQL)
+    }
+  }
 
   // ── Admin routes — all registered AFTER the blanket use() so auth middleware
   //    runs before every handler. registerConfigRoute is called first so its
