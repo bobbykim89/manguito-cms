@@ -97,7 +97,7 @@ api: createAPIAdapter({
 (`{ prefix, media }`) that the runtime later feeds into `createCmsApp`. The
 `graphql` block is more declarative config of the same kind — serializable
 options, not live code. The `APIAdapterOptions` type in
-`packages/api/src/adapters/api.ts` gains a `graphql?: GraphQLModuleOptions` field,
+`packages/api/src/index.ts` gains a `graphql?: GraphQLModuleOptions` field,
 and the resolved `APIAdapter` config carries it through to `createCmsApp`.
 
 ### Why a named option and not a plugin array or a sibling adapter
