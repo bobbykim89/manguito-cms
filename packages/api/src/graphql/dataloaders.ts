@@ -48,7 +48,9 @@ export function createRelationLoaders(
       dl = new DataLoader<ParentRow, unknown>(
         async (parents) => {
           const rows = parents as ParentRow[]
-          await resolveRelationField(db, rows, fieldName, rel, cache)
+          // GraphQL is public-only (see app.ts) — always filter relation targets
+          // to published rows, mirroring the REST public repos' publishedRelations.
+          await resolveRelationField(db, rows, fieldName, rel, cache, true)
           return rows.map((r) => r[fieldName])
         },
         // Batch within a tick; do not memoize by parent identity (rows are mutated

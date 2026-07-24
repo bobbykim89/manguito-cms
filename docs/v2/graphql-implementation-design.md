@@ -217,6 +217,13 @@ response.
 Media relation fields are always resolved to the `Media` object. Arbitrary nesting
 depth is why depth/complexity limiting is mandatory (§5).
 
+`resolveRelationField` takes an opt-in `publishedOnly` flag; the GraphQL
+dataloaders (and the public REST repos) always pass `true`, so `reference` and
+`junction` target-row SELECTs add `AND published = true` — a draft target
+resolves to `null`/is excluded, at every nesting level. Paragraph and media
+targets are not filtered (no `published` column on those tables). Admin reads
+use the same resolver with the flag left `false`, so drafts stay visible there.
+
 ### Programmatic fields
 
 Programmatic fields become **field resolvers** calling the existing

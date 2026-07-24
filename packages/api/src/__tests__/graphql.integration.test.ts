@@ -117,6 +117,11 @@ beforeAll(async () => {
   await db.execute(sql.raw(`CREATE TABLE "${TABLE}" (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), slug varchar NOT NULL, published boolean NOT NULL DEFAULT false, blog_title varchar NOT NULL, author_id uuid REFERENCES "${AUTHOR_TABLE}"(id) ON DELETE SET NULL, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now())`))
   await db.execute(sql.raw(`INSERT INTO "${AUTHOR_TABLE}" (slug, published, name) VALUES ('ada', true, 'Ada')`))
   await db.execute(sql.raw(`INSERT INTO "${AUTHOR_TABLE}" (slug, published, name) VALUES ('grace', true, 'Grace')`))
+  // Draft author — never published. A published post can still carry a FK to
+  // it (the FK itself has no published constraint), which is exactly the gap
+  // this suite's nested-relation-published tests close: the author must
+  // resolve to null on the public surface no matter how the post got the id.
+  await db.execute(sql.raw(`INSERT INTO "${AUTHOR_TABLE}" (slug, published, name) VALUES ('ghost', false, 'Ghost Writer')`))
   // Three published, authored posts — two share the 'ada' author — so the
   // batching test below can distinguish a real dataloader-batched fetch
   // (constant query count) from a naive per-row (N+1) fetch (count scales
@@ -124,6 +129,9 @@ beforeAll(async () => {
   await db.execute(sql.raw(`INSERT INTO "${TABLE}" (slug, published, blog_title, author_id) VALUES ('published-one', true, 'Published', (SELECT id FROM "${AUTHOR_TABLE}" WHERE slug = 'ada'))`))
   await db.execute(sql.raw(`INSERT INTO "${TABLE}" (slug, published, blog_title, author_id) VALUES ('published-two', true, 'Published Two', (SELECT id FROM "${AUTHOR_TABLE}" WHERE slug = 'grace'))`))
   await db.execute(sql.raw(`INSERT INTO "${TABLE}" (slug, published, blog_title, author_id) VALUES ('published-three', true, 'Published Three', (SELECT id FROM "${AUTHOR_TABLE}" WHERE slug = 'ada'))`))
+  // Published post whose author FK points at the draft 'ghost' author — the
+  // draft-target-exposure case. Must resolve author: null on GraphQL.
+  await db.execute(sql.raw(`INSERT INTO "${TABLE}" (slug, published, blog_title, author_id) VALUES ('published-four', true, 'Published Four', (SELECT id FROM "${AUTHOR_TABLE}" WHERE slug = 'ghost'))`))
   await db.execute(sql.raw(`INSERT INTO "${TABLE}" (slug, published, blog_title) VALUES ('draft-one', false, 'Draft')`))
 
   const built = createCmsApp({
@@ -153,8 +161,8 @@ describe('graphql integration', () => {
     expect(body.errors).toBeUndefined()
     const gqlposts = (body.data as unknown as { gqlposts: { data: { blogTitle: string }[]; meta: { total: number } } }).gqlposts
     const titles = gqlposts.data.map((d) => d.blogTitle)
-    expect(titles).toEqual(['Published', 'Published Two', 'Published Three'])
-    expect(gqlposts.meta.total).toBe(3)
+    expect(titles).toEqual(['Published', 'Published Two', 'Published Three', 'Published Four'])
+    expect(gqlposts.meta.total).toBe(4)
   })
 
   it('never returns a draft by slug', async () => {
@@ -180,21 +188,41 @@ describe('graphql integration', () => {
     const gqlposts = (
       body.data as unknown as { gqlposts: { data: { blogTitle: string; author: { name: string } | null }[] } }
     ).gqlposts
-    // 3 published, authored posts seeded in beforeAll (published-one/-two/-three),
+    // 4 published, authored posts seeded in beforeAll (published-one/-two/-three/-four),
     // two of which (published-one, published-three) share the 'ada' author — this
-    // proves both batching (one query for all 3 rows) and cross-row dedup (Ada's
-    // lookup isn't repeated even though 2 rows reference her).
-    expect(gqlposts.data.map((d) => d.author?.name)).toEqual(['Ada', 'Grace', 'Ada'])
+    // proves both batching (one query for all 4 rows) and cross-row dedup (Ada's
+    // lookup isn't repeated even though 2 rows reference her). published-four's
+    // author FK points at the draft 'ghost' author, which must resolve to null —
+    // this is the nested-relation published filter this suite guards.
+    expect(gqlposts.data.map((d) => d.author?.name ?? null)).toEqual(['Ada', 'Grace', 'Ada', null])
     // Batched path: 1 count query + 1 data query + 1 batched author lookup
-    // (`WHERE id IN (...)`, deduped to the 2 distinct author ids) = 3 total,
-    // independent of the number of posts. A naive per-row (N+1) fetch would
-    // instead cost 2 + N — i.e. 5 for these 3 posts. Assert the exact
+    // (`WHERE id IN (...)`, deduped to the 3 distinct author ids referenced,
+    // including the draft one filtered out by `AND published = true`) = 3
+    // total, independent of the number of posts. A naive per-row (N+1) fetch
+    // would instead cost 2 + N — i.e. 6 for these 4 posts. Assert the exact
     // constant, not a loose upper bound, so removing batching fails this test.
     expect(queryCount).toBe(3)
     // Belt-and-suspenders: even if the batched constant above ever needs to
     // move (e.g. a new relation adds a query), the count must stay strictly
     // below the N+1 value for this fixture — proving it doesn't scale with N.
     expect(queryCount).toBeLessThan(2 + gqlposts.data.length)
+  })
+
+  it('hides a draft relation target reached via nested traversal (published-only filter)', async () => {
+    // Direct assertion for the specific fix: a published post's `author`
+    // resolves to null when the FK points at a draft author, proving the
+    // dataloader batch function (resolveRelationField with publishedOnly:
+    // true) filters the target row rather than trusting the raw FK.
+    const body = await gql(
+      '{ gqlposts { data { blogTitle author { name } } } }'
+    )
+    expect(body.errors).toBeUndefined()
+    const gqlposts = (
+      body.data as unknown as { gqlposts: { data: { blogTitle: string; author: { name: string } | null }[] } }
+    ).gqlposts
+    const four = gqlposts.data.find((d) => d.blogTitle === 'Published Four')
+    expect(four).toBeDefined()
+    expect(four!.author).toBeNull()
   })
 
   it('resolves a programmatic field lazily as JSON', async () => {

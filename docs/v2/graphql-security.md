@@ -87,6 +87,15 @@ REST guarantees it:
 - This inherits [ADR api/0002](../adr/api/0002-public-admin-split.md) — "drafts
   never leak to the public API" — rather than re-deriving it. There is no second
   copy of the draft-visibility logic to get wrong.
+- The guarantee extends to **nested relation targets, at every level of
+  traversal**: `resolveRelationField` (shared by GraphQL dataloaders and the REST
+  `?include=` path in `relations.ts`) takes an opt-in `publishedOnly` flag. Public
+  callers — the GraphQL dataloaders and the public REST repos — always pass
+  `publishedOnly: true`, so `reference` and `junction` target-row SELECTs add
+  `AND published = true`; a draft target resolves to `null` (reference) or is
+  excluded from the list (junction), no matter how deep the nesting. Admin reads
+  through the same resolver with the flag left `false` (the default), so drafts
+  remain visible there, unfiltered, exactly as before.
 
 The GraphQL endpoint is, like the rest of `/api/*`, **unauthenticated**. It sits
 entirely on the public surface; the authenticated `/admin/api/*` surface is

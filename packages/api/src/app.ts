@@ -145,6 +145,7 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
       typeName,
       createDrizzleContentRepository(db, (ct as ParsedContentType).db.table_name, {
         relations: buildRelationsMap((ct as ParsedContentType).fields, registry),
+        publishedRelations: true,
       }),
     ])
   )
@@ -153,6 +154,7 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
       typeName,
       createDrizzleContentRepository(db, (tt as ParsedTaxonomyType).db.table_name, {
         relations: buildRelationsMap((tt as ParsedTaxonomyType).fields, registry),
+        publishedRelations: true,
       }),
     ])
   )
