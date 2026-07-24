@@ -275,8 +275,11 @@ The first admin user is created with `manguito createsuperuser`. Existing users 
 - Storage adapters: local filesystem, AWS S3, Cloudinary
 - Minimalist admin panel (Vue 3 + Tailwind)
 - Serverless deployment targets (AWS Lambda, Vercel), containerized (Fargate), and traditional Node server mode
-- Opt-in GraphQL public API (query-only) — see [docs/v2/graphql-module.md](docs/v2/graphql-module.md)
 - Unit and integration test suite
+
+### Delivered in v2
+
+- Opt-in GraphQL public API (query-only) — see [docs/v2/graphql-module.md](docs/v2/graphql-module.md)
 
 ### Planned for v2+
 
