@@ -4,6 +4,7 @@ import type {
   SchemaRegistry,
   ParsedContentType,
   ParsedTaxonomyType,
+  ParsedParagraphType,
 } from '@bobbykim/manguito-cms-core'
 import { buildRelationsMap, resolveRelationField, type RelationDef } from '../relations.js'
 
@@ -28,7 +29,12 @@ export function createRelationLoaders(
     let m = relMaps.get(typeName)
     if (!m) {
       const type = (registry.content_types[typeName] ??
-        registry.taxonomy_types[typeName]) as ParsedContentType | ParsedTaxonomyType | undefined
+        registry.taxonomy_types[typeName] ??
+        registry.paragraph_types[typeName]) as
+        | ParsedContentType
+        | ParsedTaxonomyType
+        | ParsedParagraphType
+        | undefined
       m = type ? buildRelationsMap(type.fields, registry) : {}
       relMaps.set(typeName, m)
     }
