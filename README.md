@@ -277,9 +277,12 @@ The first admin user is created with `manguito createsuperuser`. Existing users 
 - Serverless deployment targets (AWS Lambda, Vercel), containerized (Fargate), and traditional Node server mode
 - Unit and integration test suite
 
+### Delivered in v2
+
+- Opt-in GraphQL public API (query-only) — see [docs/v2/graphql-module.md](docs/v2/graphql-module.md)
+
 ### Planned for v2+
 
-- GraphQL API option
 - MongoDB adapter
 - Schema versioning with multi-version API routes
 - Draft / publish workflow

@@ -231,12 +231,22 @@ function groupBy<T extends Record<string, unknown>>(
 // Fully resolves a relation field on a batch of rows: paragraph → ordered rows,
 // reference → the target row, junction → target rows, media → the media row.
 // The cache (keyed table:id) dedupes target lookups within a request.
+//
+// `publishedOnly` (default false, preserving prior behavior for admin callers)
+// adds `AND published = true` to the reference/junction target-row SELECTs.
+// Reference and junction targets are always content or taxonomy tables, which
+// always carry a `published` boolean system field — see CONTENT_SYSTEM_FIELDS /
+// TAXONOMY_SYSTEM_FIELDS in packages/core/src/parser/parseSchema.ts. Paragraph
+// and media targets are deliberately excluded: paragraph rows are owned by
+// their parent (no independent publish state) and media rows have no
+// `published` column at all.
 export async function resolveRelationField(
   db: DrizzlePostgresInstance,
   rows: Record<string, unknown>[],
   fieldName: string,
   rel: RelationDef,
-  cache: Map<string, unknown>
+  cache: Map<string, unknown>,
+  publishedOnly = false
 ): Promise<void> {
   if (rows.length === 0) return
 
@@ -260,8 +270,9 @@ export async function resolveRelationField(
     const uncached = unique.filter((id) => !cache.has(`${rel.table}:${id}`))
     if (uncached.length > 0) {
       const inList = sql.join(uncached.map((id) => sql`${id}`), sql`, `)
+      const publishedCond = publishedOnly ? sql` AND published = true` : sql``
       const result = await db.execute(
-        sql`SELECT * FROM ${sql.raw(quoteIdent(rel.table))} WHERE id IN (${inList})`
+        sql`SELECT * FROM ${sql.raw(quoteIdent(rel.table))} WHERE id IN (${inList})${publishedCond}`
       )
       for (const item of result.rows as Record<string, unknown>[]) {
         cache.set(`${rel.table}:${item['id']}`, item)
@@ -283,8 +294,9 @@ export async function resolveRelationField(
     const uncached = rightIds.filter((id) => !cache.has(`${rel.table}:${id}`))
     if (uncached.length > 0) {
       const rightInList = sql.join(uncached.map((id) => sql`${id}`), sql`, `)
+      const publishedCond = publishedOnly ? sql` AND published = true` : sql``
       const entitiesResult = await db.execute(
-        sql`SELECT * FROM ${sql.raw(quoteIdent(rel.table))} WHERE id IN (${rightInList})`
+        sql`SELECT * FROM ${sql.raw(quoteIdent(rel.table))} WHERE id IN (${rightInList})${publishedCond}`
       )
       for (const item of entitiesResult.rows as Record<string, unknown>[]) {
         cache.set(`${rel.table}:${item['id']}`, item)

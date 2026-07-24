@@ -21,3 +21,21 @@ describe('createAPIAdapter', () => {
     expect(adapter.rateLimit).toEqual({ findAll: '*' })
   })
 })
+
+describe('createAPIAdapter graphql option', () => {
+  it('omits graphql when not configured', () => {
+    expect(createAPIAdapter({}).graphql).toBeUndefined()
+  })
+
+  it('resolves defaults when graphql is enabled', () => {
+    const a = createAPIAdapter({ graphql: { enabled: true } })
+    expect(a.graphql).toMatchObject({ enabled: true, maxDepth: 8, maxComplexity: 1000 })
+    expect(typeof a.graphql!.graphiql).toBe('boolean')
+    expect(typeof a.graphql!.introspection).toBe('boolean')
+  })
+
+  it('honours explicit overrides', () => {
+    const a = createAPIAdapter({ graphql: { enabled: true, maxDepth: 5, graphiql: false } })
+    expect(a.graphql).toMatchObject({ maxDepth: 5, graphiql: false })
+  })
+})

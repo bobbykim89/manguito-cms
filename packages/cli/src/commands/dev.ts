@@ -167,6 +167,7 @@ export async function runDev(
     ...(config.api.prefix ? { prefix: config.api.prefix } : {}),
     ...(config.api.media?.max_file_size ? { media: { max_file_size: config.api.media.max_file_size } } : {}),
     ...(config.api.rateLimit ? { rateLimit: config.api.rateLimit } : {}),
+    ...(config.api.graphql ? { graphql: config.api.graphql } : {}),
     ...(config.server.cors ? { cors: config.server.cors } : {}),
   })
 
@@ -354,6 +355,7 @@ async function onSchemaFileChange(args: OnSchemaFileChangeArgs): Promise<void> {
     ...(config.api.prefix ? { prefix: config.api.prefix } : {}),
     ...(config.api.media?.max_file_size ? { media: { max_file_size: config.api.media.max_file_size } } : {}),
     ...(config.api.rateLimit ? { rateLimit: config.api.rateLimit } : {}),
+    ...(config.api.graphql ? { graphql: config.api.graphql } : {}),
     ...(config.server.cors ? { cors: config.server.cors } : {}),
   })
   updateFetch((req) => newAdapter.app.fetch(req))

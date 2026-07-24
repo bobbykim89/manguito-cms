@@ -20,6 +20,8 @@ export type {
   ResolvedMediaConfig,
   APIAdapter,
   ResolvedRateLimitConfig,
+  GraphQLModuleConfig,
+  ResolvedGraphQLConfig,
   AdminAdapter,
   ManguitoConfig,
   ResolvedManguitoConfig,

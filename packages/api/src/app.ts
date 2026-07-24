@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
+import type { Handler } from 'hono'
 import { sql } from 'drizzle-orm'
-import type { StorageAdapter, SchemaRegistry, ParsedContentType, ParsedTaxonomyType, ResolvedRateLimitConfig, CorsConfig } from '@bobbykim/manguito-cms-core'
+import type { StorageAdapter, SchemaRegistry, ParsedContentType, ParsedTaxonomyType, ResolvedRateLimitConfig, CorsConfig, ResolvedGraphQLConfig } from '@bobbykim/manguito-cms-core'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import { createCorsMiddleware } from './middleware/cors.js'
 import { createSecurityHeadersMiddleware } from './middleware/security-headers.js'
@@ -39,6 +40,8 @@ export type CreateCmsAppOptions = {
   cors?: CorsConfig
   /** Programmatic field resolvers, keyed `${schema}::${field}`. */
   resolvers?: ResolverMap
+  /** GraphQL module config (resolved). When enabled, mounts POST /graphql. */
+  graphql?: ResolvedGraphQLConfig
 }
 
 export interface ManguitoCmsAPIAdapter {
@@ -142,6 +145,7 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
       typeName,
       createDrizzleContentRepository(db, (ct as ParsedContentType).db.table_name, {
         relations: buildRelationsMap((ct as ParsedContentType).fields, registry),
+        publishedRelations: true,
       }),
     ])
   )
@@ -150,6 +154,7 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
       typeName,
       createDrizzleContentRepository(db, (tt as ParsedTaxonomyType).db.table_name, {
         relations: buildRelationsMap((tt as ParsedTaxonomyType).fields, registry),
+        publishedRelations: true,
       }),
     ])
   )
@@ -212,6 +217,56 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
 
   registerPublicContentRoutes(app, registry, publicRepos, listRateLimit, programmaticResolver)
   registerPublicMediaRoutes(app, mediaRepo, listRateLimit)
+
+  // ── GraphQL (opt-in) ──────────────────────────────────────────────────────────
+  //
+  // Loaded via a DYNAMIC import so `graphql`/`graphql-yoga` never load unless a
+  // consumer opts in — the `.` entry (this file) must stay free of a static
+  // dependency on the graphql/ subpath (ADR api/0006). The import kicks off
+  // immediately (schema-building and Armor-plugin setup are synchronous once the
+  // module is loaded; only the `import()` itself is async), and any request that
+  // lands on /graphql before it resolves awaits the same in-flight promise —
+  // there's a single shared `ready` promise, never a re-import per request.
+  // Unauthenticated by design: it sits alongside /api/*, not behind the
+  // /admin/api/* auth middleware registered above, and only ever reads through
+  // `publicRepos` (published-only, same as the REST public routes).
+  //
+  // `buildGraphQLSchema` can throw synchronously (e.g. a GraphQL type-name
+  // collision between a content type and a taxonomy type) — since that throw
+  // happens inside a `.then()` callback, it rejects `ready`. A `.catch` is
+  // attached below so that rejection is HANDLED: an unhandled rejection here
+  // would otherwise crash the entire Node process at startup, taking down all
+  // REST routes with it, regardless of whether any client ever hits /graphql.
+  // Init failure is instead contained to a 500 on /graphql itself.
+  if (options.graphql?.enabled) {
+    const gqlOptions = options.graphql
+    let gqlHandler: Handler | null = null
+    let initError: unknown = null
+    const ready = import('./graphql/handler.js')
+      .then(({ createGraphQLHandler }) => {
+        gqlHandler = createGraphQLHandler(registry, publicRepos, programmaticResolver, db, gqlOptions)
+      })
+      .catch((err: unknown) => {
+        initError = err
+        const message = err instanceof Error ? err.message : String(err)
+        process.stderr.write(`✗ GraphQL schema failed to initialize; /graphql will return 500. ${message}\n`)
+      })
+    const invokeGraphQL: Handler = async (c) => {
+      if (!gqlHandler && !initError) await ready
+      if (!gqlHandler) {
+        return c.json(
+          { ok: false, error: { code: 'GRAPHQL_INIT_FAILED', message: 'GraphQL schema failed to initialize' } },
+          500
+        )
+      }
+      return gqlHandler(c, async () => {})
+    }
+    if (listRateLimit) {
+      app.all('/graphql', listRateLimit, invokeGraphQL)
+    } else {
+      app.all('/graphql', invokeGraphQL)
+    }
+  }
 
   // ── Admin routes — all registered AFTER the blanket use() so auth middleware
   //    runs before every handler. registerConfigRoute is called first so its

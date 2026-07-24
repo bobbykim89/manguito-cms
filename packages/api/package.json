@@ -32,6 +32,11 @@
       "types": "./dist/codegen/index.d.ts",
       "import": "./dist/codegen/index.mjs",
       "require": "./dist/codegen/index.js"
+    },
+    "./graphql": {
+      "types": "./dist/graphql/index.d.ts",
+      "import": "./dist/graphql/index.mjs",
+      "require": "./dist/graphql/index.js"
     }
   },
   "main": "./dist/index.js",
@@ -51,10 +56,14 @@
     "@aws-sdk/s3-request-presigner": "^3.1081.0",
     "@bobbykim/manguito-cms-core": "workspace:*",
     "@bobbykim/manguito-cms-db": "workspace:*",
+    "@escape.tech/graphql-armor": "^3.2.0",
     "@hono/node-server": "^1.19.14",
     "@hono/zod-openapi": "^1.4.0",
     "bcryptjs": "^2.4.3",
+    "dataloader": "^2.2.3",
     "drizzle-orm": "^0.45.2",
+    "graphql": "^16.14.2",
+    "graphql-yoga": "^5.21.2",
     "hono": "^4.12.28",
     "zod": "^4.4.3"
   },
