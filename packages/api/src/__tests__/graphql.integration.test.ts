@@ -116,7 +116,14 @@ beforeAll(async () => {
   await db.execute(sql.raw(`CREATE TABLE "${AUTHOR_TABLE}" (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), slug varchar NOT NULL, published boolean NOT NULL DEFAULT false, name varchar NOT NULL, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now())`))
   await db.execute(sql.raw(`CREATE TABLE "${TABLE}" (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), slug varchar NOT NULL, published boolean NOT NULL DEFAULT false, blog_title varchar NOT NULL, author_id uuid REFERENCES "${AUTHOR_TABLE}"(id) ON DELETE SET NULL, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now())`))
   await db.execute(sql.raw(`INSERT INTO "${AUTHOR_TABLE}" (slug, published, name) VALUES ('ada', true, 'Ada')`))
+  await db.execute(sql.raw(`INSERT INTO "${AUTHOR_TABLE}" (slug, published, name) VALUES ('grace', true, 'Grace')`))
+  // Three published, authored posts — two share the 'ada' author — so the
+  // batching test below can distinguish a real dataloader-batched fetch
+  // (constant query count) from a naive per-row (N+1) fetch (count scales
+  // with row count), and prove cross-row dedup of the shared author lookup.
   await db.execute(sql.raw(`INSERT INTO "${TABLE}" (slug, published, blog_title, author_id) VALUES ('published-one', true, 'Published', (SELECT id FROM "${AUTHOR_TABLE}" WHERE slug = 'ada'))`))
+  await db.execute(sql.raw(`INSERT INTO "${TABLE}" (slug, published, blog_title, author_id) VALUES ('published-two', true, 'Published Two', (SELECT id FROM "${AUTHOR_TABLE}" WHERE slug = 'grace'))`))
+  await db.execute(sql.raw(`INSERT INTO "${TABLE}" (slug, published, blog_title, author_id) VALUES ('published-three', true, 'Published Three', (SELECT id FROM "${AUTHOR_TABLE}" WHERE slug = 'ada'))`))
   await db.execute(sql.raw(`INSERT INTO "${TABLE}" (slug, published, blog_title) VALUES ('draft-one', false, 'Draft')`))
 
   const built = createCmsApp({
@@ -146,8 +153,8 @@ describe('graphql integration', () => {
     expect(body.errors).toBeUndefined()
     const gqlposts = (body.data as unknown as { gqlposts: { data: { blogTitle: string }[]; meta: { total: number } } }).gqlposts
     const titles = gqlposts.data.map((d) => d.blogTitle)
-    expect(titles).toEqual(['Published'])
-    expect(gqlposts.meta.total).toBe(1)
+    expect(titles).toEqual(['Published', 'Published Two', 'Published Three'])
+    expect(gqlposts.meta.total).toBe(3)
   })
 
   it('never returns a draft by slug', async () => {
@@ -173,12 +180,21 @@ describe('graphql integration', () => {
     const gqlposts = (
       body.data as unknown as { gqlposts: { data: { blogTitle: string; author: { name: string } | null }[] } }
     ).gqlposts
-    expect(gqlposts.data[0]!.author?.name).toBe('Ada')
-    // list query (count + data) + one batched author lookup — a handful of
-    // queries, not one-per-row. Observed: 3 (count + data + one batched
-    // author lookup), confirming the dataloader collapses N post rows into a
-    // single `WHERE id IN (...)` instead of one query per row.
-    expect(queryCount).toBeLessThan(5)
+    // 3 published, authored posts seeded in beforeAll (published-one/-two/-three),
+    // two of which (published-one, published-three) share the 'ada' author — this
+    // proves both batching (one query for all 3 rows) and cross-row dedup (Ada's
+    // lookup isn't repeated even though 2 rows reference her).
+    expect(gqlposts.data.map((d) => d.author?.name)).toEqual(['Ada', 'Grace', 'Ada'])
+    // Batched path: 1 count query + 1 data query + 1 batched author lookup
+    // (`WHERE id IN (...)`, deduped to the 2 distinct author ids) = 3 total,
+    // independent of the number of posts. A naive per-row (N+1) fetch would
+    // instead cost 2 + N — i.e. 5 for these 3 posts. Assert the exact
+    // constant, not a loose upper bound, so removing batching fails this test.
+    expect(queryCount).toBe(3)
+    // Belt-and-suspenders: even if the batched constant above ever needs to
+    // move (e.g. a new relation adds a query), the count must stay strictly
+    // below the N+1 value for this fixture — proving it doesn't scale with N.
+    expect(queryCount).toBeLessThan(2 + gqlposts.data.length)
   })
 
   it('resolves a programmatic field lazily as JSON', async () => {
