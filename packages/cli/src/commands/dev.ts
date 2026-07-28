@@ -33,6 +33,7 @@ import { generateRoutes } from '../codegen/routes.js'
 import { generateForms } from '../codegen/forms.js'
 import { generateNav } from '../codegen/nav.js'
 import { loadEnvFile } from '../utils/env.js'
+import { shouldBridgeToHono } from './dev-routing.js'
 import { resolveConfig } from '../utils/config.js'
 import { connectDb } from '../utils/db.js'
 import { printGuidedError, printSuccess } from '../utils/error.js'
@@ -197,16 +198,10 @@ export async function runDev(
   const httpServer = createHttpServer(async (req, res) => {
     try {
       const url = req.url ?? '/'
-      // API routes → Hono (both public API and admin API). The GraphQL endpoint
-      // is mounted at the absolute path /graphql (a sibling of the /api prefix,
-      // not under it), so it must be bridged explicitly — otherwise it falls
-      // through to the Vite admin SPA and Vue Router reports "No match".
-      if (
-        url.startsWith(apiPrefix) ||
-        url.startsWith('/admin/api') ||
-        url === '/graphql' ||
-        url.startsWith('/graphql?')
-      ) {
+      // Backend routes → Hono (public API, admin API, and the GraphQL endpoint,
+      // which is mounted at an absolute path outside the /api prefix).
+      // Everything else falls through to Vite; see dev-routing.ts.
+      if (shouldBridgeToHono(url, apiPrefix)) {
         await bridgeToHono(req, res, honoFetch)
         return
       }
