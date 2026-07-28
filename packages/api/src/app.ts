@@ -87,8 +87,18 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
   // those are JSON error envelopes with no clickjacking/XSS surface. CSP
   // connect-src is derived from the storage adapter: presigned uploads go
   // browser→storage directly, so that host must be allowlisted.
+  // The GraphiQL explorer (dev-only by default) boots from a CDN bundle plus
+  // inline scripts, which the strict script-src blocks — so when it is enabled
+  // the /graphql path alone gets a relaxed CSP (ADR api/0010).
   const uploadOrigins = storage.getUploadOrigins?.() ?? []
-  app.use('*', createSecurityHeadersMiddleware({ connectSrc: uploadOrigins }))
+  const graphiqlEnabled = options.graphql?.enabled === true && options.graphql.graphiql === true
+  app.use(
+    '*',
+    createSecurityHeadersMiddleware({
+      connectSrc: uploadOrigins,
+      ...(graphiqlEnabled && { graphiqlPath: '/graphql' }),
+    }),
+  )
 
   // CORS for all routes
   app.use('*', createCorsMiddleware(cors ?? { origin: '*', enabled: true }))

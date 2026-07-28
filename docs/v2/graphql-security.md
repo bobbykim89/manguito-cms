@@ -70,6 +70,17 @@ Introspection exposes the full schema shape; GraphiQL is an interactive explorer
 Neither should be publicly reachable in production unless the operator explicitly
 opts in via `graphql.graphiql`. Yoga makes both toggleable.
 
+**GraphiQL requires a scoped CSP exception.** The explorer loads its UI from
+`https://unpkg.com`, boots via inline scripts, and runs Monaco editor workers
+fetched from that CDN off `blob:` URLs — all blocked by the app-wide strict
+policy. When (and only when) `graphiql` is enabled, `createCmsApp` passes
+`graphiqlPath: '/graphql'` to the security-headers middleware, which relaxes
+`script-src`/`style-src`/`connect-src`/`worker-src` **for that single path**.
+Every other route — the admin SPA, the REST API, and GraphQL `POST` queries —
+keeps the strict policy. Because `graphiql` defaults off in production, the
+exception does not exist there unless deliberately enabled. Recorded in
+[ADR api/0010](../adr/api/0010-config-driven-csp.md).
+
 ---
 
 ## 3. Published-only guarantee (inherited, not reimplemented)

@@ -265,6 +265,48 @@ describe('graphql integration', () => {
     const body = (await res.json()) as { errors?: unknown[] }
     expect(body.errors?.length).toBeGreaterThan(0)
   })
+
+  // The GraphiQL explorer is served as an HTML page whose UI bundle comes from a
+  // CDN and whose bootstrap is inline script. The app-wide strict CSP
+  // (script-src 'self') blocks both, so the page renders as the un-substituted
+  // "Loading __TITLE__..." shell. These two cases pin the scoped exception.
+
+  it('serves the GraphiQL explorer with a CSP that permits it', async () => {
+    const withExplorer = createCmsApp({
+      registry, db, storage: createLocalAdapter(),
+      graphql: { enabled: true, maxDepth: 8, maxComplexity: 1000, graphiql: true, introspection: true },
+      resolvers,
+    }).app
+    const res = await withExplorer.fetch(
+      new Request('http://local/graphql', {
+        method: 'GET',
+        headers: { accept: 'text/html' },
+      })
+    )
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toContain('text/html')
+    const csp = res.headers.get('Content-Security-Policy') ?? ''
+    expect(csp).toContain("script-src 'self' 'unsafe-inline' https://unpkg.com")
+    expect(csp).toContain("style-src 'self' 'unsafe-inline' https://unpkg.com")
+  })
+
+  it('keeps the strict CSP on /graphql when graphiql is disabled', async () => {
+    const noExplorer = createCmsApp({
+      registry, db, storage: createLocalAdapter(),
+      graphql: { enabled: true, maxDepth: 8, maxComplexity: 1000, graphiql: false, introspection: true },
+      resolvers,
+    }).app
+    const res = await noExplorer.fetch(
+      new Request('http://local/graphql', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ query: '{ gqlposts { meta { total } } }' }),
+      })
+    )
+    const csp = res.headers.get('Content-Security-Policy') ?? ''
+    expect(csp).toContain("script-src 'self'")
+    expect(csp).not.toContain('unpkg.com')
+  })
 })
 
 // A GraphQL type-name collision (two schemas whose machine-name segments both
