@@ -14,6 +14,7 @@ Named after Manguito, a pet bird — and a sibling project to the [Manguito Comp
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
 - [Defining Content](#defining-content)
+- [GraphQL API](#graphql-api)
 - [CLI Reference](#cli-reference)
 - [Deployment](#deployment)
 - [Auth & Users](#auth--users)
@@ -215,6 +216,38 @@ Need a value that isn't stored — a constant, something derived from other fiel
 
 ---
 
+## GraphQL API
+
+Alongside the REST API, you can enable an **opt-in, query-only GraphQL surface** generated from your schemas — useful when a client wants to pick exactly the fields it needs, or to assemble a page of related content in one round-trip.
+
+```ts
+api: createAPIAdapter({
+  prefix: '/api',
+  graphql: { enabled: true },
+}),
+```
+
+That mounts `POST /graphql`, with an in-browser explorer on `GET /graphql` during development:
+
+```graphql
+query {
+  blogPosts(page: 1, perPage: 10, sortBy: createdAt, sortOrder: DESC) {
+    data {
+      title
+      author { name }        # relations resolve to any depth, batched
+      hero { url alt }
+    }
+    meta { total hasNext }
+  }
+}
+```
+
+Only published content is returned, at every level of nesting. Queries are bounded by depth and cost limits that are on by default, and introspection plus the explorer are disabled in production unless you turn them on. Writes stay on the authenticated admin REST API — there are no mutations.
+
+→ See [docs/graphql.md](docs/graphql.md) for the full guide.
+
+---
+
 ## CLI Reference
 
 | Command | Options | Description |
@@ -279,7 +312,7 @@ The first admin user is created with `manguito createsuperuser`. Existing users 
 
 ### Delivered in v2
 
-- Opt-in GraphQL public API (query-only) — see [docs/v2/graphql-module.md](docs/v2/graphql-module.md)
+- Opt-in GraphQL public API (query-only) — see [docs/graphql.md](docs/graphql.md)
 
 ### Planned for v2+
 

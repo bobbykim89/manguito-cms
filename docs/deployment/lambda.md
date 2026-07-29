@@ -202,10 +202,11 @@ Fargate and Lambda run **two different generated entry point files**:
   lives entirely outside the Hono `app`.
 - Lambda's container runs `CMD ["dist/handler.handler"]` — `handler.ts`'s
   generated code is just `handle(app)`, where `app` is the Hono instance from
-  `createCmsApp()`. That Hono instance only ever has routes for `/api/*` and
-  `/admin/api/*` (the real REST/admin API) — nothing serves the built admin
-  SPA's static files. Any request to `/admin` falls through Hono's router with
-  no match, producing a 404.
+  `createCmsApp()`. That Hono instance only ever has routes for `/api/*`,
+  `/admin/api/*` (the real REST/admin API), and `/graphql` when the GraphQL
+  module is enabled — nothing serves the built admin SPA's static files. Any
+  request to `/admin` falls through Hono's router with no match, producing a
+  404.
 
 The admin-static-serving feature had only ever been written into `server.ts`;
 `handler.ts` (and `vercel.ts`, which has the identical gap) never received it.

@@ -14,6 +14,10 @@ _Avoid_: front-end API, read API
 The authenticated `/admin/api/*` surface. Full access including drafts and all write operations.
 _Avoid_: management API, private API, backend API
 
+**GraphQL API**:
+The opt-in, query-only `/graphql` surface — a second read projection over the same published-only repositories, dataloaders and programmatic resolver the public REST routes use. Mounted only when `graphql.enabled` is configured, and served from the `./graphql` subpath export so its dependencies stay out of the default bundle. An absolute path, not nested under the API `prefix`.
+_Avoid_: GraphQL endpoint (when meaning the surface), gql API
+
 **Envelope**:
 The uniform response shape — `{ ok: true, data, meta? }` on success, `{ ok: false, error: { code, message, details? } }` on failure.
 _Avoid_: wrapper, response object
