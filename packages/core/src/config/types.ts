@@ -142,10 +142,37 @@ export type ResolvedRateLimitConfig = {
       }
 }
 
+export type GraphQLModuleConfig = {
+  /** Mount `/graphql` when true. Default: off (opt-in). */
+  enabled?: boolean
+  /** Max query nesting depth. Default: 8. */
+  maxDepth?: number
+  /** Max Armor cost (query complexity budget). Default: 1000. */
+  maxComplexity?: number
+  /** Enable the in-browser GraphiQL explorer. Default: dev-only. */
+  graphiql?: boolean
+  /** Allow schema introspection. Default: follows `graphiql`. */
+  introspection?: boolean
+}
+
+export type ResolvedGraphQLConfig = {
+  /** Mount `/graphql` when true. Default: off (opt-in). */
+  enabled: boolean
+  /** Max query nesting depth. Default: 8. */
+  maxDepth: number
+  /** Max Armor cost (query complexity budget). Default: 1000. */
+  maxComplexity: number
+  /** Enable the in-browser GraphiQL explorer. Default: dev-only. */
+  graphiql: boolean
+  /** Allow schema introspection. Default: follows `graphiql`. */
+  introspection: boolean
+}
+
 export interface APIAdapter {
   readonly prefix: string
   readonly media?: ResolvedMediaConfig
   readonly rateLimit?: ResolvedRateLimitConfig
+  readonly graphql?: ResolvedGraphQLConfig
 }
 
 // ─── Admin Adapter ────────────────────────────────────────────────────────────

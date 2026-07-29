@@ -1,4 +1,9 @@
-import type { APIAdapter, ResolvedRateLimitConfig } from '@bobbykim/manguito-cms-core'
+import type {
+  APIAdapter,
+  ResolvedRateLimitConfig,
+  GraphQLModuleConfig,
+  ResolvedGraphQLConfig,
+} from '@bobbykim/manguito-cms-core'
 
 export { createCmsApp } from './app.js'
 export type { CreateCmsAppOptions } from './app.js'
@@ -17,6 +22,18 @@ export type APIAdapterOptions = {
     max_file_size?: number
   }
   rateLimit?: ResolvedRateLimitConfig
+  graphql?: GraphQLModuleConfig
+}
+
+function resolveGraphQL(cfg: GraphQLModuleConfig): ResolvedGraphQLConfig {
+  const devDefault = process.env['NODE_ENV'] !== 'production'
+  return {
+    enabled: cfg.enabled ?? false,
+    maxDepth: cfg.maxDepth ?? 8,
+    maxComplexity: cfg.maxComplexity ?? 1000,
+    graphiql: cfg.graphiql ?? devDefault,
+    introspection: cfg.introspection ?? cfg.graphiql ?? devDefault,
+  }
 }
 
 export function createAPIAdapter(options: APIAdapterOptions = {}): APIAdapter {
@@ -29,5 +46,6 @@ export function createAPIAdapter(options: APIAdapterOptions = {}): APIAdapter {
     prefix,
     ...(media !== undefined && { media }),
     ...(options.rateLimit !== undefined && { rateLimit: options.rateLimit }),
+    ...(options.graphql !== undefined && { graphql: resolveGraphQL(options.graphql) }),
   }
 }

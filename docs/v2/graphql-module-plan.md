@@ -42,7 +42,7 @@ All new source under `packages/api/src/graphql/` unless noted:
 | `handler.ts` | `createGraphQLHandler(...)`, `ResolvedGraphQLOptions` |
 | `index.ts` | subpath public API |
 
-Wiring changes: `packages/core/src/config/types.ts` (config types + `APIAdapter.graphql?`), `packages/api/src/adapters/api.ts` (`createAPIAdapter`), `packages/api/src/app.ts` (mount), `packages/api/package.json` + `packages/api/tsup.config.ts` (export), `packages/cli/src/commands/dev.ts` + `packages/cli/src/codegen/server-entries.ts` (glue).
+Wiring changes: `packages/core/src/config/types.ts` (config types + `APIAdapter.graphql?`), `packages/api/src/index.ts` (`createAPIAdapter`), `packages/api/src/app.ts` (mount), `packages/api/package.json` + `packages/api/tsup.config.ts` (export), `packages/cli/src/commands/dev.ts` + `packages/cli/src/codegen/server-entries.ts` (glue).
 
 ---
 
@@ -1577,7 +1577,7 @@ git commit -m "feat(graphql): add Yoga handler and ./graphql subpath export"
 **Files:**
 - Modify: `packages/core/src/config/types.ts` (add config types + `APIAdapter.graphql?`)
 - Modify: `packages/core/src/index.ts` (export the new types if the file re-exports config types)
-- Modify: `packages/api/src/adapters/api.ts` (`createAPIAdapter` accepts + resolves `graphql`)
+- Modify: `packages/api/src/index.ts` (`createAPIAdapter` accepts + resolves `graphql`)
 - Test: `packages/api/src/__tests__/create-api-adapter.test.ts` (extend existing)
 
 **Interfaces:**
@@ -1589,7 +1589,7 @@ git commit -m "feat(graphql): add Yoga handler and ./graphql subpath export"
 ```ts
 // add to packages/api/src/__tests__/create-api-adapter.test.ts
 import { describe, it, expect } from 'vitest'
-import { createAPIAdapter } from '../adapters/api'
+import { createAPIAdapter } from '../index'
 
 describe('createAPIAdapter graphql option', () => {
   it('omits graphql when not configured', () => {
@@ -1648,7 +1648,7 @@ If `packages/core/src/index.ts` re-exports config types explicitly, add `GraphQL
 
 - [ ] **Step 4: Update `createAPIAdapter`**
 
-Replace `packages/api/src/adapters/api.ts` with:
+Replace the relevant section of `packages/api/src/index.ts` with:
 ```ts
 import type {
   APIAdapter,
@@ -1697,7 +1697,7 @@ Expected: no errors.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add packages/core/src/config/types.ts packages/core/src/index.ts packages/api/src/adapters/api.ts packages/api/src/__tests__/create-api-adapter.test.ts
+git add packages/core/src/config/types.ts packages/core/src/index.ts packages/api/src/index.ts packages/api/src/__tests__/create-api-adapter.test.ts
 git commit -m "feat(graphql): add graphql config option to createAPIAdapter"
 ```
 

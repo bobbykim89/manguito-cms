@@ -54,7 +54,13 @@ const BLOG_TYPE: ParsedContentType = {
       nullable: true,
       order: 1,
       validation: { required: false },
-      db_column: { column_name: 'category_id', column_type: 'uuid', nullable: true },
+      db_column: {
+        column_name: 'category_id', column_type: 'uuid', nullable: true,
+        // foreign_key is required for buildRelationsMap (used by the PUBLIC repos
+        // wired through createCmsApp) to recognize this as a resolvable relation —
+        // see the ?include=category via makeApp() test below.
+        foreign_key: { table: CATEGORY_TABLE, column: 'id', on_delete: 'SET NULL' },
+      },
       ui_component: { component: 'typeahead-select', ref: 'taxonomy--category', rel: 'one-to-one' },
     },
   ],
@@ -255,6 +261,36 @@ describe('public content routes — integration', () => {
     expect(typeof item.category).toBe('object')
     expect(item.category!.id).toBe(catId)
     expect(item.category!.name).toBe('Technology')
+  })
+
+  it('GET /api/{base_path}/{slug}?include=<ref> hides a draft relation target (published-only filter)', async () => {
+    // Uses makeApp() (the real createCmsApp public path, publishedRelations: true)
+    // rather than a hand-built repo, so this exercises the exact wiring public
+    // consumers hit — GET /api/posts?include=author style requests must never
+    // expose a draft target.
+    const catResult = await db.execute(sql.raw(`
+      INSERT INTO "${CATEGORY_TABLE}" (name, published)
+      VALUES ('Unlisted Draft Category', false)
+      RETURNING id
+    `))
+    const draftCatId = (catResult.rows[0] as { id: string }).id
+
+    await db.execute(sql`
+      INSERT INTO ${sql.raw(`"${BLOG_TABLE}"`)} (slug, published, blog_title, category_id)
+      VALUES ('with-draft-category', true, 'Blog With Draft Category', ${draftCatId}::uuid)
+    `)
+
+    const app = makeApp()
+    const res = await app.request(`/api/${BASE_PATH}/with-draft-category?include=category`)
+    expect(res.status).toBe(200)
+
+    const body = await res.json() as {
+      ok: boolean
+      data: { slug: string; category: unknown }
+    }
+    expect(body.ok).toBe(true)
+    expect(body.data.slug).toBe('with-draft-category')
+    expect(body.data.category).toBeNull()
   })
 
   it('GET /api/openapi.json returns valid OpenAPI 3.0 JSON with openapi, info, paths keys', async () => {

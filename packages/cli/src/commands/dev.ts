@@ -33,6 +33,7 @@ import { generateRoutes } from '../codegen/routes.js'
 import { generateForms } from '../codegen/forms.js'
 import { generateNav } from '../codegen/nav.js'
 import { loadEnvFile } from '../utils/env.js'
+import { shouldBridgeToHono } from './dev-routing.js'
 import { resolveConfig } from '../utils/config.js'
 import { connectDb } from '../utils/db.js'
 import { printGuidedError, printSuccess } from '../utils/error.js'
@@ -167,6 +168,7 @@ export async function runDev(
     ...(config.api.prefix ? { prefix: config.api.prefix } : {}),
     ...(config.api.media?.max_file_size ? { media: { max_file_size: config.api.media.max_file_size } } : {}),
     ...(config.api.rateLimit ? { rateLimit: config.api.rateLimit } : {}),
+    ...(config.api.graphql ? { graphql: config.api.graphql } : {}),
     ...(config.server.cors ? { cors: config.server.cors } : {}),
   })
 
@@ -196,8 +198,10 @@ export async function runDev(
   const httpServer = createHttpServer(async (req, res) => {
     try {
       const url = req.url ?? '/'
-      // API routes → Hono (both public API and admin API)
-      if (url.startsWith(apiPrefix) || url.startsWith('/admin/api')) {
+      // Backend routes → Hono (public API, admin API, and the GraphQL endpoint,
+      // which is mounted at an absolute path outside the /api prefix).
+      // Everything else falls through to Vite; see dev-routing.ts.
+      if (shouldBridgeToHono(url, apiPrefix)) {
         await bridgeToHono(req, res, honoFetch)
         return
       }
@@ -354,6 +358,7 @@ async function onSchemaFileChange(args: OnSchemaFileChangeArgs): Promise<void> {
     ...(config.api.prefix ? { prefix: config.api.prefix } : {}),
     ...(config.api.media?.max_file_size ? { media: { max_file_size: config.api.media.max_file_size } } : {}),
     ...(config.api.rateLimit ? { rateLimit: config.api.rateLimit } : {}),
+    ...(config.api.graphql ? { graphql: config.api.graphql } : {}),
     ...(config.server.cors ? { cors: config.server.cors } : {}),
   })
   updateFetch((req) => newAdapter.app.fetch(req))

@@ -21,6 +21,10 @@ import {
 
 export type ContentRepositoryOptions = {
   relations?: Record<string, RelationDef>
+  /** When true, relation targets (reference/junction) are filtered to published
+   * rows only. Set by the public repos in app.ts; admin repos leave this false
+   * so drafts remain visible to admin. */
+  publishedRelations?: boolean
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -109,7 +113,7 @@ export function createDrizzleContentRepository<T>(
   tableName: string,
   options: ContentRepositoryOptions = {}
 ): ContentRepository<T> {
-  const { relations = {} } = options
+  const { relations = {}, publishedRelations = false } = options
 
   function tableRaw(): SQL {
     return sql.raw(quoteIdent(tableName))
@@ -133,7 +137,7 @@ export function createDrizzleContentRepository<T>(
     // included, populate bare IDs so the field is never silently dropped.
     for (const [fieldName, rel] of Object.entries(relations)) {
       if (rel.type === 'media') {
-        await resolveRelationField(db, rows, fieldName, rel, cache)
+        await resolveRelationField(db, rows, fieldName, rel, cache, publishedRelations)
       } else if (!include.includes(fieldName)) {
         await resolveRelationBareIds(db, rows, fieldName, rel)
       }
@@ -143,7 +147,7 @@ export function createDrizzleContentRepository<T>(
     for (const fieldName of include) {
       const rel = relations[fieldName]!
       if (rel.type !== 'media') {
-        await resolveRelationField(db, rows, fieldName, rel, cache)
+        await resolveRelationField(db, rows, fieldName, rel, cache, publishedRelations)
       }
     }
 

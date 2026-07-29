@@ -9,6 +9,7 @@ export default defineConfig({
     'src/storage/index.ts',
     'src/runtime/index.ts',
     'src/codegen/index.ts',
+    'src/graphql/index.ts',
   ],
   format: ['esm', 'cjs'],
   dts: true,
