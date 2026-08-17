@@ -170,31 +170,6 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
   )
   const publicRepos = { ...publicContentRepos, ...publicTaxonomyRepos }
 
-  // ── GraphQL repos ───────────────────────────────────────────────────────────
-  //
-  // GraphQL resolves relations lazily, per selected field, through its own
-  // request-scoped dataloaders — so its repos must NOT resolve relations
-  // eagerly. Reusing `publicRepos` here is actively wrong: their eager pass
-  // overwrites a media field's column (the FK column and the field share a
-  // name) with the resolved media object, and the dataloader then reads that
-  // object back where a UUID is expected. It also pays for resolving every
-  // relation on every query, including the ones the client never selected.
-  //
-  // These are still public reads: every GraphQL resolver passes
-  // `published_only: true`, and the dataloaders filter relation targets by
-  // published (ADR api/0002). Built separately from the admin `repos` so a
-  // future change there can never silently widen the public surface.
-  const graphqlRepos = Object.fromEntries([
-    ...Object.entries(registry.content_types).map(([typeName, ct]) => [
-      typeName,
-      createDrizzleContentRepository(db, (ct as ParsedContentType).db.table_name),
-    ]),
-    ...Object.entries(registry.taxonomy_types).map(([typeName, tt]) => [
-      typeName,
-      createDrizzleContentRepository(db, (tt as ParsedTaxonomyType).db.table_name),
-    ]),
-  ])
-
   // ── Auth routes registered directly on app BEFORE the blanket use() calls ───────
   //
   // registerAuthRoutes uses full paths (/admin/api/auth/login etc.). Mounting via
@@ -279,7 +254,7 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
     let initError: unknown = null
     const ready = import('./graphql/handler.js')
       .then(({ createGraphQLHandler }) => {
-        gqlHandler = createGraphQLHandler(registry, graphqlRepos, programmaticResolver, db, gqlOptions)
+        gqlHandler = createGraphQLHandler(registry, publicRepos, programmaticResolver, db, gqlOptions)
       })
       .catch((err: unknown) => {
         initError = err
