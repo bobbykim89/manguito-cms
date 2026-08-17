@@ -338,8 +338,11 @@ export async function resolveRelationField(
   if (rel.type === 'paragraph') {
     const parentIds = rows.map((r) => r['id'] as string)
     const inList = sql.join(parentIds.map((id) => sql`${id}`), sql`, `)
+    // Scoped by parent_field as well as parent_id: two paragraph fields of the
+    // same paragraph type share one table, so filtering on the parent alone
+    // hands each field the other's rows.
     const result = await db.execute(
-      sql`SELECT * FROM ${sql.raw(quoteIdent(rel.table))} WHERE parent_id IN (${inList}) ORDER BY "order" ASC`
+      sql`SELECT * FROM ${sql.raw(quoteIdent(rel.table))} WHERE parent_id IN (${inList}) AND parent_field = ${fieldName} ORDER BY "order" ASC`
     )
     const byParent = groupBy(result.rows as Record<string, unknown>[], 'parent_id')
     for (const row of rows) {
@@ -432,7 +435,7 @@ export async function resolveRelationBareIds(
     const parentIds = rows.map((r) => r['id'] as string)
     const inList = sql.join(parentIds.map((id) => sql`${id}`), sql`, `)
     const result = await db.execute(
-      sql`SELECT id, parent_id FROM ${sql.raw(quoteIdent(rel.table))} WHERE parent_id IN (${inList}) ORDER BY "order" ASC`
+      sql`SELECT id, parent_id FROM ${sql.raw(quoteIdent(rel.table))} WHERE parent_id IN (${inList}) AND parent_field = ${fieldName} ORDER BY "order" ASC`
     )
     const byParent = groupBy(result.rows as Record<string, unknown>[], 'parent_id')
     for (const row of rows) {
