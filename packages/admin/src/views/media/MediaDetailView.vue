@@ -24,6 +24,8 @@ const savingAlt = ref(false)
 const deleting = ref(false)
 const showDeleteConfirm = ref(false)
 
+const isPdf = computed(() => item.value?.mime_type === 'application/pdf')
+
 function formatSize(bytes: number): string {
   if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`
   if (bytes >= 1_000) return `${Math.round(bytes / 1_000)} KB`
@@ -123,12 +125,32 @@ const deleteTooltip = computed(() =>
         :alt="item.alt ?? ''"
         class="max-h-96 w-full object-contain"
       />
-      <div
-        v-else
-        class="flex h-48 items-center justify-center text-6xl text-gray-300"
-        aria-hidden="true"
+      <!-- Videos play inline; the CSP already allows media from storage hosts. -->
+      <video
+        v-else-if="item.type === 'video'"
+        :src="item.url"
+        controls
+        preload="metadata"
+        class="max-h-96 w-full bg-black object-contain"
       >
-        {{ item.type === 'video' ? '▶' : '📄' }}
+        Your browser cannot play this video.
+      </video>
+      <!--
+        PDFs and other files are opened in a new tab rather than embedded: an
+        <iframe> to the storage host would need a frame-src CSP exception on
+        every admin route, and a link needs none.
+      -->
+      <div v-else class="flex h-48 flex-col items-center justify-center gap-3">
+        <div class="text-6xl text-gray-300" aria-hidden="true">📄</div>
+        <a
+          :href="item.url"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="inline-flex items-center gap-1.5 rounded-md border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:border-indigo-300 hover:bg-indigo-100"
+        >
+          {{ isPdf ? 'Open PDF in new tab' : 'Open file in new tab' }}
+          <span aria-hidden="true">↗</span>
+        </a>
       </div>
     </div>
 
