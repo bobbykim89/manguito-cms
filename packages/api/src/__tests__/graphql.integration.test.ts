@@ -8,6 +8,7 @@ import type {
   ParsedTaxonomyType,
   ParsedRole,
   ProgrammaticFieldDefinition,
+  ResolverContext,
 } from '@bobbykim/manguito-cms-core'
 import { createCmsApp } from '../app'
 import { createLocalAdapter } from '../storage/adapters/local'
@@ -64,6 +65,11 @@ const POST: ParsedContentType = {
     { name: 'reading_time', label: 'Reading time', field_type: 'programmatic', required: false,
       nullable: true, order: 2, validation: { required: false }, db_column: null,
       ui_component: { component: 'computed-display' } },
+    // Reads a media field through ctx.get() — the record a programmatic resolver
+    // sees must match REST, where media is a resolved object rather than a raw id.
+    { name: 'hero_mime', label: 'Hero mime', field_type: 'programmatic', required: false,
+      nullable: true, order: 4, validation: { required: false }, db_column: null,
+      ui_component: { component: 'computed-display' } },
     // A media field's FK column shares its field name — the shape that broke
     // when GraphQL read through repos that resolve relations eagerly.
     { name: 'hero', label: 'Hero', field_type: 'image', required: false, nullable: true,
@@ -82,6 +88,16 @@ const resolvers: Map<string, ProgrammaticFieldDefinition> = new Map([
     {
       schema: 'content--gqlpost', field: 'reading_time', on_list: true,
       resolve: () => 5, __manguito_programmatic: true,
+    },
+  ],
+  [
+    'content--gqlpost::hero_mime',
+    {
+      schema: 'content--gqlpost', field: 'hero_mime', on_list: true,
+      // Deliberately reaches into the resolved media object, the way a resolver
+      // written against the REST record shape would.
+      resolve: (ctx: ResolverContext) => (ctx.get('hero') as { mime_type?: string } | null)?.mime_type ?? null,
+      __manguito_programmatic: true,
     },
   ],
 ])
@@ -248,7 +264,10 @@ describe('graphql integration', () => {
   it('resolves a media field to the media object, without erroring', async () => {
     const body = await gql('{ gqlposts(perPage: 1) { data { blogTitle hero { id url mimeType alt } } } }')
     expect(body.errors).toBeUndefined()
-    const first = body.data.gqlposts.data[0] as { hero: Record<string, unknown> | null }
+    const gqlposts = (body.data as unknown as {
+      gqlposts: { data: { hero: Record<string, unknown> | null }[] }
+    }).gqlposts
+    const first = gqlposts.data[0]!
     expect(first.hero).not.toBeNull()
     expect(first.hero).toMatchObject({
       id: '11111111-1111-4111-8111-111111111111',
@@ -261,7 +280,30 @@ describe('graphql integration', () => {
   it('returns null for a media field that is not set', async () => {
     const body = await gql('{ gqlpost(slug: "published-two") { hero { id } } }')
     expect(body.errors).toBeUndefined()
-    expect(body.data.gqlpost.hero).toBeNull()
+    const gqlpost = (body.data as unknown as { gqlpost: { hero: unknown } }).gqlpost
+    expect(gqlpost.hero).toBeNull()
+  })
+
+  // GraphQL reads through repos that resolve no relations, so a programmatic
+  // resolver would otherwise see a raw uuid where REST gives it a media object.
+  it('gives programmatic resolvers the same media shape REST does', async () => {
+    const body = await gql('{ gqlpost(slug: "published-one") { heroMime } }')
+    expect(body.errors).toBeUndefined()
+    const gqlpost = (body.data as unknown as { gqlpost: { heroMime: unknown } }).gqlpost
+    expect(gqlpost.heroMime).toBe('image/png')
+  })
+
+  // The enrichment must not write the resolved object back into the row the
+  // media field resolver reads, or that field would hand an object to the
+  // dataloader where a uuid is expected.
+  it('resolves a media field and a programmatic field reading it in one query', async () => {
+    const body = await gql('{ gqlpost(slug: "published-one") { heroMime hero { id mimeType } } }')
+    expect(body.errors).toBeUndefined()
+    const gqlpost = (body.data as unknown as {
+      gqlpost: { heroMime: unknown; hero: Record<string, unknown> | null }
+    }).gqlpost
+    expect(gqlpost.heroMime).toBe('image/png')
+    expect(gqlpost.hero).toMatchObject({ mimeType: 'image/png' })
   })
 
   it('resolves a programmatic field lazily as JSON', async () => {

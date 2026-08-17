@@ -138,6 +138,12 @@ export function buildGraphQLSchema(registry: SchemaRegistry): GraphQLSchema {
     machineName: string,
     type: ParsedContentType | ParsedTaxonomyType | ParsedParagraphType
   ): GraphQLObjectType {
+    // Handed to the programmatic resolvers so they can present the same record
+    // shape REST does, where media fields are resolved objects (see resolvers.ts).
+    const mediaFieldNames = type.fields
+      .filter((f) => f.field_type === 'image' || f.field_type === 'video' || f.field_type === 'file')
+      .map((f) => f.name)
+
     return new GraphQLObjectType({
       name: graphqlTypeName(machineName),
       fields: () => {
@@ -158,7 +164,7 @@ export function buildGraphQLSchema(registry: SchemaRegistry): GraphQLSchema {
           const outType = outputTypeForField(field)
           let resolve: GraphQLFieldConfig<Record<string, unknown>, GraphQLContext>['resolve']
           if (field.field_type === 'programmatic') {
-            resolve = programmaticFieldResolver(machineName, field.name)
+            resolve = programmaticFieldResolver(machineName, field.name, mediaFieldNames)
           } else if (
             field.field_type === 'reference' ||
             field.field_type === 'paragraph' ||
