@@ -55,17 +55,71 @@ async function fetchParagraphMediaIds(
   return ids
 }
 
+// A paragraph type's own paragraph fields — the one level of nesting ADR
+// core/0005 permits. Empty without a registry, which is how callers that have no
+// nesting to persist opt out.
+function nestedParagraphFields(
+  pType: ParsedParagraphType,
+  registry?: SchemaRegistry
+): Array<{ fieldName: string; nType: ParsedParagraphType }> {
+  if (!registry) return []
+  const out: Array<{ fieldName: string; nType: ParsedParagraphType }> = []
+  for (const f of pType.fields) {
+    if (f.db_column !== null) continue
+    const comp = f.ui_component as { component: string; ref?: string }
+    if (comp.component !== 'paragraph-embed' || !comp.ref) continue
+    const nType = registry.paragraph_types[comp.ref]
+    if (nType) out.push({ fieldName: f.name, nType })
+  }
+  return out
+}
+
+// Ids of the paragraph rows currently stored for one field of one parent.
+async function fetchParagraphRowIds(
+  db: DrizzlePostgresInstance,
+  pType: ParsedParagraphType,
+  itemId: string,
+  fieldName: string
+): Promise<string[]> {
+  const tbl = sql.raw(quoteIdent(pType.db.table_name))
+  const result = await db.execute(
+    sql`SELECT id FROM ${tbl} WHERE parent_id = ${itemId} AND parent_field = ${fieldName}`
+  )
+  return (result.rows as Record<string, unknown>[])
+    .map((r) => r['id'])
+    .filter((id): id is string => typeof id === 'string')
+}
+
 // Replaces every paragraph row for one field of one parent (delete + reinsert),
 // returning the media ids removed (old rows) and added (new rows).
+//
+// `registry` enables one level of paragraph nesting (ADR core/0005): a nested
+// paragraph field has no column on its parent's table, so without this its items
+// were silently dropped on write. Nested rows hang off the *paragraph* row's id,
+// and are torn down with it so the delete+reinsert cannot orphan them.
 export async function persistParagraphField(
   db: DrizzlePostgresInstance,
   itemId: string,
   parentType: string,
   fieldName: string,
   pType: ParsedParagraphType,
-  items: unknown[]
+  items: unknown[],
+  registry?: SchemaRegistry
 ): Promise<MediaDelta> {
   const removed = await fetchParagraphMediaIds(db, pType, itemId, fieldName)
+  const nested = nestedParagraphFields(pType, registry)
+
+  // Tear down nested rows before their parents disappear, collecting the media
+  // they referenced so reference counts stay correct.
+  if (nested.length > 0) {
+    const staleIds = await fetchParagraphRowIds(db, pType, itemId, fieldName)
+    for (const rowId of staleIds) {
+      for (const n of nested) {
+        const d = await deleteParagraphField(db, rowId, n.fieldName, n.nType, registry)
+        removed.push(...d.removed)
+      }
+    }
+  }
 
   const tbl = sql.raw(quoteIdent(pType.db.table_name))
   await db.execute(sql`DELETE FROM ${tbl} WHERE parent_id = ${itemId} AND parent_field = ${fieldName}`)
@@ -75,8 +129,9 @@ export async function persistParagraphField(
 
   for (let i = 0; i < items.length; i++) {
     const pItem = items[i] as Record<string, unknown>
+    const rowId = crypto.randomUUID()
     const data: Record<string, unknown> = {
-      id: crypto.randomUUID(),
+      id: rowId,
       parent_id: itemId,
       parent_type: parentType,
       parent_field: fieldName,
@@ -96,6 +151,22 @@ export async function persistParagraphField(
       const val = pItem[name]
       if (typeof val === 'string' && val !== '') added.push(val)
     }
+
+    // Persist this row's nested paragraph items against the row just inserted.
+    for (const n of nested) {
+      const nestedItems = Array.isArray(pItem[n.fieldName]) ? (pItem[n.fieldName] as unknown[]) : []
+      const d = await persistParagraphField(
+        db,
+        rowId,
+        pType.db.table_name,
+        n.fieldName,
+        n.nType,
+        nestedItems,
+        registry
+      )
+      added.push(...d.added)
+      removed.push(...d.removed)
+    }
   }
 
   return { added, removed }
@@ -108,9 +179,23 @@ export async function deleteParagraphField(
   db: DrizzlePostgresInstance,
   itemId: string,
   fieldName: string,
-  pType: ParsedParagraphType
+  pType: ParsedParagraphType,
+  registry?: SchemaRegistry
 ): Promise<MediaDelta> {
   const removed = await fetchParagraphMediaIds(db, pType, itemId, fieldName)
+
+  // Cascade to nested paragraph rows, which hang off these rows' ids.
+  const nested = nestedParagraphFields(pType, registry)
+  if (nested.length > 0) {
+    const rowIds = await fetchParagraphRowIds(db, pType, itemId, fieldName)
+    for (const rowId of rowIds) {
+      for (const n of nested) {
+        const d = await deleteParagraphField(db, rowId, n.fieldName, n.nType, registry)
+        removed.push(...d.removed)
+      }
+    }
+  }
+
   const tbl = sql.raw(quoteIdent(pType.db.table_name))
   await db.execute(sql`DELETE FROM ${tbl} WHERE parent_id = ${itemId} AND parent_field = ${fieldName}`)
   return { added: [], removed }
