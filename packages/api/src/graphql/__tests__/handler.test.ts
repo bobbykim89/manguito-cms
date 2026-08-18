@@ -102,6 +102,9 @@ describe('createGraphQLHandler', () => {
     return app
   }
 
+  // `any` on the parsed payload: these tests read arbitrary GraphQL response
+  // shapes, and typing it further would mean a cast at every call site.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async function post(app: Hono, query: string): Promise<{ status: number; body: any }> {
     const res = await app.request('/graphql', {
       method: 'POST',
