@@ -457,26 +457,33 @@ describe('graphql schema-init failure', () => {
         return true
       })
 
-    const built = createCmsApp({
-      registry: collidingRegistry,
-      db,
-      storage: createLocalAdapter(),
-      graphql: { enabled: true, maxDepth: 8, maxComplexity: 1000, graphiql: false, introspection: true },
-    })
-
-    const res = await built.app.fetch(
-      new Request('http://local/graphql', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ query: '{ __typename }' }),
+    let res: Response
+    try {
+      const built = createCmsApp({
+        registry: collidingRegistry,
+        db,
+        storage: createLocalAdapter(),
+        graphql: { enabled: true, maxDepth: 8, maxComplexity: 1000, graphiql: false, introspection: true },
       })
-    )
+
+      res = await built.app.fetch(
+        new Request('http://local/graphql', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ query: '{ __typename }' }),
+        })
+      )
+    } finally {
+      // In a finally: this file has no restoreAllMocks hook, so an early throw
+      // would leave process.stderr.write mocked and silence the rest of the run.
+      writeSpy.mockRestore()
+    }
+
     expect(res.status).toBe(500)
     const body = (await res.json()) as { ok: boolean; error: { code: string; message: string } }
     expect(body.ok).toBe(false)
     expect(body.error.code).toBe('GRAPHQL_INIT_FAILED')
 
-    writeSpy.mockRestore()
     // The operator still has to be told why /graphql is dead, and which two
     // schemas collided.
     const diagnostic = stderrWrites.join('')
