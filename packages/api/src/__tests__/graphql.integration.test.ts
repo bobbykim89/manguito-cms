@@ -8,6 +8,7 @@ import type {
   ParsedTaxonomyType,
   ParsedRole,
   ProgrammaticFieldDefinition,
+  ResolverContext,
 } from '@bobbykim/manguito-cms-core'
 import { createCmsApp } from '../app'
 import { createLocalAdapter } from '../storage/adapters/local'
@@ -64,6 +65,17 @@ const POST: ParsedContentType = {
     { name: 'reading_time', label: 'Reading time', field_type: 'programmatic', required: false,
       nullable: true, order: 2, validation: { required: false }, db_column: null,
       ui_component: { component: 'computed-display' } },
+    // Reads a media field through ctx.get() — the record a programmatic resolver
+    // sees must match REST, where media is a resolved object rather than a raw id.
+    { name: 'hero_mime', label: 'Hero mime', field_type: 'programmatic', required: false,
+      nullable: true, order: 4, validation: { required: false }, db_column: null,
+      ui_component: { component: 'computed-display' } },
+    // A media field's FK column shares its field name — the shape that broke
+    // when GraphQL read through repos that resolve relations eagerly.
+    { name: 'hero', label: 'Hero', field_type: 'image', required: false, nullable: true,
+      order: 3, validation: { required: false },
+      db_column: { column_name: 'hero', column_type: 'uuid', nullable: true },
+      ui_component: { component: 'file-upload', accepted_mime_types: ['image/png'] } },
   ],
   ui: { tabs: [] },
   db: { table_name: TABLE, junction_tables: [] },
@@ -76,6 +88,16 @@ const resolvers: Map<string, ProgrammaticFieldDefinition> = new Map([
     {
       schema: 'content--gqlpost', field: 'reading_time', on_list: true,
       resolve: () => 5, __manguito_programmatic: true,
+    },
+  ],
+  [
+    'content--gqlpost::hero_mime',
+    {
+      schema: 'content--gqlpost', field: 'hero_mime', on_list: true,
+      // Deliberately reaches into the resolved media object, the way a resolver
+      // written against the REST record shape would.
+      resolve: (ctx: ResolverContext) => (ctx.get('hero') as { mime_type?: string } | null)?.mime_type ?? null,
+      __manguito_programmatic: true,
     },
   ],
 ])
@@ -114,7 +136,17 @@ beforeAll(async () => {
   await db.execute(sql.raw(`DROP TABLE IF EXISTS "${TABLE}"`))
   await db.execute(sql.raw(`DROP TABLE IF EXISTS "${AUTHOR_TABLE}"`))
   await db.execute(sql.raw(`CREATE TABLE "${AUTHOR_TABLE}" (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), slug varchar NOT NULL, published boolean NOT NULL DEFAULT false, name varchar NOT NULL, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now())`))
-  await db.execute(sql.raw(`CREATE TABLE "${TABLE}" (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), slug varchar NOT NULL, published boolean NOT NULL DEFAULT false, blog_title varchar NOT NULL, author_id uuid REFERENCES "${AUTHOR_TABLE}"(id) ON DELETE SET NULL, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now())`))
+  await db.execute(sql.raw(`CREATE TABLE "${TABLE}" (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), slug varchar NOT NULL, published boolean NOT NULL DEFAULT false, blog_title varchar NOT NULL, author_id uuid REFERENCES "${AUTHOR_TABLE}"(id) ON DELETE SET NULL, hero uuid, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now())`))
+  await db.execute(sql.raw(`
+    CREATE TABLE IF NOT EXISTS media (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      type varchar(50) NOT NULL, url text NOT NULL, mime_type varchar(255) NOT NULL,
+      alt text, file_size integer NOT NULL DEFAULT 0,
+      width integer, height integer, duration integer,
+      reference_count integer NOT NULL DEFAULT 0,
+      created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now()
+    )`))
+  await db.execute(sql.raw(`INSERT INTO media (id, type, url, mime_type, alt, file_size) VALUES ('11111111-1111-4111-8111-111111111111', 'image', 'https://cdn.example/hero.png', 'image/png', 'Hero alt', 1234) ON CONFLICT (id) DO NOTHING`))
   await db.execute(sql.raw(`INSERT INTO "${AUTHOR_TABLE}" (slug, published, name) VALUES ('ada', true, 'Ada')`))
   await db.execute(sql.raw(`INSERT INTO "${AUTHOR_TABLE}" (slug, published, name) VALUES ('grace', true, 'Grace')`))
   // Draft author — never published. A published post can still carry a FK to
@@ -126,7 +158,7 @@ beforeAll(async () => {
   // batching test below can distinguish a real dataloader-batched fetch
   // (constant query count) from a naive per-row (N+1) fetch (count scales
   // with row count), and prove cross-row dedup of the shared author lookup.
-  await db.execute(sql.raw(`INSERT INTO "${TABLE}" (slug, published, blog_title, author_id) VALUES ('published-one', true, 'Published', (SELECT id FROM "${AUTHOR_TABLE}" WHERE slug = 'ada'))`))
+  await db.execute(sql.raw(`INSERT INTO "${TABLE}" (slug, published, blog_title, author_id, hero) VALUES ('published-one', true, 'Published', (SELECT id FROM "${AUTHOR_TABLE}" WHERE slug = 'ada'), '11111111-1111-4111-8111-111111111111')`))
   await db.execute(sql.raw(`INSERT INTO "${TABLE}" (slug, published, blog_title, author_id) VALUES ('published-two', true, 'Published Two', (SELECT id FROM "${AUTHOR_TABLE}" WHERE slug = 'grace'))`))
   await db.execute(sql.raw(`INSERT INTO "${TABLE}" (slug, published, blog_title, author_id) VALUES ('published-three', true, 'Published Three', (SELECT id FROM "${AUTHOR_TABLE}" WHERE slug = 'ada'))`))
   // Published post whose author FK points at the draft 'ghost' author — the
@@ -223,6 +255,55 @@ describe('graphql integration', () => {
     const four = gqlposts.data.find((d) => d.blogTitle === 'Published Four')
     expect(four).toBeDefined()
     expect(four!.author).toBeNull()
+  })
+
+  // A media field's FK column and its field name are the same, so a repo that
+  // resolves relations eagerly overwrites the id with the media object — and the
+  // dataloader then hands that object to `WHERE id IN (...)`. GraphQL therefore
+  // reads through repos with no eager resolution; this pins that.
+  it('resolves a media field to the media object, without erroring', async () => {
+    const body = await gql('{ gqlposts(perPage: 1) { data { blogTitle hero { id url mimeType alt } } } }')
+    expect(body.errors).toBeUndefined()
+    const gqlposts = (body.data as unknown as {
+      gqlposts: { data: { hero: Record<string, unknown> | null }[] }
+    }).gqlposts
+    const first = gqlposts.data[0]!
+    expect(first.hero).not.toBeNull()
+    expect(first.hero).toMatchObject({
+      id: '11111111-1111-4111-8111-111111111111',
+      url: 'https://cdn.example/hero.png',
+      mimeType: 'image/png',
+      alt: 'Hero alt',
+    })
+  })
+
+  it('returns null for a media field that is not set', async () => {
+    const body = await gql('{ gqlpost(slug: "published-two") { hero { id } } }')
+    expect(body.errors).toBeUndefined()
+    const gqlpost = (body.data as unknown as { gqlpost: { hero: unknown } }).gqlpost
+    expect(gqlpost.hero).toBeNull()
+  })
+
+  // GraphQL reads through repos that resolve no relations, so a programmatic
+  // resolver would otherwise see a raw uuid where REST gives it a media object.
+  it('gives programmatic resolvers the same media shape REST does', async () => {
+    const body = await gql('{ gqlpost(slug: "published-one") { heroMime } }')
+    expect(body.errors).toBeUndefined()
+    const gqlpost = (body.data as unknown as { gqlpost: { heroMime: unknown } }).gqlpost
+    expect(gqlpost.heroMime).toBe('image/png')
+  })
+
+  // The enrichment must not write the resolved object back into the row the
+  // media field resolver reads, or that field would hand an object to the
+  // dataloader where a uuid is expected.
+  it('resolves a media field and a programmatic field reading it in one query', async () => {
+    const body = await gql('{ gqlpost(slug: "published-one") { heroMime hero { id mimeType } } }')
+    expect(body.errors).toBeUndefined()
+    const gqlpost = (body.data as unknown as {
+      gqlpost: { heroMime: unknown; hero: Record<string, unknown> | null }
+    }).gqlpost
+    expect(gqlpost.heroMime).toBe('image/png')
+    expect(gqlpost.hero).toMatchObject({ mimeType: 'image/png' })
   })
 
   it('resolves a programmatic field lazily as JSON', async () => {

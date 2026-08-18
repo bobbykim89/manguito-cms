@@ -1,0 +1,44 @@
+{
+  "name": "content--nested_paragraph_test",
+  "label": "Nested Paragraph Test",
+  "type": "content-type",
+  "default_base_path": "pages",
+  "only_one": false,
+  "fields": [
+    {
+      "tab": {
+        "name": "primary_tab",
+        "label": "Primary Tab",
+        "fields": [
+          {
+            "name": "title",
+            "label": "Title",
+            "type": "text/plain",
+            "required": true
+          },
+          {
+            "name": "hero_image",
+            "label": "Hero Image",
+            "type": "image",
+            "required": false
+          },
+          {
+            "name": "body",
+            "label": "Body",
+            "type": "text/rich",
+            "required": false
+          },
+          {
+            "name": "test_cards",
+            "label": "Cards",
+            "type": "paragraph",
+            "ref": "paragraph--card_image_link",
+            "max": 8,
+            "rel": "one-to-many",
+            "required": true
+          }
+        ]
+      }
+    }
+  ]
+}

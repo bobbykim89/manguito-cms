@@ -106,6 +106,15 @@ const POST_TYPE: ParsedContentType = {
       db_column: null,
       ui_component: { component: 'paragraph-embed', ref: 'paragraph--rel_quote', rel: 'one-to-many' },
     },
+    // A SECOND paragraph field of the SAME paragraph type — both fields' rows
+    // live in one table, distinguished only by parent_field.
+    {
+      name: 'epigraphs', label: 'Epigraphs', field_type: 'paragraph',
+      required: false, nullable: true, order: 4,
+      validation: { required: false },
+      db_column: null,
+      ui_component: { component: 'paragraph-embed', ref: 'paragraph--rel_quote', rel: 'one-to-many' },
+    },
   ],
   ui: { tabs: [] },
   db: { table_name: POST_TABLE, junction_tables: [] },
@@ -139,6 +148,7 @@ const POST_RELATIONS = {
     left_column: 'left_id', right_column: 'right_id', order_column: false,
   } as const,
   quotes: { type: 'paragraph', table: PARA_TABLE } as const,
+  epigraphs: { type: 'paragraph', table: PARA_TABLE } as const,
 }
 
 // ─── DB lifecycle ─────────────────────────────────────────────────────────────
@@ -218,6 +228,11 @@ async function seedPostWithRelations(): Promise<{ postId: string; catA: string; 
     VALUES (${postId}::uuid, 'rel-test-post', 'quotes', 0, 'First quote'),
            (${postId}::uuid, 'rel-test-post', 'quotes', 1, 'Second quote')`)
 
+  // One row for the sibling paragraph field, same table, same parent.
+  await db.execute(sql`
+    INSERT INTO ${sql.raw(`"${PARA_TABLE}"`)} (parent_id, parent_type, parent_field, "order", quote)
+    VALUES (${postId}::uuid, 'rel-test-post', 'epigraphs', 0, 'An epigraph')`)
+
   // two junction rows (tags → both categories)
   await db.execute(sql`
     INSERT INTO ${sql.raw(`"${JUNC_TABLE}"`)} (left_id, right_id)
@@ -238,6 +253,7 @@ type PostRow = {
   category: unknown
   tags: unknown
   quotes: unknown
+  epigraphs: unknown
 }
 
 // ─── Resolved reads (?include=) ───────────────────────────────────────────────
@@ -252,6 +268,20 @@ describe('relation reads — resolved via ?include=', () => {
     expect(Array.isArray(quotes)).toBe(true)
     expect(quotes).toHaveLength(2)
     expect(quotes.map((q) => q.quote)).toEqual(['First quote', 'Second quote'])
+  })
+
+  // Both paragraph fields point at the same paragraph type, so their rows share
+  // a table. Filtering on parent_id alone gives each field the other's rows.
+  it('keeps two paragraph fields of the same type separate', async () => {
+    await seedPostWithRelations()
+    const res = await publicApp().request(`/api/${BASE_PATH}/with-rels?include=quotes,epigraphs`)
+    expect(res.status).toBe(200)
+    const { data } = await res.json() as { data: PostRow }
+
+    const quotes = data.quotes as { quote: string }[]
+    const epigraphs = data.epigraphs as { quote: string }[]
+    expect(quotes.map((q) => q.quote)).toEqual(['First quote', 'Second quote'])
+    expect(epigraphs.map((e) => e.quote)).toEqual(['An epigraph'])
   })
 
   it('junction field resolves to full target rows', async () => {
@@ -291,6 +321,16 @@ describe('relation reads — bare ids without ?include=', () => {
 
     const tags = data.tags as string[]
     expect(tags.map(String).sort()).toEqual([catA, catB].sort())
+  })
+
+  it('scopes bare paragraph ids per field, not per parent', async () => {
+    await seedPostWithRelations()
+    const res = await publicApp().request(`/api/${BASE_PATH}/with-rels`)
+    expect(res.status).toBe(200)
+    const { data } = await res.json() as { data: PostRow }
+
+    expect((data.quotes as string[])).toHaveLength(2)
+    expect((data.epigraphs as string[])).toHaveLength(1)
   })
 
   it('reference field bare id stays under the raw fk column, not the field name', async () => {

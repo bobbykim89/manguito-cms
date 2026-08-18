@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, defineComponent, h, markRaw } from 'vue'
-import type { Component, PropType } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { ParsedField } from '@bobbykim/manguito-cms-core'
 import { useApiClient } from '../../composables/useApiClient'
@@ -9,18 +8,9 @@ import { useFormValidation } from '../../composables/useFormValidation'
 import { useNotification } from '../../composables/useNotification'
 import { useSchemaStore } from '../../stores/schema'
 import { useContentStore } from '../../stores/content'
-import TextInput from '../../components/fields/TextInput.vue'
-import RichTextEditor from '../../components/fields/RichTextEditor.vue'
-import NumberInput from '../../components/fields/NumberInput.vue'
-import BooleanToggle from '../../components/fields/BooleanToggle.vue'
-import DatePicker from '../../components/fields/DatePicker.vue'
-import MediaUpload from '../../components/fields/MediaUpload.vue'
-import EnumSelect from '../../components/fields/EnumSelect.vue'
-import ReferenceSelect from '../../components/fields/ReferenceSelect.vue'
-import ParagraphEmbed from '../../components/fields/ParagraphEmbed.vue'
-import ComputedDisplay from '../../components/fields/ComputedDisplay.vue'
 import ConfirmDialog from '../../components/shared/ConfirmDialog.vue'
 import { useTabIndicator } from '../../composables/useTabIndicator'
+import { componentFor, fieldExtraProps } from '../../components/fields/field-registry'
 
 const route = useRoute()
 const router = useRouter()
@@ -87,89 +77,6 @@ const slugChanged = computed(
     isPublished.value &&
     (form.value.slug as string | undefined) !== originalSlug.value
 )
-
-// ── Field component mapping ───────────────────────────────────────────────────
-
-const FIELD_COMP: Record<string, Component> = {
-  'text/plain': markRaw(TextInput),
-  'text/rich': markRaw(RichTextEditor),
-  integer: markRaw(NumberInput),
-  float: markRaw(NumberInput),
-  boolean: markRaw(BooleanToggle),
-  date: markRaw(DatePicker),
-  image: markRaw(MediaUpload),
-  video: markRaw(MediaUpload),
-  file: markRaw(MediaUpload),
-  enum: markRaw(EnumSelect),
-  reference: markRaw(ReferenceSelect),
-  paragraph: markRaw(ParagraphEmbed),
-  programmatic: markRaw(ComputedDisplay),
-}
-
-function componentFor(field: ParsedField): Component {
-  return FIELD_COMP[field.field_type] ?? FIELD_COMP['text/plain']!
-}
-
-// ── Paragraph form factory (render function — no runtime compiler needed) ─────
-
-const paragraphFormCache = new Map<string, Component>()
-
-function getParagraphForm(schemaName: string): Component {
-  if (paragraphFormCache.has(schemaName)) {
-    return paragraphFormCache.get(schemaName)!
-  }
-
-  const comp = markRaw(
-    defineComponent({
-      name: `ParagraphForm_${schemaName}`,
-      props: {
-        modelValue: {
-          type: Object as PropType<Record<string, unknown>>,
-          default: () => ({}),
-        },
-        disabled: { type: Boolean, default: false },
-      },
-      emits: ['update:modelValue'],
-      setup(props, { emit }) {
-        const store = useSchemaStore()
-        const schema = computed(() => store.paragraphTypes[schemaName])
-
-        function update(name: string, val: unknown) {
-          emit('update:modelValue', { ...props.modelValue, [name]: val })
-        }
-
-        return () => {
-          if (!schema.value) return h('div', { class: 'text-sm text-gray-400' }, 'Unknown paragraph type')
-          return h(
-            'div',
-            { class: 'space-y-3' },
-            schema.value.fields.map(field => {
-              const c = FIELD_COMP[field.field_type] ?? FIELD_COMP['text/plain']!
-              return h(c as Parameters<typeof h>[0], {
-                key: field.name,
-                field,
-                modelValue: (props.modelValue ?? {})[field.name],
-                disabled: props.disabled,
-                'onUpdate:modelValue': (v: unknown) => update(field.name, v),
-              })
-            })
-          )
-        }
-      },
-    })
-  )
-
-  paragraphFormCache.set(schemaName, comp)
-  return comp
-}
-
-// Extra props injected into paragraph fields.
-function fieldExtraProps(field: ParsedField): Record<string, unknown> {
-  if (field.ui_component.component === 'paragraph-embed') {
-    return { formComponent: getParagraphForm(field.ui_component.ref) }
-  }
-  return {}
-}
 
 // ── Form helpers ──────────────────────────────────────────────────────────────
 

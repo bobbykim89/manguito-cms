@@ -21,15 +21,43 @@ export function relationFieldResolver(typeName: string, schemaFieldName: string)
     ctx.loaders.load(typeName, schemaFieldName, parent)
 }
 
-export function programmaticFieldResolver(typeName: string, schemaFieldName: string) {
+export function programmaticFieldResolver(
+  typeName: string,
+  schemaFieldName: string,
+  mediaFieldNames: readonly string[] = []
+) {
   return async (parent: Row, _args: unknown, ctx: GraphQLContext): Promise<unknown> => {
     let p = ctx.programmaticMemo.get(parent)
     if (!p) {
-      p = ctx.resolver.resolveItem(typeName, parent)
+      p = resolveProgrammaticRow(typeName, parent, ctx, mediaFieldNames)
       ctx.programmaticMemo.set(parent, p)
     }
     return (await p)[schemaFieldName]
   }
+}
+
+// A programmatic resolver reads its record through `ctx.get()`, so that record
+// must look the same on both public surfaces. REST resolves media fields to full
+// objects before running resolvers; GraphQL reads through repositories that
+// resolve nothing, so without this `ctx.get('hero').url` would work over REST and
+// silently fall back to null over GraphQL.
+//
+// Media is resolved into a COPY, never the row itself: the dataloaders write
+// their results back into the row they are handed, and the real row must keep the
+// raw id so a query that also selects the media field still resolves. Handing an
+// already-resolved object back to the loader is exactly what broke media here in
+// the first place. Copies still batch — one media query per request, not per row.
+async function resolveProgrammaticRow(
+  typeName: string,
+  parent: Row,
+  ctx: GraphQLContext,
+  mediaFieldNames: readonly string[]
+): Promise<Record<string, unknown>> {
+  if (mediaFieldNames.length === 0) return ctx.resolver.resolveItem(typeName, parent)
+
+  const enriched: Row = { ...parent }
+  await Promise.all(mediaFieldNames.map((name) => ctx.loaders.load(typeName, name, enriched)))
+  return ctx.resolver.resolveItem(typeName, enriched)
 }
 
 type CollectionArgs = {

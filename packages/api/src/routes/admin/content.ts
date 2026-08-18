@@ -1,10 +1,11 @@
 import { sql } from 'drizzle-orm'
-import type { Hono } from 'hono'
+import type { Context, Hono } from 'hono'
 import type {
   SchemaRegistry,
   MediaRepository,
   FilterValue,
   ParsedField,
+  ParsedParagraphType,
 } from '@bobbykim/manguito-cms-core'
 import {
   SORTABLE_FIELDS,
@@ -33,6 +34,36 @@ import type { ContentRepos } from '../content.js'
 function quoteIdent(name: string): string {
   if (!/^[a-z][a-z0-9_-]*$/.test(name)) throw new Error(`Unsafe identifier: ${name}`)
   return `"${name}"`
+}
+
+// Loads the paragraph rows for one field of one parent, descending into the one
+// level of nested paragraph fields ADR core/0005 permits. Scoped by parent_id AND
+// parent_field so two paragraph fields sharing a paragraph type never mix — the
+// reason this read is not delegated to resolveRelationField.
+async function loadParagraphRows(
+  db: DrizzlePostgresInstance,
+  registry: SchemaRegistry,
+  pType: ParsedParagraphType,
+  parentId: string,
+  fieldName: string
+): Promise<Record<string, unknown>[]> {
+  const result = await db.execute(
+    sql`SELECT * FROM ${sql.raw(quoteIdent(pType.db.table_name))} WHERE parent_id = ${parentId} AND parent_field = ${fieldName} ORDER BY "order" ASC`
+  )
+  const rows = result.rows as Record<string, unknown>[]
+
+  for (const nf of pType.fields) {
+    if (nf.db_column !== null) continue
+    const comp = nf.ui_component as { component: string; ref?: string }
+    if (comp.component !== 'paragraph-embed' || !comp.ref) continue
+    const nType = registry.paragraph_types[comp.ref]
+    if (!nType) continue
+    for (const row of rows) {
+      row[nf.name] = await loadParagraphRows(db, registry, nType, row['id'] as string, nf.name)
+    }
+  }
+
+  return rows
 }
 
 async function lookupBasePathId(db: DrizzlePostgresInstance, pathOrName: string): Promise<string | null> {
@@ -269,10 +300,7 @@ export function registerAdminContentRoutes(
               if (comp.component !== 'paragraph-embed' || !comp.ref) continue
               const pType = registry.paragraph_types[comp.ref]
               if (!pType) continue
-              const r = await db.execute(
-                sql`SELECT * FROM ${sql.raw(quoteIdent(pType.db.table_name))} WHERE parent_id = ${id} AND parent_field = ${f.name} ORDER BY "order" ASC`
-              )
-              row[f.name] = r.rows
+              row[f.name] = await loadParagraphRows(db, registry, pType, id, f.name)
             } else if (f.db_column.junction) {
               const j = f.db_column.junction
               const r = await db.execute(
@@ -355,6 +383,15 @@ export function registerAdminContentRoutes(
           }
         }
 
+        return writeNewItem(c, body)
+      }
+    )
+
+    // Shared write paths. POST, PATCH and the singleton PUT all funnel through
+    // these two functions so the verbs cannot drift apart — the verb-specific
+    // pre-checks (slug rules, singleton existence, 404s) stay in the routes.
+
+    const writeNewItem = async (c: Context, body: Record<string, unknown>) => {
         const fieldErrors = checkRequiredFields(requiredFields, body)
         if (fieldErrors.length > 0) {
           return c.json(
@@ -430,7 +467,7 @@ export function registerAdminContentRoutes(
             const pType = registry.paragraph_types[comp.ref]
             if (!pType) continue
             const items = Array.isArray(body[f.name]) ? (body[f.name] as unknown[]) : []
-            mediaDeltas.push(await persistParagraphField(db, itemId, contentType.db.table_name, f.name, pType, items))
+            mediaDeltas.push(await persistParagraphField(db, itemId, contentType.db.table_name, f.name, pType, items, registry))
           }
           for (const f of junctionFields) {
             const junction = f.db_column!.junction!
@@ -444,8 +481,7 @@ export function registerAdminContentRoutes(
         await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
 
         return c.json({ ok: true, data: item }, 201)
-      }
-    )
+    }
 
     // PATCH /admin/api/{base_path}/:id
     app.patch(
@@ -508,6 +544,16 @@ export function registerAdminContentRoutes(
           }
         }
 
+        return writeExistingItem(c, id, existing as Record<string, unknown>, body)
+      }
+    )
+
+    const writeExistingItem = async (
+      c: Context,
+      id: string,
+      existing: Record<string, unknown>,
+      body: Record<string, unknown>,
+    ) => {
         if (body['published'] === true) {
           const publishDeny = await requirePermission('content:edit')(c, async () => {})
           if (publishDeny) return publishDeny
@@ -570,7 +616,7 @@ export function registerAdminContentRoutes(
             const pType = registry.paragraph_types[comp.ref]
             if (!pType) continue
             const items = Array.isArray(body[f.name]) ? (body[f.name] as unknown[]) : []
-            mediaDeltas.push(await persistParagraphField(db, id, contentType.db.table_name, f.name, pType, items))
+            mediaDeltas.push(await persistParagraphField(db, id, contentType.db.table_name, f.name, pType, items, registry))
           }
           for (const f of patchJunctionFields) {
             const junction = f.db_column!.junction!
@@ -584,8 +630,37 @@ export function registerAdminContentRoutes(
         await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
 
         return c.json({ ok: true, data: updated })
-      }
-    )
+    }
+
+    // PUT /admin/api/{base_path} — singleton upsert.
+    //
+    // A singleton has no id in its admin route, so it cannot be addressed by the
+    // `/:id` PATCH. The parser declares `http_methods: ['GET','PUT','PATCH']` for
+    // `only_one` types and the admin form posts here, so this is the verb that
+    // completes that contract: create the row on first save, update it after.
+    // Registered only for singletons — collections keep POST/PATCH.
+    if (contentType.only_one) {
+      app.put(
+        `/admin/api/${basePath}`,
+        requirePermission('content:edit'),
+        async (c) => {
+          const body = (await c.req.json()) as Record<string, unknown>
+
+          const existingResult = await repo.findMany({ page: 1, per_page: 1 })
+          const existing = existingResult.data[0] as Record<string, unknown> | undefined
+
+          if (!existing) {
+            // First save materialises the row, which is a create — gate it on
+            // content:create in addition to the route's content:edit.
+            const createDeny = await requirePermission('content:create')(c, async () => {})
+            if (createDeny) return createDeny
+            return writeNewItem(c, body)
+          }
+
+          return writeExistingItem(c, existing['id'] as string, existing, body)
+        }
+      )
+    }
 
     // DELETE /admin/api/{base_path}/:id
     app.delete(
@@ -615,7 +690,7 @@ export function registerAdminContentRoutes(
             if (comp.component !== 'paragraph-embed' || !comp.ref) continue
             const pType = registry.paragraph_types[comp.ref]
             if (!pType) continue
-            mediaDeltas.push(await deleteParagraphField(db, id, f.name, pType))
+            mediaDeltas.push(await deleteParagraphField(db, id, f.name, pType, registry))
           }
         }
 
@@ -764,7 +839,7 @@ export function registerAdminContentRoutes(
             const pType = registry.paragraph_types[comp.ref]
             if (!pType) continue
             const items = Array.isArray(body[f.name]) ? (body[f.name] as unknown[]) : []
-            mediaDeltas.push(await persistParagraphField(db, taxItemId, taxonomyType.db.table_name, f.name, pType, items))
+            mediaDeltas.push(await persistParagraphField(db, taxItemId, taxonomyType.db.table_name, f.name, pType, items, registry))
           }
         }
 
@@ -845,7 +920,7 @@ export function registerAdminContentRoutes(
             const pType = registry.paragraph_types[comp.ref]
             if (!pType) continue
             const items = Array.isArray(body[f.name]) ? (body[f.name] as unknown[]) : []
-            mediaDeltas.push(await persistParagraphField(db, id, taxonomyType.db.table_name, f.name, pType, items))
+            mediaDeltas.push(await persistParagraphField(db, id, taxonomyType.db.table_name, f.name, pType, items, registry))
           }
         }
 
@@ -881,7 +956,7 @@ export function registerAdminContentRoutes(
             if (comp.component !== 'paragraph-embed' || !comp.ref) continue
             const pType = registry.paragraph_types[comp.ref]
             if (!pType) continue
-            mediaDeltas.push(await deleteParagraphField(db, id, f.name, pType))
+            mediaDeltas.push(await deleteParagraphField(db, id, f.name, pType, registry))
           }
         }
 
