@@ -1,5 +1,12 @@
 # @bobbykim/manguito-cms-cli
 
+## 0.4.2
+
+### Patch Changes
+
+- Updated dependencies [15e20be]
+  - @bobbykim/manguito-cms-api@0.3.2
+
 ## 0.4.1
 
 ### Patch Changes
