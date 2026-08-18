@@ -165,15 +165,28 @@ describe('createGraphQLHandler', () => {
       },
     } as unknown as Record<string, ContentRepository<unknown>>
 
+    // Yoga logs masked faults through console.error, which is what an operator
+    // needs — but left alone it dumps a stack trace into a passing run and reads
+    // as a crash. Capture it, then assert on it: the log is part of the contract
+    // (a masked error must still be diagnosable server-side), so silencing it
+    // without asserting would lose coverage.
+    const logged: unknown[][] = []
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      logged.push(args)
+    })
+
     const handler = createGraphQLHandler(registry, throwingRepos, resolver, db, baseOptions)
     const app = new Hono()
     app.all('/graphql', handler)
 
     const { body } = await post(app, '{ posts { data { blogTitle } } }')
+    errorSpy.mockRestore()
     const [err] = body.errors as { message: string; extensions?: { code?: string } }[]
     expect(err!.message).toBe('Unexpected error.')
     expect(err!.extensions?.code).toBe('INTERNAL_SERVER_ERROR')
     expect(JSON.stringify(body)).not.toContain('SIMULATED_RESOLVER_FAILURE')
+    // Hidden from the client, but not from the operator.
+    expect(JSON.stringify(logged)).toContain('SIMULATED_RESOLVER_FAILURE')
   })
 
   it('enforces Armor maxDepth limits', async () => {
