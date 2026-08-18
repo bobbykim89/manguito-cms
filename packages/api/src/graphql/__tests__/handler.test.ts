@@ -149,6 +149,29 @@ describe('createGraphQLHandler', () => {
     expect(Array.isArray(enabled.body.data.__schema.types)).toBe(true)
   })
 
+  // The realm-safe maskError must widen what reaches the client only for errors a
+  // validation rule constructed. A resolver blowing up still has to be masked, or
+  // driver messages and stack traces leak from a public, unauthenticated endpoint.
+  it('still masks a genuine resolver failure', async () => {
+    const throwingRepos = {
+      'content--post': {
+        findMany: async () => {
+          throw new Error('connect ECONNREFUSED 10.0.0.1:5432')
+        },
+      },
+    } as unknown as Record<string, ContentRepository<unknown>>
+
+    const handler = createGraphQLHandler(registry, throwingRepos, resolver, db, baseOptions)
+    const app = new Hono()
+    app.all('/graphql', handler)
+
+    const { body } = await post(app, '{ posts { data { blogTitle } } }')
+    const [err] = body.errors as { message: string; extensions?: { code?: string } }[]
+    expect(err!.message).toBe('Unexpected error.')
+    expect(err!.extensions?.code).toBe('INTERNAL_SERVER_ERROR')
+    expect(JSON.stringify(body)).not.toContain('ECONNREFUSED')
+  })
+
   it('enforces Armor maxDepth limits', async () => {
     const deepQuery = '{ posts { data { blogTitle } } }'
 
@@ -156,6 +179,12 @@ describe('createGraphQLHandler', () => {
     const shallow = await post(shallowApp, deepQuery)
     expect(shallow.body.errors).toBeDefined()
     expect(shallow.body.errors.length).toBeGreaterThan(0)
+    // Asserting only that *an* error came back let a masked
+    // `INTERNAL_SERVER_ERROR: Unexpected error.` pass as a depth rejection. The
+    // caller has to be told their query was too deep, not that the server broke.
+    const [depthError] = shallow.body.errors as { message: string; extensions?: { code?: string } }[]
+    expect(depthError!.message).toMatch(/depth limit/i)
+    expect(depthError!.extensions?.code).not.toBe('INTERNAL_SERVER_ERROR')
 
     const deepApp = buildApp({ ...baseOptions, maxDepth: 8 })
     const deep = await post(deepApp, deepQuery)
