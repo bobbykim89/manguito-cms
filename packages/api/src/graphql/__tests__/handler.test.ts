@@ -156,7 +156,11 @@ describe('createGraphQLHandler', () => {
     const throwingRepos = {
       'content--post': {
         findMany: async () => {
-          throw new Error('connect ECONNREFUSED 10.0.0.1:5432')
+          // Deliberately not shaped like a real driver error: this surfaces in
+          // the suite's stderr (Yoga logs masked faults, which is correct), and
+          // a realistic "ECONNREFUSED ...:5432" there reads as a dead test
+          // database rather than an assertion doing its job.
+          throw new Error('SIMULATED_RESOLVER_FAILURE_EXPECTED_BY_TEST')
         },
       },
     } as unknown as Record<string, ContentRepository<unknown>>
@@ -169,7 +173,7 @@ describe('createGraphQLHandler', () => {
     const [err] = body.errors as { message: string; extensions?: { code?: string } }[]
     expect(err!.message).toBe('Unexpected error.')
     expect(err!.extensions?.code).toBe('INTERNAL_SERVER_ERROR')
-    expect(JSON.stringify(body)).not.toContain('ECONNREFUSED')
+    expect(JSON.stringify(body)).not.toContain('SIMULATED_RESOLVER_FAILURE')
   })
 
   it('enforces Armor maxDepth limits', async () => {

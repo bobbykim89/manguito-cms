@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { sql } from 'drizzle-orm'
 import { createPostgresAdapter } from '@bobbykim/manguito-cms-db'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
@@ -445,6 +445,18 @@ describe('graphql schema-init failure', () => {
   }
 
   it('returns 500 instead of crashing the process when schema build throws', async () => {
+    // createCmsApp writes the collision diagnostic to stderr. Captured rather
+    // than left to print: an unexplained "✗ GraphQL schema failed to initialize"
+    // in a green run reads as a broken suite. Asserted below, so silencing it
+    // costs no coverage.
+    const stderrWrites: string[] = []
+    const writeSpy = vi
+      .spyOn(process.stderr, 'write')
+      .mockImplementation((chunk: unknown) => {
+        stderrWrites.push(String(chunk))
+        return true
+      })
+
     const built = createCmsApp({
       registry: collidingRegistry,
       db,
@@ -463,5 +475,13 @@ describe('graphql schema-init failure', () => {
     const body = (await res.json()) as { ok: boolean; error: { code: string; message: string } }
     expect(body.ok).toBe(false)
     expect(body.error.code).toBe('GRAPHQL_INIT_FAILED')
+
+    writeSpy.mockRestore()
+    // The operator still has to be told why /graphql is dead, and which two
+    // schemas collided.
+    const diagnostic = stderrWrites.join('')
+    expect(diagnostic).toContain('GraphQL schema failed to initialize')
+    expect(diagnostic).toContain('content--dup')
+    expect(diagnostic).toContain('taxonomy--dup')
   })
 })
