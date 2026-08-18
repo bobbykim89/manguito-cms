@@ -1,5 +1,19 @@
 # @bobbykim/manguito-cms-admin
 
+## 0.4.0
+
+### Minor Changes
+
+- ffad479: Preview video and open non-image media from the media detail page. Videos now play inline in a real player instead of showing a `▶` placeholder, and PDFs and other files get an "Open in new tab" link so they can actually be viewed — previously a non-image was a dead icon with no way to reach the file.
+
+  PDFs deliberately open in a new tab rather than embedding in an `<iframe>`: embedding storage-hosted files would require widening the admin's Content-Security-Policy with `frame-src` across every admin route, and a link requires no such exception. Inline video needs no CSP change, since `media-src` already permits the storage hosts.
+
+### Patch Changes
+
+- cc4950c: Fix a nested paragraph field rendering an empty block in the admin. A paragraph type may hold a paragraph field of its own (one level, per ADR core/0005); adding one of those inner items produced a block with its header and Remove button but no editable fields, so it could only ever be saved empty.
+
+  The admin builds paragraph sub-forms at runtime with a render function, and that render pass forwarded only the common field props — never the `formComponent` a `ParagraphEmbed` needs. A top-level paragraph field got one from the form view, so only _nested_ paragraphs were affected. The field-to-component mapping and paragraph-form factory now live in their own module (`components/fields/field-registry.ts`) so this wiring is unit-testable, and the nesting case is covered.
+
 ## 0.3.1
 
 ### Patch Changes
