@@ -326,8 +326,15 @@ describe('graphql integration', () => {
         body: JSON.stringify({ query: '{ gqlposts { data { author { name } } } }' }),
       })
     )
-    const body = (await res.json()) as { errors?: unknown[] }
+    const body = (await res.json()) as {
+      errors?: { message: string; extensions?: { code?: string } }[]
+    }
     expect(body.errors?.length).toBeGreaterThan(0)
+    // Asserting only that *an* error came back let a masked
+    // `INTERNAL_SERVER_ERROR: Unexpected error.` pass as a depth rejection. The
+    // caller has to be told their query was too deep, not that the server broke.
+    expect(body.errors![0]!.message).toMatch(/depth limit/i)
+    expect(body.errors![0]!.extensions?.code).not.toBe('INTERNAL_SERVER_ERROR')
   })
 
   it('disables introspection when configured off', async () => {
