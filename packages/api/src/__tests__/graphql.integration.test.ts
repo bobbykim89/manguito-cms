@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { sql } from 'drizzle-orm'
 import { createPostgresAdapter } from '@bobbykim/manguito-cms-db'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
@@ -445,23 +445,50 @@ describe('graphql schema-init failure', () => {
   }
 
   it('returns 500 instead of crashing the process when schema build throws', async () => {
-    const built = createCmsApp({
-      registry: collidingRegistry,
-      db,
-      storage: createLocalAdapter(),
-      graphql: { enabled: true, maxDepth: 8, maxComplexity: 1000, graphiql: false, introspection: true },
-    })
-
-    const res = await built.app.fetch(
-      new Request('http://local/graphql', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ query: '{ __typename }' }),
+    // createCmsApp writes the collision diagnostic to stderr. Captured rather
+    // than left to print: an unexplained "✗ GraphQL schema failed to initialize"
+    // in a green run reads as a broken suite. Asserted below, so silencing it
+    // costs no coverage.
+    const stderrWrites: string[] = []
+    const writeSpy = vi
+      .spyOn(process.stderr, 'write')
+      .mockImplementation((chunk: unknown) => {
+        stderrWrites.push(String(chunk))
+        return true
       })
-    )
+
+    let res: Response
+    try {
+      const built = createCmsApp({
+        registry: collidingRegistry,
+        db,
+        storage: createLocalAdapter(),
+        graphql: { enabled: true, maxDepth: 8, maxComplexity: 1000, graphiql: false, introspection: true },
+      })
+
+      res = await built.app.fetch(
+        new Request('http://local/graphql', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ query: '{ __typename }' }),
+        })
+      )
+    } finally {
+      // In a finally: this file has no restoreAllMocks hook, so an early throw
+      // would leave process.stderr.write mocked and silence the rest of the run.
+      writeSpy.mockRestore()
+    }
+
     expect(res.status).toBe(500)
     const body = (await res.json()) as { ok: boolean; error: { code: string; message: string } }
     expect(body.ok).toBe(false)
     expect(body.error.code).toBe('GRAPHQL_INIT_FAILED')
+
+    // The operator still has to be told why /graphql is dead, and which two
+    // schemas collided.
+    const diagnostic = stderrWrites.join('')
+    expect(diagnostic).toContain('GraphQL schema failed to initialize')
+    expect(diagnostic).toContain('content--dup')
+    expect(diagnostic).toContain('taxonomy--dup')
   })
 })

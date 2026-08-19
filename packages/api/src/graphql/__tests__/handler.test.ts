@@ -102,6 +102,9 @@ describe('createGraphQLHandler', () => {
     return app
   }
 
+  // `any` on the parsed payload: these tests read arbitrary GraphQL response
+  // shapes, and typing it further would mean a cast at every call site.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async function post(app: Hono, query: string): Promise<{ status: number; body: any }> {
     const res = await app.request('/graphql', {
       method: 'POST',
@@ -156,20 +159,37 @@ describe('createGraphQLHandler', () => {
     const throwingRepos = {
       'content--post': {
         findMany: async () => {
-          throw new Error('connect ECONNREFUSED 10.0.0.1:5432')
+          // Deliberately not shaped like a real driver error: this surfaces in
+          // the suite's stderr (Yoga logs masked faults, which is correct), and
+          // a realistic "ECONNREFUSED ...:5432" there reads as a dead test
+          // database rather than an assertion doing its job.
+          throw new Error('SIMULATED_RESOLVER_FAILURE_EXPECTED_BY_TEST')
         },
       },
     } as unknown as Record<string, ContentRepository<unknown>>
+
+    // Yoga logs masked faults through console.error, which is what an operator
+    // needs — but left alone it dumps a stack trace into a passing run and reads
+    // as a crash. Capture it, then assert on it: the log is part of the contract
+    // (a masked error must still be diagnosable server-side), so silencing it
+    // without asserting would lose coverage.
+    const logged: unknown[][] = []
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+      logged.push(args)
+    })
 
     const handler = createGraphQLHandler(registry, throwingRepos, resolver, db, baseOptions)
     const app = new Hono()
     app.all('/graphql', handler)
 
     const { body } = await post(app, '{ posts { data { blogTitle } } }')
+    errorSpy.mockRestore()
     const [err] = body.errors as { message: string; extensions?: { code?: string } }[]
     expect(err!.message).toBe('Unexpected error.')
     expect(err!.extensions?.code).toBe('INTERNAL_SERVER_ERROR')
-    expect(JSON.stringify(body)).not.toContain('ECONNREFUSED')
+    expect(JSON.stringify(body)).not.toContain('SIMULATED_RESOLVER_FAILURE')
+    // Hidden from the client, but not from the operator.
+    expect(JSON.stringify(logged)).toContain('SIMULATED_RESOLVER_FAILURE')
   })
 
   it('enforces Armor maxDepth limits', async () => {
