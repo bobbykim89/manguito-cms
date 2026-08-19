@@ -1,5 +1,13 @@
 # sandbox
 
+## 0.0.11
+
+### Patch Changes
+
+- Updated dependencies [ba64bc8]
+  - @bobbykim/manguito-cms-api@0.3.3
+  - @bobbykim/manguito-cms-cli@0.4.3
+
 ## 0.0.10
 
 ### Patch Changes
