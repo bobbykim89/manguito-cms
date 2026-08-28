@@ -504,15 +504,34 @@ The delete call sites (`topLevelMediaDelta(mediaFields, item as Record<string, u
 
 `fieldKeys` is the per-content-type `FieldKeyMap`. Thread it into `registerAdminContentRoutes` as a new parameter:
 
+The CURRENT signature (verified) is:
+
 ```ts
 export function registerAdminContentRoutes(
   app: Hono,
   registry: SchemaRegistry,
-  repos: Record<string, ContentRepository<Record<string, unknown>>>,
-  fieldKeyMaps: Record<string, FieldKeyMap>,
-  // ...existing parameters unchanged, in their existing order
-) {
+  repos: ContentRepos,
+  mediaRepo: MediaRepository,
+  requirePermission: ReturnType<typeof createPermissionMiddleware>,
+  db?: DrizzlePostgresInstance,
+): void
 ```
+
+`db` is OPTIONAL, so the new required parameter goes before it. Target:
+
+```ts
+export function registerAdminContentRoutes(
+  app: Hono,
+  registry: SchemaRegistry,
+  repos: ContentRepos,
+  fieldKeyMaps: Record<string, FieldKeyMap>,
+  mediaRepo: MediaRepository,
+  requirePermission: ReturnType<typeof createPermissionMiddleware>,
+  db?: DrizzlePostgresInstance,
+): void
+```
+
+Update the single call site at `packages/api/src/app.ts:325`.
 
 and inside each handler, resolve it for the current type:
 
@@ -573,6 +592,8 @@ git commit -m "fix(api): compute media deltas on storage keys, not labels"
 - Consumes: `FieldKeyMap`, `isColumnBacked` (Task 1) and the `storageBody` local (Task 2).
 - Produces: no new exports. The payload handed to `ContentRepository` is storage-keyed; admin responses are label-keyed.
 
+**Route paths (verified — do not guess):** admin content routes are mounted at `content/${typeName}`, i.e. `/admin/api/content/divergent-post`, NOT `/admin/api/divergent-post`. See the `basePath` assignment in `registerAdminContentRoutes`.
+
 **Repository contract (verified — do not guess):** `ContentRepository` exposes `findMany`, `findOne`, `findBySlug`, `findAll`, `create`, `update`, `delete`. `findMany` resolves a `PaginatedResult<T>` shaped `{ ok, data, meta: { total, page, per_page, total_pages, has_next, has_prev } }`. `findAll` resolves a plain array. There is no `{ items, total }` shape anywhere.
 
 - [ ] **Step 1: Add the divergent content type fixture**
@@ -615,7 +636,7 @@ describe('admin writes with a divergent field label', () => {
     )
     const app = buildDivergentAdminApp(repo)
 
-    const res = await app.request('/admin/api/divergent-post', {
+    const res = await app.request('/admin/api/content/divergent-post', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ slug: 'a', title: 'Hello' }),
@@ -682,7 +703,7 @@ describe('admin reads with a divergent field label', () => {
     })
     const app = buildDivergentAdminApp(repo)
 
-    const res = await app.request('/admin/api/divergent-post')
+    const res = await app.request('/admin/api/content/divergent-post')
     const body = await res.json()
 
     expect(res.status).toBe(200)
