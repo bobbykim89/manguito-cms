@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { Hono } from 'hono'
 import { registerAdminContentRoutes } from '../admin/content'
 import { createFieldKeyMap, type FieldKeyMap } from '../../field-keys'
+import { divergentTextField } from '../../field-keys.test-fixtures'
 import type {
   ContentRepository,
   MediaRepository,
@@ -64,6 +65,21 @@ const BLOG_TYPE: ParsedContentType = {
     default_base_path: 'blog-post',
     http_methods: ['GET', 'POST', 'PATCH', 'DELETE'],
     item_path: '/api/blog-post/:slug',
+  },
+}
+
+// Same shape as BLOG_TYPE, but its single field's label ('title') differs from
+// its storage column ('blog_title').
+const DIVERGENT_TYPE: ParsedContentType = {
+  ...BLOG_TYPE,
+  name: 'divergent-post',
+  default_base_path: 'divergent-post',
+  fields: [divergentTextField],
+  db: { table_name: 'content--divergent_post', junction_tables: [] },
+  api: {
+    default_base_path: 'divergent-post',
+    http_methods: ['GET', 'POST', 'PATCH', 'DELETE'],
+    item_path: '/api/divergent-post/:slug',
   },
 }
 
@@ -195,6 +211,39 @@ function makeMockMediaRepo(): MediaRepository {
     incrementReferenceCount: vi.fn(),
     decrementReferenceCount: vi.fn(),
   }
+}
+
+// Standalone app builder for the divergent-label fixture — kept separate from
+// the main `describe` block's shared registry/app since it exercises a single
+// content type whose label diverges from its storage column.
+function buildDivergentAdminApp(repo: ContentRepository<unknown>): Hono {
+  const registry: SchemaRegistry = {
+    routes: { base_paths: [] },
+    roles: { roles: [], valid_permissions: [] },
+    schemas: {},
+    content_types: {
+      'divergent-post': DIVERGENT_TYPE,
+    },
+    paragraph_types: {},
+    taxonomy_types: {},
+    enum_types: {},
+    all_schemas: [],
+  }
+
+  const fieldKeyMaps: Record<string, FieldKeyMap> = {
+    'divergent-post': createFieldKeyMap([divergentTextField]),
+  }
+
+  const app = new Hono()
+  registerAdminContentRoutes(
+    app,
+    registry,
+    { 'divergent-post': repo },
+    fieldKeyMaps,
+    makeMockMediaRepo(),
+    noopRequirePermission
+  )
+  return app
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -601,5 +650,46 @@ describe('admin content routes', () => {
       expect(body.ok).toBe(false)
       expect(body.error.code).toBe('SINGLETON_ALREADY_EXISTS')
     })
+  })
+})
+
+describe('admin writes with a divergent field label', () => {
+  it('persists the storage column, not the label', async () => {
+    const repo = makeMockRepo()
+    ;(repo.create as ReturnType<typeof vi.fn>).mockImplementation(
+      async (data: Record<string, unknown>) => ({ id: 'new-id', slug: 'a', published: false, ...data })
+    )
+    const app = buildDivergentAdminApp(repo)
+
+    const res = await app.request('/admin/api/content/divergent-post', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ slug: 'a', title: 'Hello' }),
+    })
+
+    expect(res.status).toBe(201)
+
+    const passed = (repo.create as ReturnType<typeof vi.fn>).mock.calls[0]![0] as Record<string, unknown>
+    expect(passed).toMatchObject({ blog_title: 'Hello' })
+    expect(passed).not.toHaveProperty('title')
+  })
+})
+
+describe('admin reads with a divergent field label', () => {
+  it('returns the label and never the column name', async () => {
+    const repo = makeMockRepo()
+    ;(repo.findMany as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      data: [{ id: 'c1', slug: 'a', published: true, blog_title: 'Hello' }],
+      meta: { total: 1, page: 1, per_page: 10, total_pages: 1, has_next: false, has_prev: false },
+    })
+    const app = buildDivergentAdminApp(repo)
+
+    const res = await app.request('/admin/api/content/divergent-post')
+    const body = await res.json() as { data: Record<string, unknown>[] }
+
+    expect(res.status).toBe(200)
+    expect(body.data[0]).toMatchObject({ slug: 'a', title: 'Hello' })
+    expect(body.data[0]).not.toHaveProperty('blog_title')
   })
 })
