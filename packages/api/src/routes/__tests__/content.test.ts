@@ -8,7 +8,7 @@ import type {
   FindManyOptions,
 } from '@bobbykim/manguito-cms-core'
 import type { ParsedContentType } from '@bobbykim/manguito-cms-core'
-import { divergentTextField } from '../../field-keys.test-fixtures'
+import { divergentTextField, divergentReferenceField } from '../../field-keys.test-fixtures'
 import { createFieldKeyMap } from '../../field-keys'
 import { createProgrammaticResolver } from '../../programmatic/resolve'
 
@@ -222,5 +222,58 @@ describe('public reads with a divergent field label', () => {
     expect(body.ok).toBe(true)
     expect(body.data).toMatchObject({ slug: 'a', title: 'Hello' })
     expect(body.data).not.toHaveProperty('blog_title')
+  })
+
+  // resolveRelationBareIds (packages/api/src/relations.ts) has branches for
+  // `paragraph` and `junction` only — no `reference` branch. So when a
+  // reference field is NOT passed via ?include=, the repository layer never
+  // touches it: the row comes back from `SELECT *` still keyed by the raw FK
+  // column. This mock reproduces exactly that raw-row shape (no relation
+  // resolution runs here at all — the mock repo just returns canned data), to
+  // prove toLabels is what renames it on the public path.
+  it('a divergent reference field, not ?include=d, surfaces under its label with its bare id', async () => {
+    const REF_TYPE: ParsedContentType = {
+      ...BLOG_TYPE,
+      name: 'divergent-ref-post',
+      default_base_path: 'divergent-ref-post',
+      fields: [divergentReferenceField],
+      db: { table_name: 'content--divergent_ref_post', junction_tables: [] },
+      api: {
+        default_base_path: 'divergent-ref-post',
+        http_methods: ['GET', 'POST', 'PATCH', 'DELETE'],
+        item_path: '/api/divergent-ref-post/:slug',
+      },
+    }
+    const refRegistry: SchemaRegistry = {
+      ...mockRegistry,
+      content_types: { 'divergent-ref-post': REF_TYPE },
+    }
+
+    const categoryId = '11111111-1111-1111-1111-111111111111'
+    const repo = makeMockRepo()
+    ;(repo.findMany as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      data: [{ id: 'c1', slug: 'a', published: true, category_id: categoryId }],
+      meta: { total: 1, page: 1, per_page: 10, total_pages: 1, has_next: false, has_prev: false },
+    })
+
+    const app = new Hono()
+    registerPublicContentRoutes(
+      app,
+      refRegistry,
+      { 'divergent-ref-post': repo },
+      { 'divergent-ref-post': createFieldKeyMap([divergentReferenceField]) },
+      undefined,
+      createProgrammaticResolver(new Map())
+    )
+
+    // Deliberately no ?include= — this is the bare-read path the gap lives in.
+    const res = await app.request('/api/divergent-ref-post')
+    const body = await res.json() as { ok: boolean; data: Record<string, unknown>[] }
+
+    expect(res.status).toBe(200)
+    expect(body.ok).toBe(true)
+    expect(body.data[0]).toMatchObject({ slug: 'a', category: categoryId })
+    expect(body.data[0]).not.toHaveProperty('category_id')
   })
 })

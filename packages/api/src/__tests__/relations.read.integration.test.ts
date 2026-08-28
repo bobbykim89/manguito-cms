@@ -347,6 +347,20 @@ describe('relation reads — bare ids without ?include=', () => {
     // diverges from 'category_id' (its storage column), and the outbound
     // mapping applied in registerPublicContentRoutes renames the key before
     // the response is serialized.
+    //
+    // This test's assertion was flipped from its original ('...stays under
+    // the raw fk column, not the field name' / category_id present, category
+    // undefined) as part of the schema-versioning stage-1 work — see
+    // docs/superpowers/specs/2026-08-27-schema-versioning-design.md. That is
+    // a deliberate, one-time exception to the stage plan's "no existing test
+    // modified" rule, not a precedent: the original assertion characterized
+    // the exact public-route leak this stage exists to close, and this
+    // fixture's category/category_id divergence is synthetic — today,
+    // fieldTypeRegistry.ts always sets a reference field's column_name equal
+    // to its label for one-to-one/one-to-many refs, so no parser-produced
+    // schema can actually reach label ≠ column here. A characterization test
+    // that captures a leak this stage is explicitly built to close is
+    // correctly updated to capture the fix instead of preserved as a fossil.
     const { catA } = await seedPostWithRelations()
     const res = await publicApp().request(`/api/${BASE_PATH}/with-rels`)
     const { data } = await res.json() as { data: PostRow & { category_id?: string } }

@@ -57,6 +57,30 @@ export const paragraphField: ParsedField = {
   ui_component: { component: 'paragraph-embed', ref: 'paragraph--photo_card', rel: 'one-to-many' },
 }
 
+// A one-to-one reference field whose label diverges from its storage column.
+// Exercises the gap in resolveRelationBareIds (packages/api/src/relations.ts):
+// it has no `reference` branch, so a bare (non-`?include=d`) read leaves the
+// row keyed by the raw FK column from `SELECT *`. Unlike manyToManyField
+// (junction-backed, no column at all), this field IS column-backed — it has a
+// real `foreign_key`, not a `junction` — so it participates in label/storage
+// mapping the same way divergentTextField does.
+export const divergentReferenceField: ParsedField = {
+  name: 'category',
+  label: 'Category',
+  field_type: 'reference',
+  required: false,
+  nullable: true,
+  order: 5,
+  validation: { required: false },
+  db_column: {
+    column_name: 'category_id',
+    column_type: 'uuid',
+    nullable: true,
+    foreign_key: { table: 'taxonomy--category', column: 'id', on_delete: 'SET NULL' },
+  },
+  ui_component: { component: 'typeahead-select', ref: 'taxonomy--category', rel: 'one-to-one' },
+}
+
 export const manyToManyField: ParsedField = {
   name: 'tags',
   label: 'Tags',
