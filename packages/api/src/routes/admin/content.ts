@@ -114,10 +114,15 @@ type ListQueryResult =
     }
   | { ok: false; response: { code: string; message: string }; status: 400 }
 
+// `columnFor` maps a validated label to its storage column. Filters are
+// validated against labels (what the client sends) and emitted as columns (what
+// the repository queries) — without it a renamed field would be filtered on a
+// column that does not exist.
 function parseListQuery(
   url: string,
   schemaFieldNames: Set<string>,
-  relationFieldNames: Set<string>
+  relationFieldNames: Set<string>,
+  columnFor: (label: string) => string | undefined
 ): ListQueryResult {
   const searchParams = new URL(url).searchParams
 
@@ -157,7 +162,7 @@ function parseListQuery(
     }
   }
 
-  const filtersResult = parseFilters(url, schemaFieldNames)
+  const filtersResult = parseFilters(url, schemaFieldNames, columnFor)
   if (!filtersResult.ok) {
     return {
       ok: false,
@@ -247,7 +252,7 @@ export function registerAdminContentRoutes(
       `/admin/api/${basePath}`,
       requirePermission('content:read'),
       async (c) => {
-        const parsed = parseListQuery(c.req.url, schemaFieldNames, relationFieldNames)
+        const parsed = parseListQuery(c.req.url, schemaFieldNames, relationFieldNames, fieldKeys.columnFor)
         if (!parsed.ok) {
           return c.json({ ok: false, error: parsed.response }, parsed.status)
         }
@@ -446,7 +451,7 @@ export function registerAdminContentRoutes(
           columnData['slug'] = body['slug']
         }
         for (const f of columnBackedFields) {
-          const key = f.db_column!.column_name
+          const key = f.db_column.column_name
           if (!(key in storageBody)) continue
           columnData[key] = storageBody[key]
         }
@@ -581,7 +586,10 @@ export function registerAdminContentRoutes(
           const publishDeny = await requirePermission('content:edit')(c, async () => {})
           if (publishDeny) return publishDeny
 
-          const merged = { ...(existing as Record<string, unknown>), ...body }
+          // `existing` is a raw SELECT * row (storage-keyed) but
+          // checkRequiredFields reads labels, as does `body` — project the row
+          // to labels first so a renamed field's stored value is actually seen.
+          const merged = { ...fieldKeys.toLabels(existing as Record<string, unknown>), ...body }
           const fieldErrors = checkRequiredFields(requiredFields, merged)
           if (fieldErrors.length > 0) {
             return c.json(
@@ -611,7 +619,7 @@ export function registerAdminContentRoutes(
         if (!contentType.only_one && 'slug' in body) patchData['slug'] = body['slug']
         if ('published' in body) patchData['published'] = body['published']
         for (const f of patchColumnBackedFields) {
-          const key = f.db_column!.column_name
+          const key = f.db_column.column_name
           if (!(key in storageBody)) continue
           patchData[key] = storageBody[key]
         }
@@ -765,7 +773,7 @@ export function registerAdminContentRoutes(
       `/admin/api/taxonomy/${typeName}`,
       requirePermission('content:read'),
       async (c) => {
-        const parsed = parseListQuery(c.req.url, schemaFieldNames, relationFieldNames)
+        const parsed = parseListQuery(c.req.url, schemaFieldNames, relationFieldNames, fieldKeys.columnFor)
         if (!parsed.ok) {
           return c.json({ ok: false, error: parsed.response }, parsed.status)
         }
@@ -859,7 +867,7 @@ export function registerAdminContentRoutes(
           published: body['published'] ?? false,
         }
         for (const f of taxColumnBackedFields) {
-          const key = f.db_column!.column_name
+          const key = f.db_column.column_name
           if (!(key in storageBody)) continue
           taxColumnData[key] = storageBody[key]
         }
@@ -914,7 +922,10 @@ export function registerAdminContentRoutes(
           const publishDeny = await requirePermission('content:edit')(c, async () => {})
           if (publishDeny) return publishDeny
 
-          const merged = { ...(existing as Record<string, unknown>), ...body }
+          // `existing` is a raw SELECT * row (storage-keyed) but
+          // checkRequiredFields reads labels, as does `body` — project the row
+          // to labels first so a renamed field's stored value is actually seen.
+          const merged = { ...fieldKeys.toLabels(existing as Record<string, unknown>), ...body }
           const fieldErrors = checkRequiredFields(requiredFields, merged)
           if (fieldErrors.length > 0) {
             return c.json(
@@ -940,7 +951,7 @@ export function registerAdminContentRoutes(
         const taxPatchData: Record<string, unknown> = {}
         if ('published' in body) taxPatchData['published'] = body['published']
         for (const f of taxPatchColumnBackedFields) {
-          const key = f.db_column!.column_name
+          const key = f.db_column.column_name
           if (!(key in storageBody)) continue
           taxPatchData[key] = storageBody[key]
         }
