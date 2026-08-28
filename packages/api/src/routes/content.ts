@@ -92,6 +92,8 @@ export function registerPublicContentRoutes(
       })
     } else {
       registerListRoute(`/api/${basePath}`, async (c) => {
+        // Inbound boundary: query params speak labels; filters query storage keys.
+        const fieldKeys = fieldKeyMaps[typeName]!
         const pagination = parsePagination(c.req.query('page'), c.req.query('per_page'))
         if (!pagination.ok) {
           return c.json(
@@ -134,7 +136,7 @@ export function registerPublicContentRoutes(
           )
         }
 
-        const filtersResult = parseFilters(c.req.url, filterableFieldNames)
+        const filtersResult = parseFilters(c.req.url, filterableFieldNames, fieldKeys.columnFor)
         if (!filtersResult.ok) {
           return c.json(
             {
@@ -178,7 +180,6 @@ export function registerPublicContentRoutes(
           ? await resolver.resolveList(typeName, result.data as Record<string, unknown>[])
           : (result.data as Record<string, unknown>[])
         // Outbound boundary: rows are storage-keyed; responses speak labels.
-        const fieldKeys = fieldKeyMaps[typeName]!
         const data = items.map((row) => fieldKeys.toLabels(row))
         return c.json({ ...result, data })
       })
