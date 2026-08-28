@@ -40,6 +40,20 @@ _Avoid_: expand, populate, with
 Writing a content item's paragraph and junction relations to their child/junction tables (delete + reinsert). Owned by the relation module; each persist/delete reports its [[media-delta]] for the caller to reconcile. Distinct from relation *resolution* (the read side, still in the repository).
 _Avoid_: relation save, sync relations
 
+### Field identity
+
+**Label**:
+A field's public name (`ParsedField.name`) — what API consumers, the admin panel, and GraphQL see. Mutable: a schema rename changes the label only.
+_Avoid_: field name (when precision matters), key
+
+**Storage key**:
+A field's Postgres column (`db_column.column_name`). Immutable for the life of the data, so it is the field's identity across versions. Only column-backed fields have one — paragraph and many-to-many reference fields keep the label as their identity.
+_Avoid_: column name (when referring to identity rather than SQL), db name
+
+**Field key map**:
+The per-content-type `FieldKeyMap` built once at startup that converts label-keyed request bodies to storage keys and storage-keyed rows back to labels. Throws on a label/column collision rather than booting ambiguous.
+_Avoid_: field mapper, key translator
+
 ### Auth
 
 **auth_token / refresh_token**:
