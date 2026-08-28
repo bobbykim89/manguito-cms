@@ -24,6 +24,7 @@ import { registerSchemaRoute } from './routes/admin/schema.js'
 import { createDrizzleContentRepository } from './repositories/content.js'
 import { buildRelationsMap } from './relations.js'
 import { createMediaRepository } from './repositories/media.js'
+import { createFieldKeyMap, type FieldKeyMap } from './field-keys.js'
 
 export type CreateCmsAppOptions = {
   /** CMS display name shown in GET /admin/api/config. Defaults to 'Manguito CMS'. */
@@ -322,7 +323,23 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
   )
   registerSchemaRoute(app, registry, db)
   registerUserRoutes(app, db, requirePermission, requireHierarchy)
-  registerAdminContentRoutes(app, registry, repos, mediaRepo, requirePermission, db)
+
+  // ── Field key maps ──────────────────────────────────────────────────────────
+  //
+  // One per content/taxonomy type, built once at startup. Throws on a label /
+  // column collision — the server must not boot with an ambiguous mapping.
+  const fieldKeyMaps: Record<string, FieldKeyMap> = Object.fromEntries([
+    ...Object.entries(registry.content_types).map(([typeName, ct]) => [
+      typeName,
+      createFieldKeyMap((ct as ParsedContentType).fields),
+    ]),
+    ...Object.entries(registry.taxonomy_types).map(([typeName, tt]) => [
+      typeName,
+      createFieldKeyMap((tt as ParsedTaxonomyType).fields),
+    ]),
+  ])
+
+  registerAdminContentRoutes(app, registry, repos, fieldKeyMaps, mediaRepo, requirePermission, db)
   registerAdminMediaRoutes(app, mediaRepo, storage, requirePermission, maxFileSize)
 
   return { prefix, app }

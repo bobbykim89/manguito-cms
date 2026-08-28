@@ -6,6 +6,7 @@ import {
   applyMediaReferenceDelta,
   type MediaDelta,
 } from '../media-references'
+import { divergentMediaField } from '../field-keys.test-fixtures'
 
 // One image field named "cover".
 const coverField: ParsedField = {
@@ -126,5 +127,40 @@ describe('applyMediaReferenceDelta', () => {
     await applyMediaReferenceDelta({ added: ['m', 'kept'], removed: ['m', 'gone'] }, repo)
     expect(repo.incrementReferenceCount).toHaveBeenCalledWith(['kept'])
     expect(repo.decrementReferenceCount).toHaveBeenCalledWith(['gone'])
+  })
+})
+
+// ─── topLevelMediaDelta with a divergent media field ───────────────────────────
+
+const MEDIA_FIELDS = [divergentMediaField] // label 'hero', column 'blog_hero_image'
+
+describe('topLevelMediaDelta with a divergent media field', () => {
+  it('reads the storage key on create', () => {
+    const delta = topLevelMediaDelta(MEDIA_FIELDS, null, { blog_hero_image: 'm1' })
+    expect(delta).toEqual({ added: ['m1'], removed: [] })
+  })
+
+  it('detects a swap between two storage-keyed states', () => {
+    const delta = topLevelMediaDelta(
+      MEDIA_FIELDS,
+      { blog_hero_image: 'm1' },
+      { blog_hero_image: 'm2' }
+    )
+    expect(delta).toEqual({ added: ['m2'], removed: ['m1'] })
+  })
+
+  it('treats a field absent from a partial patch as untouched', () => {
+    const delta = topLevelMediaDelta(MEDIA_FIELDS, { blog_hero_image: 'm1' }, { other: 'x' })
+    expect(delta).toEqual({ added: [], removed: [] })
+  })
+
+  it('removes every id on delete', () => {
+    const delta = topLevelMediaDelta(MEDIA_FIELDS, { blog_hero_image: 'm1' }, null)
+    expect(delta).toEqual({ added: [], removed: ['m1'] })
+  })
+
+  it('ignores the label key entirely', () => {
+    const delta = topLevelMediaDelta(MEDIA_FIELDS, null, { hero: 'm1' })
+    expect(delta).toEqual({ added: [], removed: [] })
   })
 })

@@ -28,6 +28,7 @@ import {
 } from '../../relations.js'
 import type { createPermissionMiddleware } from '../../middleware/permission.js'
 import type { ContentRepos } from '../content.js'
+import type { FieldKeyMap } from '../../field-keys.js'
 
 // ─── SQL helpers ─────────────────────────────────────────────────────────────
 
@@ -198,6 +199,7 @@ export function registerAdminContentRoutes(
   app: Hono,
   registry: SchemaRegistry,
   repos: ContentRepos,
+  fieldKeyMaps: Record<string, FieldKeyMap>,
   mediaRepo: MediaRepository,
   requirePermission: ReturnType<typeof createPermissionMiddleware>,
   db?: DrizzlePostgresInstance,
@@ -219,6 +221,8 @@ export function registerAdminContentRoutes(
         .filter((f) => RELATION_FIELD_TYPES.has(f.field_type))
         .map((f) => f.name)
     )
+
+    const fieldKeys = fieldKeyMaps[typeName]!
 
     const requiredFields = contentType.fields.filter((f) => f.required)
 
@@ -392,6 +396,10 @@ export function registerAdminContentRoutes(
     // pre-checks (slug rules, singleton existence, 404s) stay in the routes.
 
     const writeNewItem = async (c: Context, body: Record<string, unknown>) => {
+        // Inbound boundary: the request body arrives label-keyed; everything
+        // downstream (insert data, media delta) works in storage keys.
+        const storageBody = fieldKeys.toStorage(body)
+
         const fieldErrors = checkRequiredFields(requiredFields, body)
         if (fieldErrors.length > 0) {
           return c.json(
@@ -457,7 +465,7 @@ export function registerAdminContentRoutes(
         const itemId = (item as Record<string, unknown>)['id'] as string
 
         // Reconcile media reference counts across top-level fields and paragraphs.
-        const mediaDeltas: MediaDelta[] = [topLevelMediaDelta(mediaFields, null, body)]
+        const mediaDeltas: MediaDelta[] = [topLevelMediaDelta(mediaFields, null, storageBody)]
 
         // Save paragraph and junction rows
         if (db) {
@@ -554,6 +562,10 @@ export function registerAdminContentRoutes(
       existing: Record<string, unknown>,
       body: Record<string, unknown>,
     ) => {
+        // Inbound boundary: the request body arrives label-keyed; everything
+        // downstream (insert data, media delta) works in storage keys.
+        const storageBody = fieldKeys.toStorage(body)
+
         if (body['published'] === true) {
           const publishDeny = await requirePermission('content:edit')(c, async () => {})
           if (publishDeny) return publishDeny
@@ -605,7 +617,7 @@ export function registerAdminContentRoutes(
 
         // Reconcile media reference counts across top-level fields and paragraphs.
         const mediaDeltas: MediaDelta[] = [
-          topLevelMediaDelta(mediaFields, existing as Record<string, unknown>, body),
+          topLevelMediaDelta(mediaFields, existing as Record<string, unknown>, storageBody),
         ]
 
         // Delete+reinsert paragraph and junction rows
@@ -719,6 +731,8 @@ export function registerAdminContentRoutes(
         .map((f) => f.name)
     )
 
+    const fieldKeys = fieldKeyMaps[typeName]!
+
     const requiredFields = taxonomyType.fields.filter((f) => f.required)
 
     const mediaFields = taxonomyType.fields.filter(
@@ -793,6 +807,10 @@ export function registerAdminContentRoutes(
       async (c) => {
         const body = (await c.req.json()) as Record<string, unknown>
 
+        // Inbound boundary: the request body arrives label-keyed; everything
+        // downstream (insert data, media delta) works in storage keys.
+        const storageBody = fieldKeys.toStorage(body)
+
         const fieldErrors = checkRequiredFields(requiredFields, body)
         if (fieldErrors.length > 0) {
           return c.json(
@@ -830,7 +848,7 @@ export function registerAdminContentRoutes(
         const taxItemId = (item as Record<string, unknown>)['id'] as string
 
         // Reconcile media reference counts across top-level fields and paragraphs.
-        const mediaDeltas: MediaDelta[] = [topLevelMediaDelta(mediaFields, null, body)]
+        const mediaDeltas: MediaDelta[] = [topLevelMediaDelta(mediaFields, null, storageBody)]
 
         if (db) {
           for (const f of taxParagraphFields) {
@@ -856,6 +874,10 @@ export function registerAdminContentRoutes(
       async (c) => {
         const id = c.req.param('id')
         const body = (await c.req.json()) as Record<string, unknown>
+
+        // Inbound boundary: the request body arrives label-keyed; everything
+        // downstream (insert data, media delta) works in storage keys.
+        const storageBody = fieldKeys.toStorage(body)
 
         const existing = await repo.findOne(id)
         if (!existing) {
@@ -910,7 +932,7 @@ export function registerAdminContentRoutes(
 
         // Reconcile media reference counts across top-level fields and paragraphs.
         const mediaDeltas: MediaDelta[] = [
-          topLevelMediaDelta(mediaFields, existing as Record<string, unknown>, body),
+          topLevelMediaDelta(mediaFields, existing as Record<string, unknown>, storageBody),
         ]
 
         if (db) {

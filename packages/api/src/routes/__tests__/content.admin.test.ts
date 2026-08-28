@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { Hono } from 'hono'
 import { registerAdminContentRoutes } from '../admin/content'
+import { createFieldKeyMap, type FieldKeyMap } from '../../field-keys'
 import type {
   ContentRepository,
   MediaRepository,
@@ -223,6 +224,17 @@ describe('admin content routes', () => {
     all_schemas: [],
   }
 
+  const fieldKeyMaps: Record<string, FieldKeyMap> = Object.fromEntries([
+    ...Object.entries(registry.content_types).map(([typeName, ct]) => [
+      typeName,
+      createFieldKeyMap(ct.fields),
+    ]),
+    ...Object.entries(registry.taxonomy_types).map(([typeName, tt]) => [
+      typeName,
+      createFieldKeyMap(tt.fields),
+    ]),
+  ])
+
   beforeEach(() => {
     mockBlogRepo = makeMockRepo()
     mockSingletonRepo = makeMockRepo()
@@ -235,7 +247,7 @@ describe('admin content routes', () => {
       'home-page': mockSingletonRepo,
       'page-with-image': mockMediaTypeRepo,
       category: mockCategoryRepo,
-    }, mockMediaRepo, noopRequirePermission)
+    }, fieldKeyMaps, mockMediaRepo, noopRequirePermission)
   })
 
   describe('PATCH — publish validation', () => {
@@ -491,7 +503,7 @@ describe('admin content routes', () => {
         'home-page': mockSingletonRepo,
         'page-with-image': mockMediaTypeRepo,
         category: mockCategoryRepo,
-      }, mockMediaRepo, selectiveRequirePermission)
+      }, fieldKeyMaps, mockMediaRepo, selectiveRequirePermission)
       return createOnlyApp
     }
 
