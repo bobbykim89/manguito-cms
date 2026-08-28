@@ -1691,7 +1691,9 @@ git commit -m "docs(api): record label vs storage key decision"
 
 ## Stage 1 Exit Criteria
 
-- [ ] `pnpm test` passes with **no existing test modified** to accommodate the refactor.
+- [ ] `pnpm test` passes with **no existing test modified** to accommodate the refactor, with ONE authorized exception recorded below.
+
+  **Authorized exception (controller ruling, Task 5):** `packages/api/src/__tests__/relations.read.integration.test.ts`'s test *"reference field bare id stays under the raw fk column"* is updated to assert the label instead. That test's fixture hand-writes a reference field with `name: 'category'` over `column_name: 'category_id'` — a divergence no parser-produced schema can reach, since `fieldTypeRegistry.ts:255-262` always sets `column_name = raw.name` for one-to-one/one-to-many references. The old assertion therefore characterized the exact column-name leak this stage exists to close, for an input real schemas cannot produce. No user-visible behavior changes. Every other assertion in that file is preserved.
 - [ ] `pnpm build` succeeds in dependency order.
 - [ ] The Task 9 integration test proves a `label !== column` registry works across public reads, filters, and admin writes.
 - [ ] No file outside `packages/api` changed behavior, except documentation.
