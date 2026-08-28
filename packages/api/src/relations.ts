@@ -349,9 +349,17 @@ export async function resolveRelationField(
       row[fieldName] = byParent[row['id'] as string] ?? []
     }
   } else if (rel.type === 'reference') {
+    // When the field's label differs from its FK column (a renamed field), the
+    // resolved object lands on the label and the raw FK key must be removed —
+    // otherwise the response carries both the column name and the label.
+    const dropFk = rel.fk_column !== fieldName
+
     const fkValues = rows.map((r) => r[rel.fk_column] as string).filter(Boolean)
     if (fkValues.length === 0) {
-      for (const row of rows) row[fieldName] = null
+      for (const row of rows) {
+        row[fieldName] = null
+        if (dropFk) delete row[rel.fk_column]
+      }
       return
     }
     const unique = [...new Set(fkValues)]
@@ -369,6 +377,7 @@ export async function resolveRelationField(
     for (const row of rows) {
       const fkVal = row[rel.fk_column] as string
       row[fieldName] = fkVal ? (cache.get(`${rel.table}:${fkVal}`) ?? null) : null
+      if (dropFk) delete row[rel.fk_column]
     }
   } else if (rel.type === 'junction') {
     const parentIds = rows.map((r) => r['id'] as string)
@@ -398,9 +407,17 @@ export async function resolveRelationField(
         .filter(Boolean)
     }
   } else if (rel.type === 'media') {
+    // When the field's label differs from its FK column (a renamed field), the
+    // resolved object lands on the label and the raw FK key must be removed —
+    // otherwise the response carries both the column name and the label.
+    const dropFk = rel.fk_column !== fieldName
+
     const fkValues = rows.map((r) => r[rel.fk_column] as string).filter(Boolean)
     if (fkValues.length === 0) {
-      for (const row of rows) row[fieldName] = null
+      for (const row of rows) {
+        row[fieldName] = null
+        if (dropFk) delete row[rel.fk_column]
+      }
       return
     }
     const unique = [...new Set(fkValues)]
@@ -415,6 +432,7 @@ export async function resolveRelationField(
     for (const row of rows) {
       const fkVal = row[rel.fk_column] as string
       row[fieldName] = fkVal ? (cache.get(`media:${fkVal}`) ?? null) : null
+      if (dropFk) delete row[rel.fk_column]
     }
   }
 }
