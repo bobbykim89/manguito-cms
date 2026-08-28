@@ -1,4 +1,4 @@
-import type { ParsedField } from '@bobbykim/manguito-cms-core'
+import type { DbColumn, ParsedField } from '@bobbykim/manguito-cms-core'
 
 // ─── Label ↔ storage key mapping ──────────────────────────────────────────────
 //
@@ -15,7 +15,10 @@ import type { ParsedField } from '@bobbykim/manguito-cms-core'
 // many-to-many references have no column either (the junction table owns the
 // association), so both keep the field name as their identity and are excluded.
 
-export function isColumnBacked(field: ParsedField): boolean {
+// A type predicate, not a plain boolean: narrowing `db_column` to non-null lets
+// the compiler enforce the invariant at every call site instead of each one
+// re-asserting it with `db_column!`.
+export function isColumnBacked(field: ParsedField): field is ParsedField & { db_column: DbColumn } {
   const col = field.db_column
   if (col === null) return false
   if (col.column_name === '') return false
@@ -47,18 +50,30 @@ export function createFieldKeyMap(fields: ParsedField[]): FieldKeyMap {
 
   for (const f of fields) {
     if (!isColumnBacked(f)) continue
-    labelToColumn.set(f.name, f.db_column!.column_name)
-    columnToLabel.set(f.db_column!.column_name, f.name)
+    labelToColumn.set(f.name, f.db_column.column_name)
+    columnToLabel.set(f.db_column.column_name, f.name)
   }
 
   // A label that is also some OTHER field's column name would make toLabels
   // ambiguous: two source keys would map onto one destination key.
-  for (const label of labelToColumn.keys()) {
-    const columnOwner = columnToLabel.get(label)
-    if (columnOwner !== undefined && columnOwner !== label) {
+  //
+  // Checked against EVERY field's label, not just the column-backed subset.
+  // Paragraph, many-to-many and programmatic fields have no column of their
+  // own, but their labels are written into the same key space as storage
+  // columns before toLabels runs (routes/admin/content.ts, relations.ts,
+  // programmatic/resolve.ts). A paragraph field named after another field's
+  // column would overwrite that column's value on the row and then be renamed
+  // onto the other field's label — serving the wrong value under the wrong key.
+  //
+  // Not detected: two fields declaring the SAME column name. That is
+  // unreachable from the parser, which derives every column from its own field.
+  for (const f of fields) {
+    const columnOwner = columnToLabel.get(f.name)
+    if (columnOwner !== undefined && columnOwner !== f.name) {
       throw new Error(
-        `✗ Field label "${label}" collides with the storage column of field "${columnOwner}". ` +
-          `A field label may not reuse another field's column name.`
+        `Fatal: field key map failed to build — field label "${f.name}" collides with the ` +
+          `storage column of field "${columnOwner}". A field label may not reuse another ` +
+          `field's column name. Rename the field, then run \`manguito validate\` to check your schema.`
       )
     }
   }

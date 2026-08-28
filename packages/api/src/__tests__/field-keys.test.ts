@@ -81,6 +81,27 @@ describe('createFieldKeyMap', () => {
     expect(m.toStorage({ title: null })).toEqual({ blog_title: null })
   })
 
+  it("throws when a PARAGRAPH label collides with another field's column name", () => {
+    // The scenario Stage 2 makes reachable: `blog_title` was the original name of
+    // the field now labelled `title`, so the column kept it. An author then adds a
+    // paragraph field named `blog_title` — labels are still unique, so nothing
+    // upstream objects, but the paragraph array would land on the row under the
+    // text field's column and toLabels would then serve it as `title`.
+    const collidingParagraph: ParsedField = { ...paragraphField, name: 'blog_title' }
+    expect(() => createFieldKeyMap([divergentTextField, collidingParagraph])).toThrow(
+      /^Fatal: field key map failed to build — field label "blog_title" collides with the storage column of field "title"/
+    )
+  })
+
+  it("throws when a many-to-many label collides with another field's column name", () => {
+    const collidingJunction: ParsedField = { ...manyToManyField, name: 'blog_title' }
+    expect(() => createFieldKeyMap([divergentTextField, collidingJunction])).toThrow(/collides/i)
+  })
+
+  it('accepts a paragraph label that collides with nothing', () => {
+    expect(() => createFieldKeyMap(FIELDS)).not.toThrow()
+  })
+
   it("throws when a label collides with another field's column name", () => {
     const collidingLabel: ParsedField = {
       ...identityTextField,
