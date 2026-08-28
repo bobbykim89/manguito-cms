@@ -313,18 +313,6 @@ function groupBy<T extends Record<string, unknown>>(
   return result
 }
 
-// Fully resolves a relation field on a batch of rows: paragraph → ordered rows,
-// reference → the target row, junction → target rows, media → the media row.
-// The cache (keyed table:id) dedupes target lookups within a request.
-//
-// `publishedOnly` (default false, preserving prior behavior for admin callers)
-// adds `AND published = true` to the reference/junction target-row SELECTs.
-// Reference and junction targets are always content or taxonomy tables, which
-// always carry a `published` boolean system field — see CONTENT_SYSTEM_FIELDS /
-// TAXONOMY_SYSTEM_FIELDS in packages/core/src/parser/parseSchema.ts. Paragraph
-// and media targets are deliberately excluded: paragraph rows are owned by
-// their parent (no independent publish state) and media rows have no
-// `published` column at all.
 // A reference/media pass is DESTRUCTIVE: the resolved object replaces the raw FK
 // value, and when the field's label differs from its FK column (a renamed field)
 // the raw FK key is deleted outright — otherwise the response would carry both
@@ -350,6 +338,18 @@ function needsFkResolution(
   return !(typeof current === 'object' && current !== null)
 }
 
+// Fully resolves a relation field on a batch of rows: paragraph → ordered rows,
+// reference → the target row, junction → target rows, media → the media row.
+// The cache (keyed table:id) dedupes target lookups within a request.
+//
+// `publishedOnly` (default false, preserving prior behavior for admin callers)
+// adds `AND published = true` to the reference/junction target-row SELECTs.
+// Reference and junction targets are always content or taxonomy tables, which
+// always carry a `published` boolean system field — see CONTENT_SYSTEM_FIELDS /
+// TAXONOMY_SYSTEM_FIELDS in packages/core/src/parser/parseSchema.ts. Paragraph
+// and media targets are deliberately excluded: paragraph rows are owned by
+// their parent (no independent publish state) and media rows have no
+// `published` column at all.
 export async function resolveRelationField(
   db: DrizzlePostgresInstance,
   rows: Record<string, unknown>[],
