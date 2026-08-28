@@ -12,6 +12,7 @@ import type {
 import { createDrizzleContentRepository } from '../repositories/content'
 import { registerPublicContentRoutes } from '../routes/content'
 import { createFieldKeyMap } from '../field-keys'
+import { createPublicPaths } from '../paths'
 
 // Characterizes paragraph + junction relation reads (resolved via ?include= and
 // bare ids without it), which no other integration test exercises. This is the
@@ -249,7 +250,8 @@ function publicApp() {
     app,
     TEST_REGISTRY,
     { 'rel-test-post': repo },
-    { 'rel-test-post': createFieldKeyMap(POST_TYPE.fields) }
+    { 'rel-test-post': createFieldKeyMap(POST_TYPE.fields) },
+    createPublicPaths('/api')
   )
   return app
 }

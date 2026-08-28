@@ -9,6 +9,7 @@ import { createLocalAdapter } from '../storage/adapters/local'
 import { createDrizzleContentRepository } from '../repositories/content'
 import { registerPublicContentRoutes } from '../routes/content'
 import { createFieldKeyMap } from '../field-keys'
+import { createPublicPaths } from '../paths'
 
 const DB_URL = process.env['DB_URL']
 if (!DB_URL) throw new Error('DB_URL must be set in .env.test before running integration tests')
@@ -248,7 +249,8 @@ describe('public content routes — integration', () => {
       app,
       TEST_REGISTRY,
       { 'pub-test-blog': blogRepo },
-      { 'pub-test-blog': createFieldKeyMap(BLOG_TYPE.fields) }
+      { 'pub-test-blog': createFieldKeyMap(BLOG_TYPE.fields) },
+      createPublicPaths('/api')
     )
 
     const res = await app.request(`/api/${BASE_PATH}?include=category`)

@@ -11,6 +11,7 @@ import type { ParsedContentType } from '@bobbykim/manguito-cms-core'
 import { divergentTextField, divergentReferenceField } from '../../field-keys.test-fixtures'
 import { createFieldKeyMap } from '../../field-keys'
 import { createProgrammaticResolver } from '../../programmatic/resolve'
+import { createPublicPaths } from '../../paths'
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -94,7 +95,8 @@ describe('public content routes', () => {
       app,
       mockRegistry,
       { 'blog-post': mockRepo },
-      { 'blog-post': createFieldKeyMap(BLOG_TYPE.fields) }
+      { 'blog-post': createFieldKeyMap(BLOG_TYPE.fields) },
+      createPublicPaths('/api')
     )
   })
 
@@ -147,6 +149,24 @@ describe('public content routes', () => {
     expect(body.ok).toBe(false)
     expect(body.error.code).toBe('INVALID_INCLUDE_FIELD')
   })
+
+  it('serves public routes under a custom api.prefix', async () => {
+    const repo = makeMockRepo()
+    const app = new Hono()
+    registerPublicContentRoutes(
+      app,
+      mockRegistry,
+      { 'blog-post': repo },
+      { 'blog-post': createFieldKeyMap(BLOG_TYPE.fields) },
+      createPublicPaths('/content-api'),
+      undefined,
+      createProgrammaticResolver(new Map())
+    )
+
+    // BLOG_TYPE's default_base_path is 'blog-post'.
+    expect((await app.request('/content-api/blog-post')).status).toBe(200)
+    expect((await app.request('/api/blog-post')).status).toBe(404)
+  })
 })
 
 // Same shape as this file's BLOG_TYPE, with label 'title' over column 'blog_title'.
@@ -183,6 +203,7 @@ describe('public reads with a divergent field label', () => {
       divergentRegistry,
       { 'divergent-post': repo },
       { 'divergent-post': createFieldKeyMap([divergentTextField]) },
+      createPublicPaths('/api'),
       undefined,
       createProgrammaticResolver(new Map())
     )
@@ -211,6 +232,7 @@ describe('public reads with a divergent field label', () => {
       divergentRegistry,
       { 'divergent-post': repo },
       { 'divergent-post': createFieldKeyMap([divergentTextField]) },
+      createPublicPaths('/api'),
       undefined,
       createProgrammaticResolver(new Map())
     )
@@ -263,6 +285,7 @@ describe('public reads with a divergent field label', () => {
       refRegistry,
       { 'divergent-ref-post': repo },
       { 'divergent-ref-post': createFieldKeyMap([divergentReferenceField]) },
+      createPublicPaths('/api'),
       undefined,
       createProgrammaticResolver(new Map())
     )

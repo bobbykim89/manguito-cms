@@ -10,6 +10,7 @@ import type {
 import { registerPublicContentRoutes } from '../content'
 import { createProgrammaticResolver, resolverKey } from '../../programmatic/resolve.js'
 import { createFieldKeyMap } from '../../field-keys.js'
+import { createPublicPaths } from '../../paths.js'
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -140,6 +141,7 @@ describe('programmatic resolution in public routes', () => {
       REGISTRY,
       { 'content--blog_post': repoWith(rows) },
       FIELD_KEY_MAPS,
+      createPublicPaths('/api'),
       undefined,
       resolverFor()
     )
@@ -157,6 +159,7 @@ describe('programmatic resolution in public routes', () => {
       REGISTRY,
       { 'content--blog_post': repoWith(rows) },
       FIELD_KEY_MAPS,
+      createPublicPaths('/api'),
       undefined,
       resolverFor()
     )
@@ -182,6 +185,7 @@ describe('programmatic resolution in public routes', () => {
       REGISTRY,
       { 'content--blog_post': repoWith([]) },
       FIELD_KEY_MAPS,
+      createPublicPaths('/api'),
       undefined,
       resolverFor()
     )

@@ -1,5 +1,6 @@
 import type { Hono, Handler, MiddlewareHandler } from 'hono'
 import type { MediaRepository } from '@bobbykim/manguito-cms-core'
+import type { PublicPaths } from '../paths.js'
 
 const VALID_MEDIA_TYPES = new Set(['image', 'video', 'file'])
 
@@ -18,6 +19,7 @@ function parsePagination(
 export function registerPublicMediaRoutes(
   app: Hono,
   mediaRepo: MediaRepository,
+  paths: PublicPaths,
   listRateLimit?: MiddlewareHandler
 ): void {
   const mediaListHandler: Handler = async (c) => {
@@ -62,13 +64,16 @@ export function registerPublicMediaRoutes(
   }
 
   if (listRateLimit) {
-    app.get('/api/media', listRateLimit, mediaListHandler)
+    app.get(paths.mediaCollection(), listRateLimit, mediaListHandler)
   } else {
-    app.get('/api/media', mediaListHandler)
+    app.get(paths.mediaCollection(), mediaListHandler)
   }
 
-  app.get('/api/media/:id', async (c) => {
-    const id = c.req.param('id')
+  app.get(paths.mediaItem(), async (c) => {
+    // paths.mediaItem() always appends a literal ':id' segment, but its return
+    // type is the widened `string` from PublicPaths, so Hono can't statically
+    // prove the param is present.
+    const id = c.req.param('id')!
     const item = await mediaRepo.findOne(id)
 
     if (!item) {
