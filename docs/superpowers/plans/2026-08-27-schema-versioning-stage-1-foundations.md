@@ -22,6 +22,8 @@
 - **HTTP responses always use the `{ ok, data }` / `{ ok, error: { code, message } }` envelope.**
 - **TypeScript only.** No JavaScript files.
 - Test imports omit the file extension (`from '../content'`); source imports include `.js`.
+- **Running tests:** use `pnpm --filter @bobbykim/manguito-cms-api test [relative/path] [-t 'name']`. The package's `test` script is `dotenv -e .env.test -- vitest run`; calling `vitest` directly skips that wrapper, leaves `DB_URL` unset, and `globalSetup` then aborts the whole run with a misleading "DB_URL not set" message. Paths are relative to `packages/api/`.
+- **Postgres must be running:** `pnpm db:test:up` (already started for this session). Baseline before any change: **39 test files, 258 tests passing.**
 
 ## File Structure
 
@@ -256,7 +258,7 @@ import type { ParsedField } from '@bobbykim/manguito-cms-core'
 
 - [ ] **Step 3: Run the test to verify it fails**
 
-Run: `pnpm vitest run packages/api/src/__tests__/field-keys.test.ts`
+Run: `pnpm --filter @bobbykim/manguito-cms-api test src/__tests__/field-keys.test.ts`
 Expected: FAIL — `Failed to resolve import "../field-keys"`.
 
 - [ ] **Step 4: Write the implementation**
@@ -359,12 +361,12 @@ export function createFieldKeyMap(fields: ParsedField[]): FieldKeyMap {
 
 - [ ] **Step 5: Run the test to verify it passes**
 
-Run: `pnpm vitest run packages/api/src/__tests__/field-keys.test.ts`
+Run: `pnpm --filter @bobbykim/manguito-cms-api test src/__tests__/field-keys.test.ts`
 Expected: PASS — all cases.
 
 - [ ] **Step 6: Run the whole api suite to confirm nothing regressed**
 
-Run: `pnpm vitest run packages/api`
+Run: `pnpm --filter @bobbykim/manguito-cms-api test`
 Expected: PASS. Nothing imports the new module yet.
 
 - [ ] **Step 7: Commit**
@@ -381,7 +383,7 @@ git commit -m "feat(api): add label-to-storage field key mapping"
 **Files:**
 - Modify: `packages/api/src/media-references.ts:31-52` (`topLevelMediaDelta`)
 - Modify: `packages/api/src/routes/admin/content.ts` (call sites at lines ~460, ~608, ~682, ~833, ~913)
-- Test: `packages/api/src/__tests__/media-references.test.ts`
+- Test: `packages/api/src/__tests__/media-references.test.ts` — **this file already exists** with a `describe('topLevelMediaDelta')` block plus `mergeMediaDeltas` and `applyMediaReferenceDelta` blocks. APPEND a new describe block; do not overwrite the file or edit the existing cases. Its existing `coverField` / `bannerField` fixtures already set `db_column.column_name` equal to `name`, so they keep passing after this change.
 
 **Interfaces:**
 - Consumes: `createFieldKeyMap` from Task 1.
@@ -391,7 +393,7 @@ git commit -m "feat(api): add label-to-storage field key mapping"
 
 - [ ] **Step 1: Write the failing test**
 
-Create `packages/api/src/__tests__/media-references.test.ts`:
+Append to the existing `packages/api/src/__tests__/media-references.test.ts`:
 
 ```ts
 import { describe, it, expect } from 'vitest'
@@ -434,7 +436,7 @@ describe('topLevelMediaDelta with a divergent media field', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm vitest run packages/api/src/__tests__/media-references.test.ts`
+Run: `pnpm --filter @bobbykim/manguito-cms-api test src/__tests__/media-references.test.ts`
 Expected: FAIL — the first test yields `{ added: [], removed: [] }` because the implementation reads `after['hero']`, not `after['blog_hero_image']`.
 
 - [ ] **Step 3: Change the implementation to storage keys**
@@ -473,7 +475,7 @@ Update the doc comment above the function so the contract is explicit:
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `pnpm vitest run packages/api/src/__tests__/media-references.test.ts`
+Run: `pnpm --filter @bobbykim/manguito-cms-api test src/__tests__/media-references.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Normalize the request body at each write call site**
@@ -549,7 +551,7 @@ and pass `fieldKeyMaps` to `registerAdminContentRoutes`.
 
 - [ ] **Step 7: Run the full api suite**
 
-Run: `pnpm vitest run packages/api`
+Run: `pnpm --filter @bobbykim/manguito-cms-api test`
 Expected: PASS — existing tests are unaffected because labels still equal columns in every real schema.
 
 - [ ] **Step 8: Commit**
@@ -632,7 +634,7 @@ describe('admin writes with a divergent field label', () => {
 
 - [ ] **Step 3: Run the test to verify it fails**
 
-Run: `pnpm vitest run packages/api/src/routes/__tests__/content.admin.test.ts -t 'persists the storage column'`
+Run: `pnpm --filter @bobbykim/manguito-cms-api test src/routes/__tests__/content.admin.test.ts -t 'persists the storage column'`
 Expected: FAIL — the payload carries `title`, not `blog_title`.
 
 - [ ] **Step 4: Build the write payload from storage keys**
@@ -664,7 +666,7 @@ Leave three things alone:
 
 - [ ] **Step 5: Run the test to verify it passes**
 
-Run: `pnpm vitest run packages/api/src/routes/__tests__/content.admin.test.ts -t 'persists the storage column'`
+Run: `pnpm --filter @bobbykim/manguito-cms-api test src/routes/__tests__/content.admin.test.ts -t 'persists the storage column'`
 Expected: PASS.
 
 - [ ] **Step 6: Write the failing read test**
@@ -692,7 +694,7 @@ describe('admin reads with a divergent field label', () => {
 
 - [ ] **Step 7: Run the test to verify it fails**
 
-Run: `pnpm vitest run packages/api/src/routes/__tests__/content.admin.test.ts -t 'returns the label and never'`
+Run: `pnpm --filter @bobbykim/manguito-cms-api test src/routes/__tests__/content.admin.test.ts -t 'returns the label and never'`
 Expected: FAIL — the response carries `blog_title`.
 
 - [ ] **Step 8: Map rows to labels at each admin read**
@@ -712,12 +714,12 @@ For single-item responses:
 
 - [ ] **Step 9: Run the test to verify it passes**
 
-Run: `pnpm vitest run packages/api/src/routes/__tests__/content.admin.test.ts -t 'returns the label and never'`
+Run: `pnpm --filter @bobbykim/manguito-cms-api test src/routes/__tests__/content.admin.test.ts -t 'returns the label and never'`
 Expected: PASS.
 
 - [ ] **Step 10: Run the full api suite**
 
-Run: `pnpm vitest run packages/api`
+Run: `pnpm --filter @bobbykim/manguito-cms-api test`
 Expected: PASS. Existing admin tests are unaffected: in every real schema the label equals the column, so `toLabels` is an identity remap.
 
 - [ ] **Step 11: Commit**
@@ -802,7 +804,7 @@ describe('resolveRelationField with a divergent media field', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm vitest run packages/api/src/__tests__/relations.test.ts`
+Run: `pnpm --filter @bobbykim/manguito-cms-api test src/__tests__/relations.test.ts`
 Expected: FAIL — the first case still carries `blog_hero_image: 'm1'` alongside `hero`.
 
 - [ ] **Step 3: Delete the storage key after resolving**
@@ -845,12 +847,12 @@ Apply the same `dropFk` treatment to the `rel.type === 'reference'` branch, whic
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `pnpm vitest run packages/api/src/__tests__/relations.test.ts`
+Run: `pnpm --filter @bobbykim/manguito-cms-api test src/__tests__/relations.test.ts`
 Expected: PASS — all three cases.
 
 - [ ] **Step 5: Run the full api suite**
 
-Run: `pnpm vitest run packages/api`
+Run: `pnpm --filter @bobbykim/manguito-cms-api test`
 Expected: PASS — `dropFk` is false in every existing schema, so behavior is unchanged.
 
 - [ ] **Step 6: Commit**
@@ -934,7 +936,7 @@ describe('public reads with a divergent field label', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm vitest run packages/api/src/routes/__tests__/content.test.ts -t 'returns the label'`
+Run: `pnpm --filter @bobbykim/manguito-cms-api test src/routes/__tests__/content.test.ts -t 'returns the label'`
 Expected: FAIL — the response carries `blog_title`, not `title`.
 
 - [ ] **Step 3: Map rows to labels at the serialization point**
@@ -980,12 +982,12 @@ In `packages/api/src/app.ts`:
 
 - [ ] **Step 5: Run the test to verify it passes**
 
-Run: `pnpm vitest run packages/api/src/routes/__tests__/content.test.ts -t 'returns the label'`
+Run: `pnpm --filter @bobbykim/manguito-cms-api test src/routes/__tests__/content.test.ts -t 'returns the label'`
 Expected: PASS.
 
 - [ ] **Step 6: Run the full api suite**
 
-Run: `pnpm vitest run packages/api`
+Run: `pnpm --filter @bobbykim/manguito-cms-api test`
 Expected: PASS.
 
 - [ ] **Step 7: Commit**
@@ -1044,7 +1046,7 @@ describe('parseFilters with a label-to-column mapper', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm vitest run packages/api/src/routes/__tests__/query-params.test.ts`
+Run: `pnpm --filter @bobbykim/manguito-cms-api test src/routes/__tests__/query-params.test.ts`
 Expected: FAIL — `parseFilters` takes two parameters, so the mapped cases return `title` keys.
 
 - [ ] **Step 3: Add the optional mapper**
@@ -1105,12 +1107,12 @@ Sorting is restricted to indexed system fields (see the comment at the top of `q
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `pnpm vitest run packages/api/src/routes/__tests__/query-params.test.ts`
+Run: `pnpm --filter @bobbykim/manguito-cms-api test src/routes/__tests__/query-params.test.ts`
 Expected: PASS — all four cases.
 
 - [ ] **Step 6: Run the full api suite**
 
-Run: `pnpm vitest run packages/api`
+Run: `pnpm --filter @bobbykim/manguito-cms-api test`
 Expected: PASS.
 
 - [ ] **Step 7: Commit**
@@ -1157,7 +1159,7 @@ describe('GraphQL field value resolution with a divergent label', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm vitest run packages/api/src/graphql/__tests__/resolvers.divergence.test.ts`
+Run: `pnpm --filter @bobbykim/manguito-cms-api test src/graphql/__tests__/resolvers.divergence.test.ts`
 Expected: FAIL — `resolveFieldValue` is not exported from `resolvers.ts`.
 
 - [ ] **Step 3: Extract and correct the value lookup**
@@ -1189,7 +1191,7 @@ Then replace scalar reads of the shape `row[field.name]` in this file with `reso
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `pnpm vitest run packages/api/src/graphql/__tests__/resolvers.divergence.test.ts`
+Run: `pnpm --filter @bobbykim/manguito-cms-api test src/graphql/__tests__/resolvers.divergence.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Fix `translateFilters`, which emits labels where columns are required**
@@ -1224,6 +1226,8 @@ At the call site in `packages/api/src/graphql/resolvers.ts:91`:
       filters: translateFilters(args.filter, nameMap, fieldKeys.columnFor),
 ```
 
+**Where `fieldKeys` comes from (controller ruling):** the GraphQL module has no field-key maps today. Thread them in the same way the repositories are threaded — add a `fieldKeyMaps: Record<string, FieldKeyMap>` parameter to `createGraphQLHandler` in `packages/api/src/graphql/handler.ts`, pass the `fieldKeyMaps` built in `app.ts` at the dynamic-import call site, and resolve `fieldKeyMaps[typeName]` inside the resolver where `nameMap` is already resolved per type. Do not rebuild maps per request.
+
 Add a test to `packages/api/src/graphql/__tests__/filters.test.ts`:
 
 ```ts
@@ -1235,12 +1239,12 @@ it('emits the storage column, not the label', () => {
 })
 ```
 
-Run: `pnpm vitest run packages/api/src/graphql/__tests__/filters.test.ts`
+Run: `pnpm --filter @bobbykim/manguito-cms-api test src/graphql/__tests__/filters.test.ts`
 Expected: PASS.
 
 - [ ] **Step 6: Run the full graphql and api suites**
 
-Run: `pnpm vitest run packages/api`
+Run: `pnpm --filter @bobbykim/manguito-cms-api test`
 Expected: PASS — all existing GraphQL tests included.
 
 - [ ] **Step 7: Commit**
@@ -1322,7 +1326,7 @@ describe('createPublicPaths', () => {
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `pnpm vitest run packages/api/src/__tests__/paths.test.ts`
+Run: `pnpm --filter @bobbykim/manguito-cms-api test src/__tests__/paths.test.ts`
 Expected: FAIL — `Failed to resolve import "../paths"`.
 
 - [ ] **Step 3: Write the implementation**
@@ -1368,31 +1372,40 @@ export function createPublicPaths(prefix: string): PublicPaths {
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `pnpm vitest run packages/api/src/__tests__/paths.test.ts`
+Run: `pnpm --filter @bobbykim/manguito-cms-api test src/__tests__/paths.test.ts`
 Expected: PASS — all cases.
 
 - [ ] **Step 5: Route the registrators through it**
 
 The final signatures after Tasks 5 and 8, which every call site must match exactly:
 
+The CURRENT signature (verified) is:
+
 ```ts
 export function registerPublicContentRoutes(
   app: Hono,
   registry: SchemaRegistry,
-  repos: Record<string, ContentRepository<Record<string, unknown>>>,
-  fieldKeyMaps: Record<string, FieldKeyMap>,
-  paths: PublicPaths,
-  listRateLimit: MiddlewareHandler | undefined,
-  programmaticResolver: ProgrammaticResolver
-): void
-
-export function registerPublicMediaRoutes(
-  app: Hono,
-  mediaRepo: MediaRepository,
-  paths: PublicPaths,
-  listRateLimit: MiddlewareHandler | undefined
+  repos: ContentRepos,                 // = Record<string, ContentRepository<unknown>>
+  listRateLimit?: MiddlewareHandler,
+  resolver?: ProgrammaticResolver
 ): void
 ```
+
+Note the last two are OPTIONAL and named `listRateLimit` / `resolver`. New required parameters must be inserted BEFORE them. The target signature after Tasks 5 and 8, which every call site must match:
+
+```ts
+export function registerPublicContentRoutes(
+  app: Hono,
+  registry: SchemaRegistry,
+  repos: ContentRepos,
+  fieldKeyMaps: Record<string, FieldKeyMap>,
+  paths: PublicPaths,
+  listRateLimit?: MiddlewareHandler,
+  resolver?: ProgrammaticResolver
+): void
+```
+
+Apply the same treatment to `registerPublicMediaRoutes`, inserting `paths: PublicPaths` before its optional rate-limit parameter and keeping its existing parameter names.
 
 Replace every hardcoded template literal:
 
@@ -1447,7 +1460,7 @@ import { createPublicPaths } from '../../paths'
 
 - [ ] **Step 7: Run the full api suite**
 
-Run: `pnpm vitest run packages/api`
+Run: `pnpm --filter @bobbykim/manguito-cms-api test`
 Expected: PASS. Existing tests all use the default prefix, so their paths are unchanged.
 
 - [ ] **Step 8: Commit**
@@ -1462,7 +1475,7 @@ git commit -m "fix(api): centralize public route paths and honor api.prefix"
 ### Task 9: End-to-end divergence proof against real Postgres
 
 **Files:**
-- Create: `packages/api/src/routes/__tests__/field-divergence.integration.test.ts`
+- Create: `packages/api/src/__tests__/field-divergence.integration.test.ts` — integration tests live in `src/__tests__/` with the `.integration.test.ts` suffix in this repo, NOT in `routes/__tests__/`.
 
 **Interfaces:**
 - Consumes: everything from Tasks 1–8.
@@ -1472,7 +1485,7 @@ This is the task that makes the whole stage meaningful: it drives a real Postgre
 
 - [ ] **Step 1: Write the failing test**
 
-Create `packages/api/src/routes/__tests__/field-divergence.integration.test.ts`:
+Create `packages/api/src/__tests__/field-divergence.integration.test.ts`:
 
 ```ts
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
@@ -1557,13 +1570,13 @@ describe('field label / storage column divergence, end to end', () => {
 })
 ```
 
-**Harness:** this repo already runs integration tests against a real Postgres via `globalSetup.ts` (ADR 0003). Obtain `db` the same way the existing integration tests in `packages/api/src/routes/__tests__/` do, and build the app through `createCmsApp` so the whole wiring — field key maps, paths, middleware — is exercised rather than a hand-assembled router. Build the registry by spreading this file's content-type fixture the way `DIVERGENT_TYPE` does in Tasks 3 and 5, with `db.table_name` set to `content_divergence_test`, `default_base_path` set to `divergence_test`, and `fields` set to `[divergentTextField, divergentMediaField]`.
+**Harness (verified pointers):** read `packages/api/src/__tests__/public.integration.test.ts` for the public-read pattern and `packages/api/src/__tests__/admin-write.integration.test.ts` for the authenticated-write pattern, and copy whichever setup they use. Shared DB helpers live in `packages/test-utils/src/db.ts`. This repo already runs integration tests against a real Postgres via `globalSetup.ts` (ADR 0003). Obtain `db` the same way the existing integration tests in `packages/api/src/routes/__tests__/` do, and build the app through `createCmsApp` so the whole wiring — field key maps, paths, middleware — is exercised rather than a hand-assembled router. Build the registry by spreading this file's content-type fixture the way `DIVERGENT_TYPE` does in Tasks 3 and 5, with `db.table_name` set to `content_divergence_test`, `default_base_path` set to `divergence_test`, and `fields` set to `[divergentTextField, divergentMediaField]`.
 
 For `authHeaders`, use whatever the sibling admin integration test uses to authenticate (a signed `auth_token` cookie). Do not weaken auth for this test — if that setup is awkward to reuse, assert the admin case through `registerAdminContentRoutes` with the same permission doubles `content.admin.test.ts` uses, and keep the public assertions on the full `createCmsApp`.
 
 - [ ] **Step 2: Run the test to verify it fails or passes for the right reason**
 
-Run: `pnpm vitest run packages/api/src/routes/__tests__/field-divergence.integration.test.ts`
+Run: `pnpm --filter @bobbykim/manguito-cms-api test src/__tests__/field-divergence.integration.test.ts`
 Expected: PASS if Tasks 1–8 are complete and correct. If any case fails, the failure localizes the gap:
 - label leaking as `blog_title` → Task 5 (public serialization)
 - filter by label returning 0 rows → Task 6 (filter mapping)
@@ -1578,7 +1591,7 @@ Expected: PASS across all packages. This is the stage's exit criterion — no ex
 - [ ] **Step 4: Commit**
 
 ```bash
-git add packages/api/src/routes/__tests__/field-divergence.integration.test.ts
+git add packages/api/src/__tests__/field-divergence.integration.test.ts
 git commit -m "test(api): prove label/storage divergence end to end"
 ```
 
