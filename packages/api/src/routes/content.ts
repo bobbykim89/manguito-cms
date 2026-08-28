@@ -16,6 +16,19 @@ import {
 
 export type ContentRepos = Record<string, ContentRepository<unknown>>
 
+// ─── Response projection order ────────────────────────────────────────────────
+//
+// Every read response maps storage keys → labels exactly ONCE, and that mapping
+// runs BEFORE the programmatic resolver. Two reasons it sits there rather than
+// after:
+//   - a programmatic resolver reads its record through `ctx.get(fieldName)`,
+//     documented (docs/programmatic-fields.md) as the schema field name — the
+//     LABEL — so the row handed to it must already speak labels;
+//   - programmatic fields are not column-backed, so their output keys are labels
+//     already; mapping afterwards would be a no-op on them.
+// Relations are resolved inside the repository, upstream of both, so the mapping
+// still lands strictly after relation resolution.
+
 function isPublished(item: unknown): boolean {
   return (item as Record<string, unknown>)['published'] === true
 }
@@ -86,10 +99,9 @@ export function registerPublicContentRoutes(
             404
           )
         }
-        let data = result.data[0] as Record<string, unknown>
+        // Outbound boundary (see "Response projection order" above).
+        let data = fieldKeyMaps[typeName]!.toLabels(result.data[0] as Record<string, unknown>)
         if (resolver?.hasSchema(typeName)) data = await resolver.resolveItem(typeName, data)
-        // Outbound boundary: rows are storage-keyed; responses speak labels.
-        data = fieldKeyMaps[typeName]!.toLabels(data)
         return c.json({ ok: true, data })
       })
     } else {
@@ -178,11 +190,13 @@ export function registerPublicContentRoutes(
           include,
         })
 
-        const items = resolver?.hasSchema(typeName)
-          ? await resolver.resolveList(typeName, result.data as Record<string, unknown>[])
-          : (result.data as Record<string, unknown>[])
-        // Outbound boundary: rows are storage-keyed; responses speak labels.
-        const data = items.map((row) => fieldKeys.toLabels(row))
+        // Outbound boundary (see "Response projection order" above).
+        const labeled = (result.data as Record<string, unknown>[]).map((row) =>
+          fieldKeys.toLabels(row)
+        )
+        const data = resolver?.hasSchema(typeName)
+          ? await resolver.resolveList(typeName, labeled)
+          : labeled
         return c.json({ ...result, data })
       })
 
@@ -220,10 +234,9 @@ export function registerPublicContentRoutes(
           )
         }
 
-        let data = item as Record<string, unknown>
+        // Outbound boundary (see "Response projection order" above).
+        let data = fieldKeyMaps[typeName]!.toLabels(item as Record<string, unknown>)
         if (resolver?.hasSchema(typeName)) data = await resolver.resolveItem(typeName, data)
-        // Outbound boundary: rows are storage-keyed; responses speak labels.
-        data = fieldKeyMaps[typeName]!.toLabels(data)
         return c.json({ ok: true, data })
       })
     }
@@ -254,12 +267,14 @@ export function registerPublicContentRoutes(
         per_page: pagination.per_page,
       })
 
-      const items = resolver?.hasSchema(typeName)
-        ? await resolver.resolveList(typeName, result.data as Record<string, unknown>[])
-        : (result.data as Record<string, unknown>[])
-      // Outbound boundary: rows are storage-keyed; responses speak labels.
+      // Outbound boundary (see "Response projection order" above).
       const fieldKeys = fieldKeyMaps[typeName]!
-      const data = items.map((row) => fieldKeys.toLabels(row))
+      const labeled = (result.data as Record<string, unknown>[]).map((row) =>
+        fieldKeys.toLabels(row)
+      )
+      const data = resolver?.hasSchema(typeName)
+        ? await resolver.resolveList(typeName, labeled)
+        : labeled
       return c.json({ ...result, data })
     })
 
@@ -278,10 +293,9 @@ export function registerPublicContentRoutes(
         )
       }
 
-      let data = item as Record<string, unknown>
+      // Outbound boundary (see "Response projection order" above).
+      let data = fieldKeyMaps[typeName]!.toLabels(item as Record<string, unknown>)
       if (resolver?.hasSchema(typeName)) data = await resolver.resolveItem(typeName, data)
-      // Outbound boundary: rows are storage-keyed; responses speak labels.
-      data = fieldKeyMaps[typeName]!.toLabels(data)
       return c.json({ ok: true, data })
     })
   }

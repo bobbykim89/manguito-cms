@@ -20,7 +20,7 @@ function isPublished(item: Row | null): boolean {
  * column, which differs once a field has been renamed.
  */
 export function resolveFieldValue(field: ParsedField, row: Record<string, unknown>): unknown {
-  const key = isColumnBacked(field) ? field.db_column!.column_name : field.name
+  const key = isColumnBacked(field) ? field.db_column.column_name : field.name
   return row[key] ?? null
 }
 
@@ -36,12 +36,13 @@ export function relationFieldResolver(typeName: string, schemaFieldName: string)
 export function programmaticFieldResolver(
   typeName: string,
   schemaFieldName: string,
-  mediaFieldNames: readonly string[] = []
+  mediaFieldNames: readonly string[] = [],
+  fieldKeys?: FieldKeyMap
 ) {
   return async (parent: Row, _args: unknown, ctx: GraphQLContext): Promise<unknown> => {
     let p = ctx.programmaticMemo.get(parent)
     if (!p) {
-      p = resolveProgrammaticRow(typeName, parent, ctx, mediaFieldNames)
+      p = resolveProgrammaticRow(typeName, parent, ctx, mediaFieldNames, fieldKeys)
       ctx.programmaticMemo.set(parent, p)
     }
     return (await p)[schemaFieldName]
@@ -59,17 +60,27 @@ export function programmaticFieldResolver(
 // raw id so a query that also selects the media field still resolves. Handing an
 // already-resolved object back to the loader is exactly what broke media here in
 // the first place. Copies still batch — one media query per request, not per row.
+//
+// `ctx.get(fieldName)` takes the schema field name (the LABEL), so the record is
+// projected to labels before the resolver runs — the same order REST uses (see
+// "Response projection order" in routes/content.ts). GraphQL has no route-level
+// projection to double up with: every other field resolves per field by column
+// (resolveFieldValue), so this copy is the only mapped row, and it is mapped
+// strictly after the media loaders have run.
 async function resolveProgrammaticRow(
   typeName: string,
   parent: Row,
   ctx: GraphQLContext,
-  mediaFieldNames: readonly string[]
+  mediaFieldNames: readonly string[],
+  fieldKeys?: FieldKeyMap
 ): Promise<Record<string, unknown>> {
-  if (mediaFieldNames.length === 0) return ctx.resolver.resolveItem(typeName, parent)
+  const toLabels = (row: Row): Row => (fieldKeys ? fieldKeys.toLabels(row) : row)
+
+  if (mediaFieldNames.length === 0) return ctx.resolver.resolveItem(typeName, toLabels(parent))
 
   const enriched: Row = { ...parent }
   await Promise.all(mediaFieldNames.map((name) => ctx.loaders.load(typeName, name, enriched)))
-  return ctx.resolver.resolveItem(typeName, enriched)
+  return ctx.resolver.resolveItem(typeName, toLabels(enriched))
 }
 
 type CollectionArgs = {

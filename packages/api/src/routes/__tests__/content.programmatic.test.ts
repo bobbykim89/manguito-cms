@@ -8,9 +8,9 @@ import type {
   PaginatedResult,
 } from '@bobbykim/manguito-cms-core'
 import { registerPublicContentRoutes } from '../content'
-import { createProgrammaticResolver, resolverKey } from '../../programmatic/resolve.js'
-import { createFieldKeyMap } from '../../field-keys.js'
-import { createPublicPaths } from '../../paths.js'
+import { createProgrammaticResolver, resolverKey } from '../../programmatic/resolve'
+import { createFieldKeyMap } from '../../field-keys'
+import { createPublicPaths } from '../../paths'
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -114,6 +114,31 @@ function repoWith(rows: Record<string, unknown>[]): ContentRepository<unknown> {
 
 const FIELD_KEY_MAPS = { 'content--blog_post': createFieldKeyMap(BLOG.fields) }
 
+// The same schema after a Stage 2 rename: `title` is still the public label but
+// its storage column stayed `blog_title`. A resolver's `ctx.get('title')` must
+// keep working — docs/programmatic-fields.md documents ctx.get as taking the
+// schema field name, and this is a public extension API.
+const DIVERGENT_BLOG: ParsedContentType = {
+  ...BLOG,
+  fields: BLOG.fields.map((f) =>
+    f.name === 'title'
+      ? {
+          ...f,
+          db_column: { column_name: 'blog_title', column_type: 'varchar', nullable: false },
+        }
+      : f
+  ),
+}
+
+const DIVERGENT_REGISTRY: SchemaRegistry = {
+  ...REGISTRY,
+  content_types: { 'content--blog_post': DIVERGENT_BLOG },
+}
+
+const DIVERGENT_FIELD_KEY_MAPS = {
+  'content--blog_post': createFieldKeyMap(DIVERGENT_BLOG.fields),
+}
+
 function resolverFor() {
   const summary = programmaticField(
     { schema: 'content--blog_post', field: 'summary' },
@@ -122,6 +147,24 @@ function resolverFor() {
   const live = programmaticField(
     { schema: 'content--blog_post', field: 'live', on_list: true },
     () => 'L'
+  )
+  const map = new Map([
+    [resolverKey('content--blog_post', 'summary'), summary],
+    [resolverKey('content--blog_post', 'live'), live],
+  ])
+  return createProgrammaticResolver(map)
+}
+
+// Same two resolvers, but the on_list one also reads through ctx.get() so the
+// list path is covered as well as the detail path.
+function divergentResolverFor() {
+  const summary = programmaticField(
+    { schema: 'content--blog_post', field: 'summary' },
+    (ctx) => `S:${ctx.get('title')}`
+  )
+  const live = programmaticField(
+    { schema: 'content--blog_post', field: 'live', on_list: true },
+    (ctx) => `L:${ctx.get('title')}`
   )
   const map = new Map([
     [resolverKey('content--blog_post', 'summary'), summary],
@@ -193,5 +236,46 @@ describe('programmatic resolution in public routes', () => {
     expect(res.status).toBe(400)
     const body = (await res.json()) as { error: { code: string } }
     expect(body.error.code).toBe('INVALID_FILTER_FIELD')
+  })
+})
+
+describe('programmatic resolution with a divergent field label', () => {
+  it('lets ctx.get(label) read a value stored under a different column (detail)', async () => {
+    const app = new Hono()
+    const rows = [{ id: '1', slug: 'a', blog_title: 'Hi', published: true }]
+    registerPublicContentRoutes(
+      app,
+      DIVERGENT_REGISTRY,
+      { 'content--blog_post': repoWith(rows) },
+      DIVERGENT_FIELD_KEY_MAPS,
+      createPublicPaths('/api'),
+      undefined,
+      divergentResolverFor()
+    )
+    const res = await app.request('/api/blog/a')
+    const body = (await res.json()) as { data: Record<string, unknown> }
+    expect(body.data['summary']).toBe('S:Hi')
+    // Exactly one mapping: the response speaks the label and never the column.
+    expect(body.data['title']).toBe('Hi')
+    expect(body.data).not.toHaveProperty('blog_title')
+  })
+
+  it('lets ctx.get(label) read a value stored under a different column (list)', async () => {
+    const app = new Hono()
+    const rows = [{ id: '1', slug: 'a', blog_title: 'Hi', published: true }]
+    registerPublicContentRoutes(
+      app,
+      DIVERGENT_REGISTRY,
+      { 'content--blog_post': repoWith(rows) },
+      DIVERGENT_FIELD_KEY_MAPS,
+      createPublicPaths('/api'),
+      undefined,
+      divergentResolverFor()
+    )
+    const res = await app.request('/api/blog')
+    const body = (await res.json()) as { data: Record<string, unknown>[] }
+    expect(body.data[0]?.['live']).toBe('L:Hi')
+    expect(body.data[0]?.['title']).toBe('Hi')
+    expect(body.data[0]).not.toHaveProperty('blog_title')
   })
 })

@@ -168,7 +168,12 @@ export function buildGraphQLSchema(
           const outType = outputTypeForField(field)
           let resolve: GraphQLFieldConfig<Record<string, unknown>, GraphQLContext>['resolve']
           if (field.field_type === 'programmatic') {
-            resolve = programmaticFieldResolver(machineName, field.name, mediaFieldNames)
+            resolve = programmaticFieldResolver(
+              machineName,
+              field.name,
+              mediaFieldNames,
+              fieldKeyMaps[machineName]
+            )
           } else if (
             field.field_type === 'reference' ||
             field.field_type === 'paragraph' ||
