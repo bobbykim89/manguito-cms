@@ -249,9 +249,24 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
     })
   )
 
+  // ── Field key maps ──────────────────────────────────────────────────────────
+  //
+  // One per content/taxonomy type, built once at startup. Throws on a label /
+  // column collision — the server must not boot with an ambiguous mapping.
+  const fieldKeyMaps: Record<string, FieldKeyMap> = Object.fromEntries([
+    ...Object.entries(registry.content_types).map(([typeName, ct]) => [
+      typeName,
+      createFieldKeyMap((ct as ParsedContentType).fields),
+    ]),
+    ...Object.entries(registry.taxonomy_types).map(([typeName, tt]) => [
+      typeName,
+      createFieldKeyMap((tt as ParsedTaxonomyType).fields),
+    ]),
+  ])
+
   // ── Public routes ─────────────────────────────────────────────────────────────
 
-  registerPublicContentRoutes(app, registry, publicRepos, listRateLimit, programmaticResolver)
+  registerPublicContentRoutes(app, registry, publicRepos, fieldKeyMaps, listRateLimit, programmaticResolver)
   registerPublicMediaRoutes(app, mediaRepo, listRateLimit)
 
   // ── GraphQL (opt-in) ──────────────────────────────────────────────────────────
@@ -323,21 +338,6 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
   )
   registerSchemaRoute(app, registry, db)
   registerUserRoutes(app, db, requirePermission, requireHierarchy)
-
-  // ── Field key maps ──────────────────────────────────────────────────────────
-  //
-  // One per content/taxonomy type, built once at startup. Throws on a label /
-  // column collision — the server must not boot with an ambiguous mapping.
-  const fieldKeyMaps: Record<string, FieldKeyMap> = Object.fromEntries([
-    ...Object.entries(registry.content_types).map(([typeName, ct]) => [
-      typeName,
-      createFieldKeyMap((ct as ParsedContentType).fields),
-    ]),
-    ...Object.entries(registry.taxonomy_types).map(([typeName, tt]) => [
-      typeName,
-      createFieldKeyMap((tt as ParsedTaxonomyType).fields),
-    ]),
-  ])
 
   registerAdminContentRoutes(app, registry, repos, fieldKeyMaps, mediaRepo, requirePermission, db)
   registerAdminMediaRoutes(app, mediaRepo, storage, requirePermission, maxFileSize)

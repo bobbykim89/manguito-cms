@@ -8,6 +8,9 @@ import type {
   FindManyOptions,
 } from '@bobbykim/manguito-cms-core'
 import type { ParsedContentType } from '@bobbykim/manguito-cms-core'
+import { divergentTextField } from '../../field-keys.test-fixtures'
+import { createFieldKeyMap } from '../../field-keys'
+import { createProgrammaticResolver } from '../../programmatic/resolve'
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -87,7 +90,12 @@ describe('public content routes', () => {
   beforeEach(() => {
     mockRepo = makeMockRepo()
     app = new Hono()
-    registerPublicContentRoutes(app, mockRegistry, { 'blog-post': mockRepo })
+    registerPublicContentRoutes(
+      app,
+      mockRegistry,
+      { 'blog-post': mockRepo },
+      { 'blog-post': createFieldKeyMap(BLOG_TYPE.fields) }
+    )
   })
 
   it('public list route always calls findMany with published_only: true', async () => {
@@ -138,5 +146,81 @@ describe('public content routes', () => {
     const body = await res.json() as { ok: boolean; error: { code: string } }
     expect(body.ok).toBe(false)
     expect(body.error.code).toBe('INVALID_INCLUDE_FIELD')
+  })
+})
+
+// Same shape as this file's BLOG_TYPE, with label 'title' over column 'blog_title'.
+const DIVERGENT_TYPE: ParsedContentType = {
+  ...BLOG_TYPE,
+  name: 'divergent-post',
+  default_base_path: 'divergent-post',
+  fields: [divergentTextField],
+  db: { table_name: 'content--divergent_post', junction_tables: [] },
+  api: {
+    default_base_path: 'divergent-post',
+    http_methods: ['GET', 'POST', 'PATCH', 'DELETE'],
+    item_path: '/api/divergent-post/:slug',
+  },
+}
+
+const divergentRegistry: SchemaRegistry = {
+  ...mockRegistry,
+  content_types: { 'divergent-post': DIVERGENT_TYPE },
+}
+
+describe('public reads with a divergent field label', () => {
+  it('returns the label and never the column name', async () => {
+    const repo = makeMockRepo()
+    ;(repo.findMany as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      data: [{ id: 'c1', slug: 'a', published: true, blog_title: 'Hello' }],
+      meta: { total: 1, page: 1, per_page: 10, total_pages: 1, has_next: false, has_prev: false },
+    })
+
+    const app = new Hono()
+    registerPublicContentRoutes(
+      app,
+      divergentRegistry,
+      { 'divergent-post': repo },
+      { 'divergent-post': createFieldKeyMap([divergentTextField]) },
+      undefined,
+      createProgrammaticResolver(new Map())
+    )
+
+    const res = await app.request('/api/divergent-post')
+    const body = await res.json() as { ok: boolean; data: Record<string, unknown>[] }
+
+    expect(res.status).toBe(200)
+    expect(body.ok).toBe(true)
+    expect(body.data[0]).toMatchObject({ slug: 'a', title: 'Hello' })
+    expect(body.data[0]).not.toHaveProperty('blog_title')
+  })
+
+  it('a single-item read (findBySlug) also returns the label, not the column', async () => {
+    const repo = makeMockRepo()
+    ;(repo.findBySlug as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'c1',
+      slug: 'a',
+      published: true,
+      blog_title: 'Hello',
+    })
+
+    const app = new Hono()
+    registerPublicContentRoutes(
+      app,
+      divergentRegistry,
+      { 'divergent-post': repo },
+      { 'divergent-post': createFieldKeyMap([divergentTextField]) },
+      undefined,
+      createProgrammaticResolver(new Map())
+    )
+
+    const res = await app.request('/api/divergent-post/a')
+    const body = await res.json() as { ok: boolean; data: Record<string, unknown> }
+
+    expect(res.status).toBe(200)
+    expect(body.ok).toBe(true)
+    expect(body.data).toMatchObject({ slug: 'a', title: 'Hello' })
+    expect(body.data).not.toHaveProperty('blog_title')
   })
 })

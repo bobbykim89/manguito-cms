@@ -9,6 +9,7 @@ import type {
 } from '@bobbykim/manguito-cms-core'
 import { registerPublicContentRoutes } from '../content'
 import { createProgrammaticResolver, resolverKey } from '../../programmatic/resolve.js'
+import { createFieldKeyMap } from '../../field-keys.js'
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -110,6 +111,8 @@ function repoWith(rows: Record<string, unknown>[]): ContentRepository<unknown> {
   }
 }
 
+const FIELD_KEY_MAPS = { 'content--blog_post': createFieldKeyMap(BLOG.fields) }
+
 function resolverFor() {
   const summary = programmaticField(
     { schema: 'content--blog_post', field: 'summary' },
@@ -136,6 +139,7 @@ describe('programmatic resolution in public routes', () => {
       app,
       REGISTRY,
       { 'content--blog_post': repoWith(rows) },
+      FIELD_KEY_MAPS,
       undefined,
       resolverFor()
     )
@@ -152,6 +156,7 @@ describe('programmatic resolution in public routes', () => {
       app,
       REGISTRY,
       { 'content--blog_post': repoWith(rows) },
+      FIELD_KEY_MAPS,
       undefined,
       resolverFor()
     )
@@ -176,6 +181,7 @@ describe('programmatic resolution in public routes', () => {
       app,
       REGISTRY,
       { 'content--blog_post': repoWith([]) },
+      FIELD_KEY_MAPS,
       undefined,
       resolverFor()
     )

@@ -11,6 +11,7 @@ import type {
 } from '@bobbykim/manguito-cms-core'
 import { createDrizzleContentRepository } from '../repositories/content'
 import { registerPublicContentRoutes } from '../routes/content'
+import { createFieldKeyMap } from '../field-keys'
 
 // Characterizes paragraph + junction relation reads (resolved via ?include= and
 // bare ids without it), which no other integration test exercises. This is the
@@ -244,7 +245,12 @@ async function seedPostWithRelations(): Promise<{ postId: string; catA: string; 
 function publicApp() {
   const repo = createDrizzleContentRepository(db, POST_TABLE, { relations: POST_RELATIONS })
   const app = new Hono()
-  registerPublicContentRoutes(app, TEST_REGISTRY, { 'rel-test-post': repo })
+  registerPublicContentRoutes(
+    app,
+    TEST_REGISTRY,
+    { 'rel-test-post': repo },
+    { 'rel-test-post': createFieldKeyMap(POST_TYPE.fields) }
+  )
   return app
 }
 
@@ -333,13 +339,18 @@ describe('relation reads — bare ids without ?include=', () => {
     expect((data.epigraphs as string[])).toHaveLength(1)
   })
 
-  it('reference field bare id stays under the raw fk column, not the field name', async () => {
-    // A foreign-key reference already carries its id as a real column (category_id)
-    // from SELECT *, so the bare resolver leaves it there — the field name is unset.
+  it('reference field bare id surfaces under its label, not the raw fk column', async () => {
+    // A foreign-key reference already carries its id as a real column
+    // (category_id) from SELECT * — resolveRelationBareIds has no `reference`
+    // branch, so the repository layer never renames it. The public route's
+    // toLabels call is what closes that gap: 'category' (the field's label)
+    // diverges from 'category_id' (its storage column), and the outbound
+    // mapping applied in registerPublicContentRoutes renames the key before
+    // the response is serialized.
     const { catA } = await seedPostWithRelations()
     const res = await publicApp().request(`/api/${BASE_PATH}/with-rels`)
-    const { data } = await res.json() as { data: PostRow & { category_id: string } }
-    expect(data.category_id).toBe(catA)
-    expect(data.category).toBeUndefined()
+    const { data } = await res.json() as { data: PostRow & { category_id?: string } }
+    expect(data.category).toBe(catA)
+    expect(data.category_id).toBeUndefined()
   })
 })

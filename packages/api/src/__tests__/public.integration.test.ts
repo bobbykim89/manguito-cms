@@ -8,6 +8,7 @@ import { createCmsApp } from '../app'
 import { createLocalAdapter } from '../storage/adapters/local'
 import { createDrizzleContentRepository } from '../repositories/content'
 import { registerPublicContentRoutes } from '../routes/content'
+import { createFieldKeyMap } from '../field-keys'
 
 const DB_URL = process.env['DB_URL']
 if (!DB_URL) throw new Error('DB_URL must be set in .env.test before running integration tests')
@@ -243,7 +244,12 @@ describe('public content routes — integration', () => {
     })
 
     const app = new Hono()
-    registerPublicContentRoutes(app, TEST_REGISTRY, { 'pub-test-blog': blogRepo })
+    registerPublicContentRoutes(
+      app,
+      TEST_REGISTRY,
+      { 'pub-test-blog': blogRepo },
+      { 'pub-test-blog': createFieldKeyMap(BLOG_TYPE.fields) }
+    )
 
     const res = await app.request(`/api/${BASE_PATH}?include=category`)
     expect(res.status).toBe(200)

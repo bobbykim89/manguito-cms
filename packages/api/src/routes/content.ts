@@ -4,6 +4,7 @@ import type {
   ContentRepository,
 } from '@bobbykim/manguito-cms-core'
 import type { ProgrammaticResolver } from '../programmatic/resolve.js'
+import type { FieldKeyMap } from '../field-keys.js'
 import {
   SORTABLE_FIELDS,
   RELATION_FIELD_TYPES,
@@ -22,6 +23,7 @@ export function registerPublicContentRoutes(
   app: Hono,
   registry: SchemaRegistry,
   repos: ContentRepos,
+  fieldKeyMaps: Record<string, FieldKeyMap>,
   listRateLimit?: MiddlewareHandler,
   resolver?: ProgrammaticResolver
 ): void {
@@ -84,6 +86,8 @@ export function registerPublicContentRoutes(
         }
         let data = result.data[0] as Record<string, unknown>
         if (resolver?.hasSchema(typeName)) data = await resolver.resolveItem(typeName, data)
+        // Outbound boundary: rows are storage-keyed; responses speak labels.
+        data = fieldKeyMaps[typeName]!.toLabels(data)
         return c.json({ ok: true, data })
       })
     } else {
@@ -170,11 +174,13 @@ export function registerPublicContentRoutes(
           include,
         })
 
-        if (resolver?.hasSchema(typeName)) {
-          const resolved = await resolver.resolveList(typeName, result.data as Record<string, unknown>[])
-          return c.json({ ...result, data: resolved })
-        }
-        return c.json(result)
+        const items = resolver?.hasSchema(typeName)
+          ? await resolver.resolveList(typeName, result.data as Record<string, unknown>[])
+          : (result.data as Record<string, unknown>[])
+        // Outbound boundary: rows are storage-keyed; responses speak labels.
+        const fieldKeys = fieldKeyMaps[typeName]!
+        const data = items.map((row) => fieldKeys.toLabels(row))
+        return c.json({ ...result, data })
       })
 
       app.get(`/api/${basePath}/:slug`, async (c) => {
@@ -210,6 +216,8 @@ export function registerPublicContentRoutes(
 
         let data = item as Record<string, unknown>
         if (resolver?.hasSchema(typeName)) data = await resolver.resolveItem(typeName, data)
+        // Outbound boundary: rows are storage-keyed; responses speak labels.
+        data = fieldKeyMaps[typeName]!.toLabels(data)
         return c.json({ ok: true, data })
       })
     }
@@ -240,11 +248,13 @@ export function registerPublicContentRoutes(
         per_page: pagination.per_page,
       })
 
-      if (resolver?.hasSchema(typeName)) {
-        const resolved = await resolver.resolveList(typeName, result.data as Record<string, unknown>[])
-        return c.json({ ...result, data: resolved })
-      }
-      return c.json(result)
+      const items = resolver?.hasSchema(typeName)
+        ? await resolver.resolveList(typeName, result.data as Record<string, unknown>[])
+        : (result.data as Record<string, unknown>[])
+      // Outbound boundary: rows are storage-keyed; responses speak labels.
+      const fieldKeys = fieldKeyMaps[typeName]!
+      const data = items.map((row) => fieldKeys.toLabels(row))
+      return c.json({ ...result, data })
     })
 
     app.get(`/api/taxonomy/${typeName}/:id`, async (c) => {
@@ -263,6 +273,8 @@ export function registerPublicContentRoutes(
 
       let data = item as Record<string, unknown>
       if (resolver?.hasSchema(typeName)) data = await resolver.resolveItem(typeName, data)
+      // Outbound boundary: rows are storage-keyed; responses speak labels.
+      data = fieldKeyMaps[typeName]!.toLabels(data)
       return c.json({ ok: true, data })
     })
   }
