@@ -325,6 +325,31 @@ function groupBy<T extends Record<string, unknown>>(
 // and media targets are deliberately excluded: paragraph rows are owned by
 // their parent (no independent publish state) and media rows have no
 // `published` column at all.
+// A reference/media pass is DESTRUCTIVE: the resolved object replaces the raw FK
+// value, and when the field's label differs from its FK column (a renamed field)
+// the raw FK key is deleted outright — otherwise the response would carry both
+// the column name and the label.
+//
+// That makes a second pass over the same row object dangerous: the FK the first
+// pass consumed is gone, so the row would be nulled out. And the same object
+// really does recur — reference/junction targets are cached by `table:id`, so two
+// parents receive ONE shared object, and the GraphQL dataloaders deliberately do
+// not memoize by parent identity ("rows are mutated and may recur across nesting
+// levels", dataloaders.ts). So a row that already holds a resolved value is
+// skipped, which makes the pass idempotent.
+function needsFkResolution(
+  row: Record<string, unknown>,
+  fkColumn: string,
+  fieldName: string
+): boolean {
+  // Label diverges from the column: a missing FK key means it was already dropped.
+  if (fkColumn !== fieldName && !(fkColumn in row)) return false
+  // Label equals the column: the resolved object sits where the raw id was, so an
+  // object (never a bare id) means this row is already done.
+  const current = row[fieldName]
+  return !(typeof current === 'object' && current !== null)
+}
+
 export async function resolveRelationField(
   db: DrizzlePostgresInstance,
   rows: Record<string, unknown>[],
@@ -335,8 +360,14 @@ export async function resolveRelationField(
 ): Promise<void> {
   if (rows.length === 0) return
 
+  // Deduped by object identity: one batch can hold the same row twice (see
+  // needsFkResolution above), and the destructive branches would then read an FK
+  // the first visit already consumed. The caller's array is left untouched — the
+  // GraphQL dataloader maps over it to build its results.
+  const batch = [...new Set(rows)]
+
   if (rel.type === 'paragraph') {
-    const parentIds = rows.map((r) => r['id'] as string)
+    const parentIds = batch.map((r) => r['id'] as string)
     const inList = sql.join(parentIds.map((id) => sql`${id}`), sql`, `)
     // Scoped by parent_field as well as parent_id: two paragraph fields of the
     // same paragraph type share one table, so filtering on the parent alone
@@ -345,18 +376,17 @@ export async function resolveRelationField(
       sql`SELECT * FROM ${sql.raw(quoteIdent(rel.table))} WHERE parent_id IN (${inList}) AND parent_field = ${fieldName} ORDER BY "order" ASC`
     )
     const byParent = groupBy(result.rows as Record<string, unknown>[], 'parent_id')
-    for (const row of rows) {
+    for (const row of batch) {
       row[fieldName] = byParent[row['id'] as string] ?? []
     }
   } else if (rel.type === 'reference') {
-    // When the field's label differs from its FK column (a renamed field), the
-    // resolved object lands on the label and the raw FK key must be removed —
-    // otherwise the response carries both the column name and the label.
     const dropFk = rel.fk_column !== fieldName
+    const pending = batch.filter((r) => needsFkResolution(r, rel.fk_column, fieldName))
+    if (pending.length === 0) return
 
-    const fkValues = rows.map((r) => r[rel.fk_column] as string).filter(Boolean)
+    const fkValues = pending.map((r) => r[rel.fk_column] as string).filter(Boolean)
     if (fkValues.length === 0) {
-      for (const row of rows) {
+      for (const row of pending) {
         row[fieldName] = null
         if (dropFk) delete row[rel.fk_column]
       }
@@ -374,13 +404,13 @@ export async function resolveRelationField(
         cache.set(`${rel.table}:${item['id']}`, item)
       }
     }
-    for (const row of rows) {
+    for (const row of pending) {
       const fkVal = row[rel.fk_column] as string
       row[fieldName] = fkVal ? (cache.get(`${rel.table}:${fkVal}`) ?? null) : null
       if (dropFk) delete row[rel.fk_column]
     }
   } else if (rel.type === 'junction') {
-    const parentIds = rows.map((r) => r['id'] as string)
+    const parentIds = batch.map((r) => r['id'] as string)
     const inList = sql.join(parentIds.map((id) => sql`${id}`), sql`, `)
     const orderBy = rel.order_column ? sql` ORDER BY "order" ASC` : sql``
     const junctionResult = await db.execute(
@@ -400,21 +430,20 @@ export async function resolveRelationField(
       }
     }
     const byLeft = groupBy(jRows, rel.left_column)
-    for (const row of rows) {
+    for (const row of batch) {
       const jEntries = byLeft[row['id'] as string] ?? []
       row[fieldName] = jEntries
         .map((jr) => cache.get(`${rel.table}:${jr[rel.right_column] as string}`))
         .filter(Boolean)
     }
   } else if (rel.type === 'media') {
-    // When the field's label differs from its FK column (a renamed field), the
-    // resolved object lands on the label and the raw FK key must be removed —
-    // otherwise the response carries both the column name and the label.
     const dropFk = rel.fk_column !== fieldName
+    const pending = batch.filter((r) => needsFkResolution(r, rel.fk_column, fieldName))
+    if (pending.length === 0) return
 
-    const fkValues = rows.map((r) => r[rel.fk_column] as string).filter(Boolean)
+    const fkValues = pending.map((r) => r[rel.fk_column] as string).filter(Boolean)
     if (fkValues.length === 0) {
-      for (const row of rows) {
+      for (const row of pending) {
         row[fieldName] = null
         if (dropFk) delete row[rel.fk_column]
       }
@@ -429,7 +458,7 @@ export async function resolveRelationField(
         cache.set(`media:${item['id']}`, item)
       }
     }
-    for (const row of rows) {
+    for (const row of pending) {
       const fkVal = row[rel.fk_column] as string
       row[fieldName] = fkVal ? (cache.get(`media:${fkVal}`) ?? null) : null
       if (dropFk) delete row[rel.fk_column]
