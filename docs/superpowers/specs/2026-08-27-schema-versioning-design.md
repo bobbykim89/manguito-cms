@@ -116,6 +116,15 @@ Consequences:
 - `drizzle-kit generate` cannot infer a rename from a schema diff — it prompts interactively to disambiguate rename from drop-plus-add. Immutable column names sidestep that prompt permanently, which also fixes a latent hazard for unversioned projects: renaming a field today either requires an interactive build step or silently becomes drop-plus-add.
 - **The current version is just another projection.** Repositories return rows keyed by column name; every route maps column names to that version's labels through one code path. There is no unprojected path that could drift from the projected one.
 
+**Only column-backed fields can be renamed.** Two field kinds have no column to serve as identity, and their identity is persisted as data:
+
+- **Paragraph fields** (`db_column === null`) — the association lives on the paragraph child table, identified by its `parent_field` value, which stores the field name.
+- **Many-to-many reference fields** (`column_name === ''`) — the junction table owns the association, and its name embeds the field name (`junction_<ownerTable>_<fieldName>`).
+
+Renaming either would orphan stored rows. Both therefore keep the field name as their identity, and a declared rename naming one is rejected at build time with `UNRENAMEABLE_FIELD_KIND`; the escape is to retire the older version first. Programmatic fields have no stored data at all, so renaming one only requires updating its resolver binding key.
+
+Generalizing to a `storage_key` on every field kind — the column name for column-backed fields, the `parent_field` value for paragraph fields, the junction-name component for many-to-many — would make every kind renameable. It is rejected for now because it changes `parent_field` semantics and junction table naming, both already persisted in existing databases, in exchange for renameability on the field kinds authors rarely rename.
+
 Cost: code assuming field name equals column name must be audited. `packages/api/src/app.ts` documents one such assumption in its media-resolution comment ("the FK column and the field share a name"). The audit covers the repositories and relation-resolution paths and is in scope.
 
 ### Core outputs
@@ -266,6 +275,7 @@ Build and parse time — `Result`, per ADR 0001, surfaced by the CLI as a non-ze
 | `VERSION_SNAPSHOT_INVALID` | A snapshot fails to parse |
 | `DUPLICATE_VERSION_SNAPSHOT` | `version:cut` target directory already exists |
 | `UNDECLARED_RENAME_TARGET` | A `changes.json` rename names a field absent from both the snapshot and the current schema |
+| `UNRENAMEABLE_FIELD_KIND` | A declared rename names a paragraph or many-to-many field, whose identity is persisted data |
 
 Startup — throws, matching how `createCmsApp` already treats a broken roles registry or invalid resolver bindings: the server must not boot with an incoherent version set.
 
@@ -327,6 +337,8 @@ Splitting here keeps a risky mechanical refactor separate from new feature surfa
 **Retained data goes stale.** Retention keeps old data readable, not fresh. Once the current schema drops `blog_desc`, the admin panel follows the current schema and stops writing it. v1 consumers then see the last-known value on existing rows and the declared fallback on rows created after the drop.
 
 No design avoids this without per-version write paths, which is substantial machinery for a self-hosted CMS with one schema author. The `fallbacks` map makes the degraded value explicit and author-chosen rather than an implicit null. Documented the way ADR api/0002 documents its media-serving limitation: **a live version is a supported contract, not a permanently faithful one.**
+
+**Paragraph and many-to-many fields cannot be renamed while a version is live.** Their identity is persisted as data (`parent_field` values and junction table names) rather than as a column. Retire the older version first.
 
 **Type changes on live fields are blocked.** Changing a field's type while a live version exposes it requires renaming the field or retiring the version first. This is a deliberate constraint of one-canonical-row, not an oversight.
 
