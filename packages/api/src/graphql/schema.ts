@@ -21,6 +21,7 @@ import type {
   ParsedEnumType,
 } from '@bobbykim/manguito-cms-core'
 import type { GraphQLContext } from './context.js'
+import type { FieldKeyMap } from '../field-keys.js'
 import { DateTimeScalar } from './scalars.js'
 import { scalarOutputType } from './type-mapping.js'
 import {
@@ -69,7 +70,10 @@ const MEDIA = new GraphQLObjectType({
   },
 })
 
-export function buildGraphQLSchema(registry: SchemaRegistry): GraphQLSchema {
+export function buildGraphQLSchema(
+  registry: SchemaRegistry,
+  fieldKeyMaps: Record<string, FieldKeyMap> = {}
+): GraphQLSchema {
   const objectTypes = new Map<string, GraphQLObjectType>() // machineName → type
   const enumTypes = new Map<string, GraphQLEnumType>() // enum machineName → type (only when valid)
 
@@ -174,7 +178,7 @@ export function buildGraphQLSchema(registry: SchemaRegistry): GraphQLSchema {
           ) {
             resolve = relationFieldResolver(machineName, field.name)
           } else {
-            resolve = scalarFieldResolver(field.name)
+            resolve = scalarFieldResolver(field)
           }
           fields[gqlName] = { type: outType, resolve }
         }
@@ -243,7 +247,7 @@ export function buildGraphQLSchema(registry: SchemaRegistry): GraphQLSchema {
         sortOrder: { type: SortOrderEnum },
         ...(filterType ? { filter: { type: filterType } } : {}),
       },
-      resolve: collectionResolver(name, nameMap),
+      resolve: collectionResolver(name, nameMap, fieldKeyMaps[name]),
     }
     queryFields[singleQueryName(name)] = {
       type: objType,
@@ -264,7 +268,7 @@ export function buildGraphQLSchema(registry: SchemaRegistry): GraphQLSchema {
     queryFields[collectionQueryName(name)] = {
       type: new GraphQLNonNull(listType),
       args: { page: { type: GraphQLInt }, perPage: { type: GraphQLInt } },
-      resolve: collectionResolver(name, buildFieldNameMap(tt.fields.map((f) => f.name))),
+      resolve: collectionResolver(name, buildFieldNameMap(tt.fields.map((f) => f.name)), fieldKeyMaps[name]),
     }
     queryFields[singleQueryName(name)] = {
       type: objType,

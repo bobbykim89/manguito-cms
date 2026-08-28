@@ -295,7 +295,7 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
     let initError: unknown = null
     const ready = import('./graphql/handler.js')
       .then(({ createGraphQLHandler }) => {
-        gqlHandler = createGraphQLHandler(registry, graphqlRepos, programmaticResolver, db, gqlOptions)
+        gqlHandler = createGraphQLHandler(registry, graphqlRepos, fieldKeyMaps, programmaticResolver, db, gqlOptions)
       })
       .catch((err: unknown) => {
         initError = err

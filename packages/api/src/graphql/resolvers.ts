@@ -1,6 +1,8 @@
 import { GraphQLError } from 'graphql'
+import type { ParsedField } from '@bobbykim/manguito-cms-core'
 import type { GraphQLContext } from './context.js'
 import { translateFilters } from './filters.js'
+import { isColumnBacked, type FieldKeyMap } from '../field-keys.js'
 
 type Row = Record<string, unknown>
 
@@ -12,8 +14,18 @@ function isPublished(item: Row | null): boolean {
   return !!item && item['published'] === true
 }
 
-export function scalarFieldResolver(schemaName: string) {
-  return (parent: Row): unknown => parent[schemaName]
+/**
+ * A GraphQL field's value on a content row. The GraphQL field NAME comes from
+ * the field's label (see naming.ts), but the value lives under its storage
+ * column, which differs once a field has been renamed.
+ */
+export function resolveFieldValue(field: ParsedField, row: Record<string, unknown>): unknown {
+  const key = isColumnBacked(field) ? field.db_column!.column_name : field.name
+  return row[key] ?? null
+}
+
+export function scalarFieldResolver(field: ParsedField) {
+  return (parent: Row): unknown => resolveFieldValue(field, parent)
 }
 
 export function relationFieldResolver(typeName: string, schemaFieldName: string) {
@@ -70,7 +82,8 @@ type CollectionArgs = {
 
 export function collectionResolver(
   typeName: string,
-  nameMap: { toSchema(g: string): string }
+  nameMap: { toSchema(g: string): string },
+  fieldKeys?: FieldKeyMap
 ) {
   return async (_root: unknown, args: CollectionArgs, ctx: GraphQLContext) => {
     const page = args.page ?? 1
@@ -88,7 +101,7 @@ export function collectionResolver(
       per_page: perPage,
       sort_by: (args.sortBy ?? 'created_at') as 'title' | 'created_at' | 'updated_at',
       sort_order: args.sortOrder ?? 'asc',
-      filters: translateFilters(args.filter, nameMap),
+      filters: translateFilters(args.filter, nameMap, fieldKeys?.columnFor),
     })
     return { data: result.data as Row[], meta: result.meta }
   }

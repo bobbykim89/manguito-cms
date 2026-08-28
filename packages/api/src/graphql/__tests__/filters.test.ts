@@ -39,6 +39,13 @@ describe('translateFilters', () => {
   it('returns an empty object for undefined input', () => {
     expect(translateFilters(undefined, nameMap)).toEqual({})
   })
+
+  it('emits the storage column, not the label', () => {
+    const nameMap = { toSchema: (g: string) => (g === 'title' ? 'title' : g) }
+    const columnFor = (label: string) => (label === 'title' ? 'blog_title' : undefined)
+    const out = translateFilters({ title: { eq: 'Hello' } }, nameMap, columnFor)
+    expect(out).toEqual({ blog_title: 'Hello' })
+  })
 })
 
 describe('buildFilterInputType', () => {

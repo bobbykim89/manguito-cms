@@ -113,16 +113,26 @@ export function buildFilterInputType(
 
 // Convert a GraphQL filter argument into the repository's filters map, keyed by
 // snake_case column. eq → scalar, in → array (OR/IN), gt/gte/lt/lte → operator.
+//
+// `nameMap.toSchema` only ever recovers the schema field's LABEL (`field.name`)
+// from the GraphQL name — that mapping is unaware of storage columns. `columnFor`
+// (typically `FieldKeyMap.columnFor`) takes that label the rest of the way to the
+// storage column the repository actually filters on. It's optional so callers
+// that haven't threaded a FieldKeyMap through yet keep working unchanged: with no
+// mapper, or when it returns nothing for a given label, the label itself is used —
+// correct as long as it equals its column.
 export function translateFilters(
   input: Record<string, unknown> | undefined,
-  nameMap: { toSchema(g: string): string }
+  nameMap: { toSchema(g: string): string },
+  columnFor?: (label: string) => string | undefined
 ): Record<string, FilterValue> {
   const out: Record<string, FilterValue> = {}
   if (!input) return out
 
   for (const [gqlField, raw] of Object.entries(input)) {
     if (raw === null || typeof raw !== 'object') continue
-    const column = nameMap.toSchema(gqlField)
+    const label = nameMap.toSchema(gqlField)
+    const column = columnFor?.(label) ?? label
     const spec = raw as Record<string, unknown>
 
     // eq/in take priority over range operators (gt/gte/lt/lte) when a client sends

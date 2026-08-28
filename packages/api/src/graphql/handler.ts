@@ -3,6 +3,7 @@ import type { Handler } from 'hono'
 import type { SchemaRegistry, ContentRepository } from '@bobbykim/manguito-cms-core'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import type { ProgrammaticResolver } from '../programmatic/resolve.js'
+import type { FieldKeyMap } from '../field-keys.js'
 import type { GraphQLContext } from './context.js'
 import { buildGraphQLSchema } from './schema.js'
 import { createRelationLoaders } from './dataloaders.js'
@@ -41,11 +42,12 @@ function isClientSafeGraphQLError(error: unknown): boolean {
 export function createGraphQLHandler(
   registry: SchemaRegistry,
   repos: Record<string, ContentRepository<unknown>>,
+  fieldKeyMaps: Record<string, FieldKeyMap>,
   resolver: ProgrammaticResolver,
   db: DrizzlePostgresInstance,
   options: ResolvedGraphQLOptions
 ): Handler {
-  const schema = buildGraphQLSchema(registry)
+  const schema = buildGraphQLSchema(registry, fieldKeyMaps)
   const { plugins } = buildArmorPlugin({
     maxDepth: options.maxDepth,
     maxComplexity: options.maxComplexity,
