@@ -159,3 +159,38 @@ describe('DrizzleContentRepository — findMany', () => {
     expect(text.toUpperCase()).toContain('AND')
   })
 })
+
+describe('sortableColumns', () => {
+  it('accepts a column from the supplied set and orders by it', async () => {
+    const mockDb = makeMockDb(0, [])
+    const repo = createDrizzleContentRepository(mockDb as unknown as DrizzlePostgresInstance, 'content_post', {
+      sortableColumns: new Set(['blog_title', 'created_at', 'updated_at']),
+    })
+
+    await repo.findMany({ sort_by: 'blog_title' as never })
+
+    const dataQuery = mockDb.execute.mock.calls[1]![0]
+    expect(toSQLText(dataQuery)).toContain('ORDER BY "blog_title"')
+  })
+
+  it('rejects a value outside the supplied set', async () => {
+    const mockDb = makeMockDb(0, [])
+    const repo = createDrizzleContentRepository(mockDb as unknown as DrizzlePostgresInstance, 'content_post', {
+      sortableColumns: new Set(['created_at']),
+    })
+
+    await expect(repo.findMany({ sort_by: 'blog_title' as never })).rejects.toThrow(
+      /not sortable/i
+    )
+  })
+
+  it('falls back to SORTABLE_FIELDS when no set is supplied', async () => {
+    const mockDb = makeMockDb(0, [])
+    const repo = createDrizzleContentRepository(mockDb as unknown as DrizzlePostgresInstance, 'content_post')
+
+    await expect(repo.findMany({ sort_by: 'blog_title' as never })).rejects.toThrow(
+      /not sortable/i
+    )
+    await expect(repo.findMany({ sort_by: 'created_at' })).resolves.toBeDefined()
+  })
+})

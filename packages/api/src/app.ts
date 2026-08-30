@@ -25,6 +25,7 @@ import { createDrizzleContentRepository } from './repositories/content.js'
 import { buildRelationsMap } from './relations.js'
 import { createMediaRepository } from './repositories/media.js'
 import { createFieldKeyMap, type FieldKeyMap } from './field-keys.js'
+import { SORTABLE_FIELDS } from './routes/query-params.js'
 import { buildProjectors, type Projectors } from './projector.js'
 import { normalizePrefix, createPublicPaths } from './paths.js'
 
@@ -162,18 +163,31 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
   // response is projected through this rather than through a bare toLabels.
   const projectors = buildProjectors(registry, { ...fieldKeyMaps, ...paragraphFieldKeyMaps })
 
+  // Maps SORTABLE_FIELDS' labels to this type's storage columns, so the
+  // repository can validate sort_by against columns once the route has mapped
+  // it. Identity today for every schema the parser produces — diverges only
+  // once schema versioning lands and a label's column_name differs from it.
+  const sortableColumnsFor = (typeName: string): Set<string> =>
+    new Set(
+      [...SORTABLE_FIELDS].map((label) => fieldKeyMaps[typeName]!.columnFor(label) ?? label)
+    )
+
   // ── Repositories ──────────────────────────────────────────────────────────────
 
   const contentRepos = Object.fromEntries(
     Object.entries(registry.content_types).map(([typeName, ct]) => [
       typeName,
-      createDrizzleContentRepository(db, (ct as ParsedContentType).db.table_name),
+      createDrizzleContentRepository(db, (ct as ParsedContentType).db.table_name, {
+        sortableColumns: sortableColumnsFor(typeName),
+      }),
     ])
   )
   const taxonomyRepos = Object.fromEntries(
     Object.entries(registry.taxonomy_types).map(([typeName, tt]) => [
       typeName,
-      createDrizzleContentRepository(db, (tt as ParsedTaxonomyType).db.table_name),
+      createDrizzleContentRepository(db, (tt as ParsedTaxonomyType).db.table_name, {
+        sortableColumns: sortableColumnsFor(typeName),
+      }),
     ])
   )
   const repos = { ...contentRepos, ...taxonomyRepos }
@@ -191,6 +205,7 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
       createDrizzleContentRepository(db, (ct as ParsedContentType).db.table_name, {
         relations: buildRelationsMap((ct as ParsedContentType).fields, registry),
         publishedRelations: true,
+        sortableColumns: sortableColumnsFor(typeName),
       }),
     ])
   )
@@ -200,6 +215,7 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
       createDrizzleContentRepository(db, (tt as ParsedTaxonomyType).db.table_name, {
         relations: buildRelationsMap((tt as ParsedTaxonomyType).fields, registry),
         publishedRelations: true,
+        sortableColumns: sortableColumnsFor(typeName),
       }),
     ])
   )

@@ -182,11 +182,17 @@ export function registerPublicContentRoutes(
           }
         }
 
+        // sortBy is a validated label (checked above); map it to its storage
+        // column before it reaches the repository. The cast is a narrow lie —
+        // core types sort_by as the label union, but the repository
+        // immediately re-validates the mapped value against sortableColumns.
+        const sortColumn = fieldKeys.columnFor(sortBy) ?? sortBy
+
         const result = await repo.findMany({
           published_only: true,
           page: pagination.page,
           per_page: pagination.per_page,
-          sort_by: sortBy as 'title' | 'created_at' | 'updated_at',
+          sort_by: sortColumn as 'title' | 'created_at' | 'updated_at',
           sort_order: sortOrder as 'asc' | 'desc',
           filters: filtersResult.filters,
           include,

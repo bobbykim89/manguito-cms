@@ -263,10 +263,16 @@ export function registerAdminContentRoutes(
         const extraFilters: Record<string, FilterValue> = {}
         if (publishedParam === 'false') extraFilters['published'] = false
 
+        // parsed.sortBy is a validated label; map it to its storage column
+        // before it reaches the repository. The cast is a narrow lie — core
+        // types sort_by as the label union, but the repository immediately
+        // re-validates the mapped value against sortableColumns.
+        const sortColumn = fieldKeys.columnFor(parsed.sortBy) ?? parsed.sortBy
+
         const findOpts: Parameters<typeof repo.findMany>[0] = {
           page: parsed.pagination.page,
           per_page: parsed.pagination.per_page,
-          sort_by: parsed.sortBy as 'title' | 'created_at' | 'updated_at',
+          sort_by: sortColumn as 'title' | 'created_at' | 'updated_at',
           sort_order: parsed.sortOrder as 'asc' | 'desc',
           filters: { ...parsed.filters, ...extraFilters },
           include: parsed.include,
@@ -787,10 +793,16 @@ export function registerAdminContentRoutes(
         const extraFilters: Record<string, FilterValue> = {}
         if (publishedParam === 'false') extraFilters['published'] = false
 
+        // parsed.sortBy is a validated label; map it to its storage column
+        // before it reaches the repository. The cast is a narrow lie — core
+        // types sort_by as the label union, but the repository immediately
+        // re-validates the mapped value against sortableColumns.
+        const sortColumn = fieldKeys.columnFor(parsed.sortBy) ?? parsed.sortBy
+
         const findOpts: Parameters<typeof repo.findMany>[0] = {
           page: parsed.pagination.page,
           per_page: parsed.pagination.per_page,
-          sort_by: parsed.sortBy as 'title' | 'created_at' | 'updated_at',
+          sort_by: sortColumn as 'title' | 'created_at' | 'updated_at',
           sort_order: parsed.sortOrder as 'asc' | 'desc',
           filters: { ...parsed.filters, ...extraFilters },
           include: parsed.include,

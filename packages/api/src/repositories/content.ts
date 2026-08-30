@@ -25,6 +25,11 @@ export type ContentRepositoryOptions = {
    * rows only. Set by the public repos in app.ts; admin repos leave this false
    * so drafts remain visible to admin. */
   publishedRelations?: boolean
+  /** Storage columns valid for ORDER BY, supplied by the route once it has
+   * mapped a validated label to its column. Optional for backward
+   * compatibility: when absent, falls back to validating sort_by against
+   * SORTABLE_FIELDS (labels), the pre-versioning behavior. */
+  sortableColumns?: Set<string>
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -113,7 +118,7 @@ export function createDrizzleContentRepository<T>(
   tableName: string,
   options: ContentRepositoryOptions = {}
 ): ContentRepository<T> {
-  const { relations = {}, publishedRelations = false } = options
+  const { relations = {}, publishedRelations = false, sortableColumns } = options
 
   function tableRaw(): SQL {
     return sql.raw(quoteIdent(tableName))
@@ -167,8 +172,15 @@ export function createDrizzleContentRepository<T>(
         search,
       } = opts
 
-      if (!SORTABLE_FIELDS.has(sort_by as string)) {
-        throw codeError('INVALID_SORT_FIELD', `'${sort_by}' is not sortable. Allowed: title, created_at, updated_at`)
+      // Sorting is validated against COLUMNS when the caller supplies the set
+      // (the route has already validated the label and mapped it). Without one,
+      // fall back to the label allowlist — the pre-versioning behavior.
+      const allowed = sortableColumns ?? SORTABLE_FIELDS
+      if (!allowed.has(sort_by as string)) {
+        throw codeError(
+          'INVALID_SORT_FIELD',
+          `'${sort_by}' is not sortable. Allowed: ${[...allowed].join(', ')}`
+        )
       }
 
       const offset = (page - 1) * per_page
