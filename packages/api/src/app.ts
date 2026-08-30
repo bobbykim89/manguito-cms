@@ -24,6 +24,8 @@ import { registerSchemaRoute } from './routes/admin/schema.js'
 import { createDrizzleContentRepository } from './repositories/content.js'
 import { buildRelationsMap } from './relations.js'
 import { createMediaRepository } from './repositories/media.js'
+import { createFieldKeyMap, type FieldKeyMap } from './field-keys.js'
+import { normalizePrefix, createPublicPaths } from './paths.js'
 
 export type CreateCmsAppOptions = {
   /** CMS display name shown in GET /admin/api/config. Defaults to 'Manguito CMS'. */
@@ -64,7 +66,8 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
     throw new Error(MISSING_STORAGE_ERROR)
   }
 
-  const prefix = options.prefix ?? '/api'
+  const prefix = normalizePrefix(options.prefix)
+  const publicPaths = createPublicPaths(prefix)
   const { storage, registry, db, rateLimit, media, cors } = options
   const cmsName = options.name ?? 'Manguito CMS'
   const maxFileSize = media?.max_file_size
@@ -212,26 +215,30 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
 
   // ── OpenAPI spec endpoints ────────────────────────────────────────────────────
 
-  app.get('/api/openapi.json', (c) => {
+  app.get(publicPaths.openapi(), (c) => {
     const paths: Record<string, unknown> = {}
 
     for (const ct of Object.values(registry.content_types) as ParsedContentType[]) {
       const base = ct.default_base_path
       if (ct.only_one) {
-        paths[`/api/${base}`] = { get: { summary: `Get ${ct.label}`, tags: [ct.label] } }
+        paths[publicPaths.collection(base)] = { get: { summary: `Get ${ct.label}`, tags: [ct.label] } }
       } else {
-        paths[`/api/${base}`] = { get: { summary: `List published ${ct.label}`, tags: [ct.label] } }
-        paths[`/api/${base}/{slug}`] = { get: { summary: `Get ${ct.label} by slug`, tags: [ct.label] } }
+        paths[publicPaths.collection(base)] = { get: { summary: `List published ${ct.label}`, tags: [ct.label] } }
+        paths[publicPaths.item(base).replace(':slug', '{slug}')] = {
+          get: { summary: `Get ${ct.label} by slug`, tags: [ct.label] },
+        }
       }
     }
 
     for (const tt of Object.values(registry.taxonomy_types) as ParsedTaxonomyType[]) {
-      paths[`/api/taxonomy/${tt.name}`] = { get: { summary: `List published ${tt.label}`, tags: [tt.label] } }
-      paths[`/api/taxonomy/${tt.name}/{id}`] = { get: { summary: `Get ${tt.label} by id`, tags: [tt.label] } }
+      paths[publicPaths.taxonomyCollection(tt.name)] = { get: { summary: `List published ${tt.label}`, tags: [tt.label] } }
+      paths[publicPaths.taxonomyItem(tt.name).replace(':id', '{id}')] = {
+        get: { summary: `Get ${tt.label} by id`, tags: [tt.label] },
+      }
     }
 
-    paths['/api/media'] = { get: { summary: 'List media items', tags: ['Media'] } }
-    paths['/api/media/{id}'] = { get: { summary: 'Get media item by id', tags: ['Media'] } }
+    paths[publicPaths.mediaCollection()] = { get: { summary: 'List media items', tags: ['Media'] } }
+    paths[publicPaths.mediaItem().replace(':id', '{id}')] = { get: { summary: 'Get media item by id', tags: ['Media'] } }
 
     return c.json({
       openapi: '3.0.3',
@@ -248,10 +255,25 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
     })
   )
 
+  // ── Field key maps ──────────────────────────────────────────────────────────
+  //
+  // One per content/taxonomy type, built once at startup. Throws on a label /
+  // column collision — the server must not boot with an ambiguous mapping.
+  const fieldKeyMaps: Record<string, FieldKeyMap> = Object.fromEntries([
+    ...Object.entries(registry.content_types).map(([typeName, ct]) => [
+      typeName,
+      createFieldKeyMap((ct as ParsedContentType).fields),
+    ]),
+    ...Object.entries(registry.taxonomy_types).map(([typeName, tt]) => [
+      typeName,
+      createFieldKeyMap((tt as ParsedTaxonomyType).fields),
+    ]),
+  ])
+
   // ── Public routes ─────────────────────────────────────────────────────────────
 
-  registerPublicContentRoutes(app, registry, publicRepos, listRateLimit, programmaticResolver)
-  registerPublicMediaRoutes(app, mediaRepo, listRateLimit)
+  registerPublicContentRoutes(app, registry, publicRepos, fieldKeyMaps, publicPaths, listRateLimit, programmaticResolver)
+  registerPublicMediaRoutes(app, mediaRepo, publicPaths, listRateLimit)
 
   // ── GraphQL (opt-in) ──────────────────────────────────────────────────────────
   //
@@ -279,7 +301,7 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
     let initError: unknown = null
     const ready = import('./graphql/handler.js')
       .then(({ createGraphQLHandler }) => {
-        gqlHandler = createGraphQLHandler(registry, graphqlRepos, programmaticResolver, db, gqlOptions)
+        gqlHandler = createGraphQLHandler(registry, graphqlRepos, fieldKeyMaps, programmaticResolver, db, gqlOptions)
       })
       .catch((err: unknown) => {
         initError = err
@@ -322,7 +344,8 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
   )
   registerSchemaRoute(app, registry, db)
   registerUserRoutes(app, db, requirePermission, requireHierarchy)
-  registerAdminContentRoutes(app, registry, repos, mediaRepo, requirePermission, db)
+
+  registerAdminContentRoutes(app, registry, repos, fieldKeyMaps, mediaRepo, requirePermission, db)
   registerAdminMediaRoutes(app, mediaRepo, storage, requirePermission, maxFileSize)
 
   return { prefix, app }

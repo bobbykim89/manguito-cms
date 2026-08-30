@@ -1,13 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { Hono } from 'hono'
 import { registerAdminContentRoutes } from '../admin/content'
+import { createFieldKeyMap, type FieldKeyMap } from '../../field-keys'
+import { divergentTextField } from '../../field-keys.test-fixtures'
 import type {
   ContentRepository,
   MediaRepository,
   PaginatedResult,
   SchemaRegistry,
 } from '@bobbykim/manguito-cms-core'
-import type { ParsedContentType, ParsedTaxonomyType } from '@bobbykim/manguito-cms-core'
+import type { ParsedContentType, ParsedField, ParsedTaxonomyType } from '@bobbykim/manguito-cms-core'
 import type { createPermissionMiddleware } from '../../middleware/permission'
 
 // This suite exercises route business logic directly (validation, media/paragraph
@@ -63,6 +65,21 @@ const BLOG_TYPE: ParsedContentType = {
     default_base_path: 'blog-post',
     http_methods: ['GET', 'POST', 'PATCH', 'DELETE'],
     item_path: '/api/blog-post/:slug',
+  },
+}
+
+// Same shape as BLOG_TYPE, but its single field's label ('title') differs from
+// its storage column ('blog_title').
+const DIVERGENT_TYPE: ParsedContentType = {
+  ...BLOG_TYPE,
+  name: 'divergent-post',
+  default_base_path: 'divergent-post',
+  fields: [divergentTextField],
+  db: { table_name: 'content--divergent_post', junction_tables: [] },
+  api: {
+    default_base_path: 'divergent-post',
+    http_methods: ['GET', 'POST', 'PATCH', 'DELETE'],
+    item_path: '/api/divergent-post/:slug',
   },
 }
 
@@ -196,6 +213,42 @@ function makeMockMediaRepo(): MediaRepository {
   }
 }
 
+// Standalone app builder for the divergent-label fixture — kept separate from
+// the main `describe` block's shared registry/app since it exercises a single
+// content type whose label diverges from its storage column.
+function buildDivergentAdminApp(
+  repo: ContentRepository<unknown>,
+  fields: ParsedField[] = [divergentTextField]
+): Hono {
+  const registry: SchemaRegistry = {
+    routes: { base_paths: [] },
+    roles: { roles: [], valid_permissions: [] },
+    schemas: {},
+    content_types: {
+      'divergent-post': { ...DIVERGENT_TYPE, fields },
+    },
+    paragraph_types: {},
+    taxonomy_types: {},
+    enum_types: {},
+    all_schemas: [],
+  }
+
+  const fieldKeyMaps: Record<string, FieldKeyMap> = {
+    'divergent-post': createFieldKeyMap(fields),
+  }
+
+  const app = new Hono()
+  registerAdminContentRoutes(
+    app,
+    registry,
+    { 'divergent-post': repo },
+    fieldKeyMaps,
+    makeMockMediaRepo(),
+    noopRequirePermission
+  )
+  return app
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('admin content routes', () => {
@@ -223,6 +276,17 @@ describe('admin content routes', () => {
     all_schemas: [],
   }
 
+  const fieldKeyMaps: Record<string, FieldKeyMap> = Object.fromEntries([
+    ...Object.entries(registry.content_types).map(([typeName, ct]) => [
+      typeName,
+      createFieldKeyMap(ct.fields),
+    ]),
+    ...Object.entries(registry.taxonomy_types).map(([typeName, tt]) => [
+      typeName,
+      createFieldKeyMap(tt.fields),
+    ]),
+  ])
+
   beforeEach(() => {
     mockBlogRepo = makeMockRepo()
     mockSingletonRepo = makeMockRepo()
@@ -235,7 +299,7 @@ describe('admin content routes', () => {
       'home-page': mockSingletonRepo,
       'page-with-image': mockMediaTypeRepo,
       category: mockCategoryRepo,
-    }, mockMediaRepo, noopRequirePermission)
+    }, fieldKeyMaps, mockMediaRepo, noopRequirePermission)
   })
 
   describe('PATCH — publish validation', () => {
@@ -491,7 +555,7 @@ describe('admin content routes', () => {
         'home-page': mockSingletonRepo,
         'page-with-image': mockMediaTypeRepo,
         category: mockCategoryRepo,
-      }, mockMediaRepo, selectiveRequirePermission)
+      }, fieldKeyMaps, mockMediaRepo, selectiveRequirePermission)
       return createOnlyApp
     }
 
@@ -589,5 +653,121 @@ describe('admin content routes', () => {
       expect(body.ok).toBe(false)
       expect(body.error.code).toBe('SINGLETON_ALREADY_EXISTS')
     })
+  })
+})
+
+describe('admin writes with a divergent field label', () => {
+  it('persists the storage column, not the label', async () => {
+    const repo = makeMockRepo()
+    ;(repo.create as ReturnType<typeof vi.fn>).mockImplementation(
+      async (data: Record<string, unknown>) => ({ id: 'new-id', slug: 'a', published: false, ...data })
+    )
+    const app = buildDivergentAdminApp(repo)
+
+    const res = await app.request('/admin/api/content/divergent-post', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ slug: 'a', title: 'Hello' }),
+    })
+
+    expect(res.status).toBe(201)
+
+    const passed = (repo.create as ReturnType<typeof vi.fn>).mock.calls[0]![0] as Record<string, unknown>
+    expect(passed).toMatchObject({ blog_title: 'Hello' })
+    expect(passed).not.toHaveProperty('title')
+  })
+})
+
+describe('admin reads with a divergent field label', () => {
+  it('returns the label and never the column name', async () => {
+    const repo = makeMockRepo()
+    ;(repo.findMany as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      data: [{ id: 'c1', slug: 'a', published: true, blog_title: 'Hello' }],
+      meta: { total: 1, page: 1, per_page: 10, total_pages: 1, has_next: false, has_prev: false },
+    })
+    const app = buildDivergentAdminApp(repo)
+
+    const res = await app.request('/admin/api/content/divergent-post')
+    const body = await res.json() as { data: Record<string, unknown>[] }
+
+    expect(res.status).toBe(200)
+    expect(body.data[0]).toMatchObject({ slug: 'a', title: 'Hello' })
+    expect(body.data[0]).not.toHaveProperty('blog_title')
+  })
+})
+
+describe('admin list filters with a divergent field label', () => {
+  it('validates the filter by label and queries by storage column', async () => {
+    const repo = makeMockRepo()
+    const app = buildDivergentAdminApp(repo)
+
+    const res = await app.request('/admin/api/content/divergent-post?filter[title]=Hello')
+
+    expect(res.status).toBe(200)
+    const opts = (repo.findMany as ReturnType<typeof vi.fn>).mock.calls[0]![0] as {
+      filters: Record<string, unknown>
+    }
+    expect(opts.filters).toEqual({ blog_title: 'Hello' })
+    expect(opts.filters).not.toHaveProperty('title')
+  })
+
+  it('still rejects a filter on a field that does not exist', async () => {
+    const repo = makeMockRepo()
+    const app = buildDivergentAdminApp(repo)
+
+    const res = await app.request('/admin/api/content/divergent-post?filter[nope]=x')
+
+    expect(res.status).toBe(400)
+    const body = (await res.json()) as { error: { code: string } }
+    expect(body.error.code).toBe('INVALID_FILTER_FIELD')
+  })
+})
+
+describe('admin publish validation with a divergent field label', () => {
+  const requiredDivergentField: ParsedField = {
+    ...divergentTextField,
+    required: true,
+    nullable: false,
+    validation: { required: true },
+  }
+
+  it('publishes when the required value is already stored under its column', async () => {
+    const repo = makeMockRepo()
+    const existing = { id: 'item-1', slug: 'a', published: false, blog_title: 'Hello' }
+    ;(repo.findOne as ReturnType<typeof vi.fn>).mockResolvedValue(existing)
+    ;(repo.update as ReturnType<typeof vi.fn>).mockResolvedValue({ ...existing, published: true })
+    const app = buildDivergentAdminApp(repo, [requiredDivergentField])
+
+    const res = await app.request('/admin/api/content/divergent-post/item-1', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ published: true }),
+    })
+
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { ok: boolean; data: Record<string, unknown> }
+    expect(body.ok).toBe(true)
+    expect(body.data).toMatchObject({ title: 'Hello', published: true })
+  })
+
+  it('still refuses to publish when the storage column is empty', async () => {
+    const repo = makeMockRepo()
+    const existing = { id: 'item-1', slug: 'a', published: false, blog_title: '' }
+    ;(repo.findOne as ReturnType<typeof vi.fn>).mockResolvedValue(existing)
+    const app = buildDivergentAdminApp(repo, [requiredDivergentField])
+
+    const res = await app.request('/admin/api/content/divergent-post/item-1', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ published: true }),
+    })
+
+    expect(res.status).toBe(422)
+    const body = (await res.json()) as {
+      error: { code: string; details: { field: string }[] }
+    }
+    expect(body.error.code).toBe('PUBLISH_VALIDATION_ERROR')
+    expect(body.error.details.map((d) => d.field)).toEqual(['title'])
   })
 })

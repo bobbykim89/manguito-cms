@@ -28,6 +28,7 @@ import {
 } from '../../relations.js'
 import type { createPermissionMiddleware } from '../../middleware/permission.js'
 import type { ContentRepos } from '../content.js'
+import { isColumnBacked, type FieldKeyMap } from '../../field-keys.js'
 
 // ─── SQL helpers ─────────────────────────────────────────────────────────────
 
@@ -113,10 +114,15 @@ type ListQueryResult =
     }
   | { ok: false; response: { code: string; message: string }; status: 400 }
 
+// `columnFor` maps a validated label to its storage column. Filters are
+// validated against labels (what the client sends) and emitted as columns (what
+// the repository queries) — without it a renamed field would be filtered on a
+// column that does not exist.
 function parseListQuery(
   url: string,
   schemaFieldNames: Set<string>,
-  relationFieldNames: Set<string>
+  relationFieldNames: Set<string>,
+  columnFor: (label: string) => string | undefined
 ): ListQueryResult {
   const searchParams = new URL(url).searchParams
 
@@ -156,7 +162,7 @@ function parseListQuery(
     }
   }
 
-  const filtersResult = parseFilters(url, schemaFieldNames)
+  const filtersResult = parseFilters(url, schemaFieldNames, columnFor)
   if (!filtersResult.ok) {
     return {
       ok: false,
@@ -198,6 +204,7 @@ export function registerAdminContentRoutes(
   app: Hono,
   registry: SchemaRegistry,
   repos: ContentRepos,
+  fieldKeyMaps: Record<string, FieldKeyMap>,
   mediaRepo: MediaRepository,
   requirePermission: ReturnType<typeof createPermissionMiddleware>,
   db?: DrizzlePostgresInstance,
@@ -219,6 +226,8 @@ export function registerAdminContentRoutes(
         .filter((f) => RELATION_FIELD_TYPES.has(f.field_type))
         .map((f) => f.name)
     )
+
+    const fieldKeys = fieldKeyMaps[typeName]!
 
     const requiredFields = contentType.fields.filter((f) => f.required)
 
@@ -243,7 +252,7 @@ export function registerAdminContentRoutes(
       `/admin/api/${basePath}`,
       requirePermission('content:read'),
       async (c) => {
-        const parsed = parseListQuery(c.req.url, schemaFieldNames, relationFieldNames)
+        const parsed = parseListQuery(c.req.url, schemaFieldNames, relationFieldNames, fieldKeys.columnFor)
         if (!parsed.ok) {
           return c.json({ ok: false, error: parsed.response }, parsed.status)
         }
@@ -267,7 +276,10 @@ export function registerAdminContentRoutes(
 
         const result = await repo.findMany(findOpts)
 
-        return c.json(result)
+        // Outbound boundary: rows are storage-keyed; responses speak labels.
+        const data = result.data.map((row) => fieldKeys.toLabels(row as Record<string, unknown>))
+
+        return c.json({ ...result, data })
       }
     )
 
@@ -313,7 +325,12 @@ export function registerAdminContentRoutes(
           }
         }
 
-        return c.json({ ok: true, data: item })
+        // Outbound boundary: rows are storage-keyed; responses speak labels.
+        // Mapped after the paragraph/junction population above so those
+        // label-keyed additions survive.
+        const data = fieldKeys.toLabels(item as Record<string, unknown>)
+
+        return c.json({ ok: true, data })
       }
     )
 
@@ -392,6 +409,10 @@ export function registerAdminContentRoutes(
     // pre-checks (slug rules, singleton existence, 404s) stay in the routes.
 
     const writeNewItem = async (c: Context, body: Record<string, unknown>) => {
+        // Inbound boundary: the request body arrives label-keyed; everything
+        // downstream (insert data, media delta) works in storage keys.
+        const storageBody = fieldKeys.toStorage(body)
+
         const fieldErrors = checkRequiredFields(requiredFields, body)
         if (fieldErrors.length > 0) {
           return c.json(
@@ -417,11 +438,10 @@ export function registerAdminContentRoutes(
         const junctionFields = contentType.fields.filter(
           (f) => f.db_column !== null && f.db_column.junction !== undefined
         )
-        const columnFields = contentType.fields.filter(
-          (f) => f.db_column !== null && f.db_column.junction === undefined
-        )
 
-        // Build column-only data
+        // Storage-keyed payload. `storageBody` was normalized at the inbound
+        // boundary, so each value is found under its column name.
+        const columnBackedFields = contentType.fields.filter(isColumnBacked)
         const columnData: Record<string, unknown> = {
           published: body['published'] ?? false,
         }
@@ -430,9 +450,10 @@ export function registerAdminContentRoutes(
         } else {
           columnData['slug'] = body['slug']
         }
-        for (const f of columnFields) {
-          const val = body[f.name]
-          columnData[f.db_column!.column_name] = val !== undefined ? val : null
+        for (const f of columnBackedFields) {
+          const key = f.db_column.column_name
+          if (!(key in storageBody)) continue
+          columnData[key] = storageBody[key]
         }
 
         // Resolve base_path_id (seeded from routes.json at startup)
@@ -457,7 +478,7 @@ export function registerAdminContentRoutes(
         const itemId = (item as Record<string, unknown>)['id'] as string
 
         // Reconcile media reference counts across top-level fields and paragraphs.
-        const mediaDeltas: MediaDelta[] = [topLevelMediaDelta(mediaFields, null, body)]
+        const mediaDeltas: MediaDelta[] = [topLevelMediaDelta(mediaFields, null, storageBody)]
 
         // Save paragraph and junction rows
         if (db) {
@@ -480,7 +501,10 @@ export function registerAdminContentRoutes(
 
         await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
 
-        return c.json({ ok: true, data: item }, 201)
+        // Outbound boundary: rows are storage-keyed; responses speak labels.
+        const data = fieldKeys.toLabels(item as Record<string, unknown>)
+
+        return c.json({ ok: true, data }, 201)
     }
 
     // PATCH /admin/api/{base_path}/:id
@@ -554,11 +578,18 @@ export function registerAdminContentRoutes(
       existing: Record<string, unknown>,
       body: Record<string, unknown>,
     ) => {
+        // Inbound boundary: the request body arrives label-keyed; everything
+        // downstream (insert data, media delta) works in storage keys.
+        const storageBody = fieldKeys.toStorage(body)
+
         if (body['published'] === true) {
           const publishDeny = await requirePermission('content:edit')(c, async () => {})
           if (publishDeny) return publishDeny
 
-          const merged = { ...(existing as Record<string, unknown>), ...body }
+          // `existing` is a raw SELECT * row (storage-keyed) but
+          // checkRequiredFields reads labels, as does `body` — project the row
+          // to labels first so a renamed field's stored value is actually seen.
+          const merged = { ...fieldKeys.toLabels(existing as Record<string, unknown>), ...body }
           const fieldErrors = checkRequiredFields(requiredFields, merged)
           if (fieldErrors.length > 0) {
             return c.json(
@@ -580,19 +611,17 @@ export function registerAdminContentRoutes(
         const patchJunctionFields = contentType.fields.filter(
           (f) => f.db_column !== null && f.db_column.junction !== undefined
         )
-        const patchColumnFields = contentType.fields.filter(
-          (f) => f.db_column !== null && f.db_column.junction === undefined
-        )
 
-        // Build column-only patch data
+        // Storage-keyed payload. `storageBody` was normalized at the inbound
+        // boundary, so each value is found under its column name.
+        const patchColumnBackedFields = contentType.fields.filter(isColumnBacked)
         const patchData: Record<string, unknown> = {}
         if (!contentType.only_one && 'slug' in body) patchData['slug'] = body['slug']
         if ('published' in body) patchData['published'] = body['published']
-        for (const f of patchColumnFields) {
-          if (f.name in body) {
-            const val = body[f.name]
-            patchData[f.db_column!.column_name] = val !== undefined ? val : null
-          }
+        for (const f of patchColumnBackedFields) {
+          const key = f.db_column.column_name
+          if (!(key in storageBody)) continue
+          patchData[key] = storageBody[key]
         }
 
         const updated = await repo.update(id, patchData as Parameters<typeof repo.update>[1])
@@ -605,7 +634,7 @@ export function registerAdminContentRoutes(
 
         // Reconcile media reference counts across top-level fields and paragraphs.
         const mediaDeltas: MediaDelta[] = [
-          topLevelMediaDelta(mediaFields, existing as Record<string, unknown>, body),
+          topLevelMediaDelta(mediaFields, existing as Record<string, unknown>, storageBody),
         ]
 
         // Delete+reinsert paragraph and junction rows
@@ -629,7 +658,10 @@ export function registerAdminContentRoutes(
 
         await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
 
-        return c.json({ ok: true, data: updated })
+        // Outbound boundary: rows are storage-keyed; responses speak labels.
+        const data = fieldKeys.toLabels(updated as Record<string, unknown>)
+
+        return c.json({ ok: true, data })
     }
 
     // PUT /admin/api/{base_path} — singleton upsert.
@@ -719,6 +751,8 @@ export function registerAdminContentRoutes(
         .map((f) => f.name)
     )
 
+    const fieldKeys = fieldKeyMaps[typeName]!
+
     const requiredFields = taxonomyType.fields.filter((f) => f.required)
 
     const mediaFields = taxonomyType.fields.filter(
@@ -739,7 +773,7 @@ export function registerAdminContentRoutes(
       `/admin/api/taxonomy/${typeName}`,
       requirePermission('content:read'),
       async (c) => {
-        const parsed = parseListQuery(c.req.url, schemaFieldNames, relationFieldNames)
+        const parsed = parseListQuery(c.req.url, schemaFieldNames, relationFieldNames, fieldKeys.columnFor)
         if (!parsed.ok) {
           return c.json({ ok: false, error: parsed.response }, parsed.status)
         }
@@ -763,7 +797,10 @@ export function registerAdminContentRoutes(
 
         const result = await repo.findMany(findOpts)
 
-        return c.json(result)
+        // Outbound boundary: rows are storage-keyed; responses speak labels.
+        const data = result.data.map((row) => fieldKeys.toLabels(row as Record<string, unknown>))
+
+        return c.json({ ...result, data })
       }
     )
 
@@ -782,7 +819,10 @@ export function registerAdminContentRoutes(
           )
         }
 
-        return c.json({ ok: true, data: item })
+        // Outbound boundary: rows are storage-keyed; responses speak labels.
+        const data = fieldKeys.toLabels(item as Record<string, unknown>)
+
+        return c.json({ ok: true, data })
       }
     )
 
@@ -792,6 +832,10 @@ export function registerAdminContentRoutes(
       requirePermission('content:create'),
       async (c) => {
         const body = (await c.req.json()) as Record<string, unknown>
+
+        // Inbound boundary: the request body arrives label-keyed; everything
+        // downstream (insert data, media delta) works in storage keys.
+        const storageBody = fieldKeys.toStorage(body)
 
         const fieldErrors = checkRequiredFields(requiredFields, body)
         if (fieldErrors.length > 0) {
@@ -814,23 +858,25 @@ export function registerAdminContentRoutes(
         }
 
         // Filter to column-only fields
-        const taxColumnFields = taxonomyType.fields.filter(
-          (f) => f.db_column !== null && f.db_column.junction === undefined
-        )
         const taxParagraphFields = taxonomyType.fields.filter((f) => f.db_column === null)
+
+        // Storage-keyed payload. `storageBody` was normalized at the inbound
+        // boundary, so each value is found under its column name.
+        const taxColumnBackedFields = taxonomyType.fields.filter(isColumnBacked)
         const taxColumnData: Record<string, unknown> = {
           published: body['published'] ?? false,
         }
-        for (const f of taxColumnFields) {
-          const val = body[f.name]
-          taxColumnData[f.db_column!.column_name] = val !== undefined ? val : null
+        for (const f of taxColumnBackedFields) {
+          const key = f.db_column.column_name
+          if (!(key in storageBody)) continue
+          taxColumnData[key] = storageBody[key]
         }
 
         const item = await repo.create(taxColumnData as Parameters<typeof repo.create>[0])
         const taxItemId = (item as Record<string, unknown>)['id'] as string
 
         // Reconcile media reference counts across top-level fields and paragraphs.
-        const mediaDeltas: MediaDelta[] = [topLevelMediaDelta(mediaFields, null, body)]
+        const mediaDeltas: MediaDelta[] = [topLevelMediaDelta(mediaFields, null, storageBody)]
 
         if (db) {
           for (const f of taxParagraphFields) {
@@ -845,7 +891,10 @@ export function registerAdminContentRoutes(
 
         await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
 
-        return c.json({ ok: true, data: item }, 201)
+        // Outbound boundary: rows are storage-keyed; responses speak labels.
+        const data = fieldKeys.toLabels(item as Record<string, unknown>)
+
+        return c.json({ ok: true, data }, 201)
       }
     )
 
@@ -856,6 +905,10 @@ export function registerAdminContentRoutes(
       async (c) => {
         const id = c.req.param('id')
         const body = (await c.req.json()) as Record<string, unknown>
+
+        // Inbound boundary: the request body arrives label-keyed; everything
+        // downstream (insert data, media delta) works in storage keys.
+        const storageBody = fieldKeys.toStorage(body)
 
         const existing = await repo.findOne(id)
         if (!existing) {
@@ -869,7 +922,10 @@ export function registerAdminContentRoutes(
           const publishDeny = await requirePermission('content:edit')(c, async () => {})
           if (publishDeny) return publishDeny
 
-          const merged = { ...(existing as Record<string, unknown>), ...body }
+          // `existing` is a raw SELECT * row (storage-keyed) but
+          // checkRequiredFields reads labels, as does `body` — project the row
+          // to labels first so a renamed field's stored value is actually seen.
+          const merged = { ...fieldKeys.toLabels(existing as Record<string, unknown>), ...body }
           const fieldErrors = checkRequiredFields(requiredFields, merged)
           if (fieldErrors.length > 0) {
             return c.json(
@@ -887,17 +943,17 @@ export function registerAdminContentRoutes(
         }
 
         // Filter to column-only fields
-        const taxPatchColumnFields = taxonomyType.fields.filter(
-          (f) => f.db_column !== null && f.db_column.junction === undefined
-        )
         const taxPatchParagraphFields = taxonomyType.fields.filter((f) => f.db_column === null)
+
+        // Storage-keyed payload. `storageBody` was normalized at the inbound
+        // boundary, so each value is found under its column name.
+        const taxPatchColumnBackedFields = taxonomyType.fields.filter(isColumnBacked)
         const taxPatchData: Record<string, unknown> = {}
         if ('published' in body) taxPatchData['published'] = body['published']
-        for (const f of taxPatchColumnFields) {
-          if (f.name in body) {
-            const val = body[f.name]
-            taxPatchData[f.db_column!.column_name] = val !== undefined ? val : null
-          }
+        for (const f of taxPatchColumnBackedFields) {
+          const key = f.db_column.column_name
+          if (!(key in storageBody)) continue
+          taxPatchData[key] = storageBody[key]
         }
 
         const updated = await repo.update(id, taxPatchData as Parameters<typeof repo.update>[1])
@@ -910,7 +966,7 @@ export function registerAdminContentRoutes(
 
         // Reconcile media reference counts across top-level fields and paragraphs.
         const mediaDeltas: MediaDelta[] = [
-          topLevelMediaDelta(mediaFields, existing as Record<string, unknown>, body),
+          topLevelMediaDelta(mediaFields, existing as Record<string, unknown>, storageBody),
         ]
 
         if (db) {
@@ -926,7 +982,10 @@ export function registerAdminContentRoutes(
 
         await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
 
-        return c.json({ ok: true, data: updated })
+        // Outbound boundary: rows are storage-keyed; responses speak labels.
+        const data = fieldKeys.toLabels(updated as Record<string, unknown>)
+
+        return c.json({ ok: true, data })
       }
     )
 

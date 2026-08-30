@@ -8,6 +8,10 @@ import type {
   FindManyOptions,
 } from '@bobbykim/manguito-cms-core'
 import type { ParsedContentType } from '@bobbykim/manguito-cms-core'
+import { divergentTextField, divergentReferenceField } from '../../field-keys.test-fixtures'
+import { createFieldKeyMap } from '../../field-keys'
+import { createProgrammaticResolver } from '../../programmatic/resolve'
+import { createPublicPaths } from '../../paths'
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -87,7 +91,13 @@ describe('public content routes', () => {
   beforeEach(() => {
     mockRepo = makeMockRepo()
     app = new Hono()
-    registerPublicContentRoutes(app, mockRegistry, { 'blog-post': mockRepo })
+    registerPublicContentRoutes(
+      app,
+      mockRegistry,
+      { 'blog-post': mockRepo },
+      { 'blog-post': createFieldKeyMap(BLOG_TYPE.fields) },
+      createPublicPaths('/api')
+    )
   })
 
   it('public list route always calls findMany with published_only: true', async () => {
@@ -138,5 +148,155 @@ describe('public content routes', () => {
     const body = await res.json() as { ok: boolean; error: { code: string } }
     expect(body.ok).toBe(false)
     expect(body.error.code).toBe('INVALID_INCLUDE_FIELD')
+  })
+
+  it('serves public routes under a custom api.prefix', async () => {
+    const repo = makeMockRepo()
+    const app = new Hono()
+    registerPublicContentRoutes(
+      app,
+      mockRegistry,
+      { 'blog-post': repo },
+      { 'blog-post': createFieldKeyMap(BLOG_TYPE.fields) },
+      createPublicPaths('/content-api'),
+      undefined,
+      createProgrammaticResolver(new Map())
+    )
+
+    // BLOG_TYPE's default_base_path is 'blog-post'.
+    expect((await app.request('/content-api/blog-post')).status).toBe(200)
+    expect((await app.request('/api/blog-post')).status).toBe(404)
+  })
+})
+
+// Same shape as this file's BLOG_TYPE, with label 'title' over column 'blog_title'.
+const DIVERGENT_TYPE: ParsedContentType = {
+  ...BLOG_TYPE,
+  name: 'divergent-post',
+  default_base_path: 'divergent-post',
+  fields: [divergentTextField],
+  db: { table_name: 'content--divergent_post', junction_tables: [] },
+  api: {
+    default_base_path: 'divergent-post',
+    http_methods: ['GET', 'POST', 'PATCH', 'DELETE'],
+    item_path: '/api/divergent-post/:slug',
+  },
+}
+
+const divergentRegistry: SchemaRegistry = {
+  ...mockRegistry,
+  content_types: { 'divergent-post': DIVERGENT_TYPE },
+}
+
+describe('public reads with a divergent field label', () => {
+  it('returns the label and never the column name', async () => {
+    const repo = makeMockRepo()
+    ;(repo.findMany as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      data: [{ id: 'c1', slug: 'a', published: true, blog_title: 'Hello' }],
+      meta: { total: 1, page: 1, per_page: 10, total_pages: 1, has_next: false, has_prev: false },
+    })
+
+    const app = new Hono()
+    registerPublicContentRoutes(
+      app,
+      divergentRegistry,
+      { 'divergent-post': repo },
+      { 'divergent-post': createFieldKeyMap([divergentTextField]) },
+      createPublicPaths('/api'),
+      undefined,
+      createProgrammaticResolver(new Map())
+    )
+
+    const res = await app.request('/api/divergent-post')
+    const body = await res.json() as { ok: boolean; data: Record<string, unknown>[] }
+
+    expect(res.status).toBe(200)
+    expect(body.ok).toBe(true)
+    expect(body.data[0]).toMatchObject({ slug: 'a', title: 'Hello' })
+    expect(body.data[0]).not.toHaveProperty('blog_title')
+  })
+
+  it('a single-item read (findBySlug) also returns the label, not the column', async () => {
+    const repo = makeMockRepo()
+    ;(repo.findBySlug as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'c1',
+      slug: 'a',
+      published: true,
+      blog_title: 'Hello',
+    })
+
+    const app = new Hono()
+    registerPublicContentRoutes(
+      app,
+      divergentRegistry,
+      { 'divergent-post': repo },
+      { 'divergent-post': createFieldKeyMap([divergentTextField]) },
+      createPublicPaths('/api'),
+      undefined,
+      createProgrammaticResolver(new Map())
+    )
+
+    const res = await app.request('/api/divergent-post/a')
+    const body = await res.json() as { ok: boolean; data: Record<string, unknown> }
+
+    expect(res.status).toBe(200)
+    expect(body.ok).toBe(true)
+    expect(body.data).toMatchObject({ slug: 'a', title: 'Hello' })
+    expect(body.data).not.toHaveProperty('blog_title')
+  })
+
+  // resolveRelationBareIds (packages/api/src/relations.ts) has branches for
+  // `paragraph` and `junction` only — no `reference` branch. So when a
+  // reference field is NOT passed via ?include=, the repository layer never
+  // touches it: the row comes back from `SELECT *` still keyed by the raw FK
+  // column. This mock reproduces exactly that raw-row shape (no relation
+  // resolution runs here at all — the mock repo just returns canned data), to
+  // prove toLabels is what renames it on the public path.
+  it('a divergent reference field, not ?include=d, surfaces under its label with its bare id', async () => {
+    const REF_TYPE: ParsedContentType = {
+      ...BLOG_TYPE,
+      name: 'divergent-ref-post',
+      default_base_path: 'divergent-ref-post',
+      fields: [divergentReferenceField],
+      db: { table_name: 'content--divergent_ref_post', junction_tables: [] },
+      api: {
+        default_base_path: 'divergent-ref-post',
+        http_methods: ['GET', 'POST', 'PATCH', 'DELETE'],
+        item_path: '/api/divergent-ref-post/:slug',
+      },
+    }
+    const refRegistry: SchemaRegistry = {
+      ...mockRegistry,
+      content_types: { 'divergent-ref-post': REF_TYPE },
+    }
+
+    const categoryId = '11111111-1111-1111-1111-111111111111'
+    const repo = makeMockRepo()
+    ;(repo.findMany as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: true,
+      data: [{ id: 'c1', slug: 'a', published: true, category_id: categoryId }],
+      meta: { total: 1, page: 1, per_page: 10, total_pages: 1, has_next: false, has_prev: false },
+    })
+
+    const app = new Hono()
+    registerPublicContentRoutes(
+      app,
+      refRegistry,
+      { 'divergent-ref-post': repo },
+      { 'divergent-ref-post': createFieldKeyMap([divergentReferenceField]) },
+      createPublicPaths('/api'),
+      undefined,
+      createProgrammaticResolver(new Map())
+    )
+
+    // Deliberately no ?include= — this is the bare-read path the gap lives in.
+    const res = await app.request('/api/divergent-ref-post')
+    const body = await res.json() as { ok: boolean; data: Record<string, unknown>[] }
+
+    expect(res.status).toBe(200)
+    expect(body.ok).toBe(true)
+    expect(body.data[0]).toMatchObject({ slug: 'a', category: categoryId })
+    expect(body.data[0]).not.toHaveProperty('category_id')
   })
 })

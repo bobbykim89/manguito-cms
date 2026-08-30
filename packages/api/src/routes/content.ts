@@ -4,6 +4,8 @@ import type {
   ContentRepository,
 } from '@bobbykim/manguito-cms-core'
 import type { ProgrammaticResolver } from '../programmatic/resolve.js'
+import type { FieldKeyMap } from '../field-keys.js'
+import type { PublicPaths } from '../paths.js'
 import {
   SORTABLE_FIELDS,
   RELATION_FIELD_TYPES,
@@ -14,6 +16,19 @@ import {
 
 export type ContentRepos = Record<string, ContentRepository<unknown>>
 
+// ─── Response projection order ────────────────────────────────────────────────
+//
+// Every read response maps storage keys → labels exactly ONCE, and that mapping
+// runs BEFORE the programmatic resolver. Two reasons it sits there rather than
+// after:
+//   - a programmatic resolver reads its record through `ctx.get(fieldName)`,
+//     documented (docs/programmatic-fields.md) as the schema field name — the
+//     LABEL — so the row handed to it must already speak labels;
+//   - programmatic fields are not column-backed, so their output keys are labels
+//     already; mapping afterwards would be a no-op on them.
+// Relations are resolved inside the repository, upstream of both, so the mapping
+// still lands strictly after relation resolution.
+
 function isPublished(item: unknown): boolean {
   return (item as Record<string, unknown>)['published'] === true
 }
@@ -22,6 +37,8 @@ export function registerPublicContentRoutes(
   app: Hono,
   registry: SchemaRegistry,
   repos: ContentRepos,
+  fieldKeyMaps: Record<string, FieldKeyMap>,
+  paths: PublicPaths,
   listRateLimit?: MiddlewareHandler,
   resolver?: ProgrammaticResolver
 ): void {
@@ -36,7 +53,7 @@ export function registerPublicContentRoutes(
     }
   }
 
-  registerListRoute('/api/content', (c) => {
+  registerListRoute(paths.collection('content'), (c) => {
     const data = Object.values(registry.content_types).map((ct) => ({
       name: ct.name,
       label: ct.label,
@@ -45,7 +62,7 @@ export function registerPublicContentRoutes(
     return c.json({ ok: true, data })
   })
 
-  registerListRoute('/api/taxonomy', (c) => {
+  registerListRoute(paths.collection('taxonomy'), (c) => {
     const data = Object.values(registry.taxonomy_types).map((tt) => ({
       name: tt.name,
       label: tt.label,
@@ -74,7 +91,7 @@ export function registerPublicContentRoutes(
     ])
 
     if (contentType.only_one) {
-      app.get(`/api/${basePath}`, async (c) => {
+      app.get(paths.collection(basePath), async (c) => {
         const result = await repo.findMany({ published_only: true, page: 1, per_page: 1 })
         if (result.data.length === 0) {
           return c.json(
@@ -82,12 +99,15 @@ export function registerPublicContentRoutes(
             404
           )
         }
-        let data = result.data[0] as Record<string, unknown>
+        // Outbound boundary (see "Response projection order" above).
+        let data = fieldKeyMaps[typeName]!.toLabels(result.data[0] as Record<string, unknown>)
         if (resolver?.hasSchema(typeName)) data = await resolver.resolveItem(typeName, data)
         return c.json({ ok: true, data })
       })
     } else {
-      registerListRoute(`/api/${basePath}`, async (c) => {
+      registerListRoute(paths.collection(basePath), async (c) => {
+        // Inbound boundary: query params speak labels; filters query storage keys.
+        const fieldKeys = fieldKeyMaps[typeName]!
         const pagination = parsePagination(c.req.query('page'), c.req.query('per_page'))
         if (!pagination.ok) {
           return c.json(
@@ -130,7 +150,7 @@ export function registerPublicContentRoutes(
           )
         }
 
-        const filtersResult = parseFilters(c.req.url, filterableFieldNames)
+        const filtersResult = parseFilters(c.req.url, filterableFieldNames, fieldKeys.columnFor)
         if (!filtersResult.ok) {
           return c.json(
             {
@@ -170,15 +190,21 @@ export function registerPublicContentRoutes(
           include,
         })
 
-        if (resolver?.hasSchema(typeName)) {
-          const resolved = await resolver.resolveList(typeName, result.data as Record<string, unknown>[])
-          return c.json({ ...result, data: resolved })
-        }
-        return c.json(result)
+        // Outbound boundary (see "Response projection order" above).
+        const labeled = (result.data as Record<string, unknown>[]).map((row) =>
+          fieldKeys.toLabels(row)
+        )
+        const data = resolver?.hasSchema(typeName)
+          ? await resolver.resolveList(typeName, labeled)
+          : labeled
+        return c.json({ ...result, data })
       })
 
-      app.get(`/api/${basePath}/:slug`, async (c) => {
-        const slug = c.req.param('slug')
+      app.get(paths.item(basePath), async (c) => {
+        // paths.item() always appends a literal ':slug' segment, but its return
+        // type is the widened `string` from PublicPaths — not a template literal
+        // type — so Hono can no longer statically prove the param is present.
+        const slug = c.req.param('slug')!
 
         const include = parseInclude(c.req.query('include'))
         for (const field of include) {
@@ -208,7 +234,8 @@ export function registerPublicContentRoutes(
           )
         }
 
-        let data = item as Record<string, unknown>
+        // Outbound boundary (see "Response projection order" above).
+        let data = fieldKeyMaps[typeName]!.toLabels(item as Record<string, unknown>)
         if (resolver?.hasSchema(typeName)) data = await resolver.resolveItem(typeName, data)
         return c.json({ ok: true, data })
       })
@@ -219,7 +246,7 @@ export function registerPublicContentRoutes(
     const repo = repos[typeName]
     if (!repo) continue
 
-    registerListRoute(`/api/taxonomy/${typeName}`, async (c) => {
+    registerListRoute(paths.taxonomyCollection(typeName), async (c) => {
       const pagination = parsePagination(c.req.query('page'), c.req.query('per_page'))
       if (!pagination.ok) {
         return c.json(
@@ -240,15 +267,20 @@ export function registerPublicContentRoutes(
         per_page: pagination.per_page,
       })
 
-      if (resolver?.hasSchema(typeName)) {
-        const resolved = await resolver.resolveList(typeName, result.data as Record<string, unknown>[])
-        return c.json({ ...result, data: resolved })
-      }
-      return c.json(result)
+      // Outbound boundary (see "Response projection order" above).
+      const fieldKeys = fieldKeyMaps[typeName]!
+      const labeled = (result.data as Record<string, unknown>[]).map((row) =>
+        fieldKeys.toLabels(row)
+      )
+      const data = resolver?.hasSchema(typeName)
+        ? await resolver.resolveList(typeName, labeled)
+        : labeled
+      return c.json({ ...result, data })
     })
 
-    app.get(`/api/taxonomy/${typeName}/:id`, async (c) => {
-      const id = c.req.param('id')
+    app.get(paths.taxonomyItem(typeName), async (c) => {
+      // See the ':slug' comment above — same widened-string-return caveat applies.
+      const id = c.req.param('id')!
       const item = await repo.findOne(id)
 
       if (!item || !isPublished(item)) {
@@ -261,7 +293,8 @@ export function registerPublicContentRoutes(
         )
       }
 
-      let data = item as Record<string, unknown>
+      // Outbound boundary (see "Response projection order" above).
+      let data = fieldKeyMaps[typeName]!.toLabels(item as Record<string, unknown>)
       if (resolver?.hasSchema(typeName)) data = await resolver.resolveItem(typeName, data)
       return c.json({ ok: true, data })
     })

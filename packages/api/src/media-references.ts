@@ -24,7 +24,9 @@ function extractMediaId(value: unknown): string | null {
 }
 
 // Media ids gained and lost between two content states for the top-level media
-// fields. Unifies all three writes:
+// fields. BOTH `before` and `after` are STORAGE-KEYED (column names), never
+// label-keyed — callers normalize a request body with FieldKeyMap.toStorage
+// before calling. Unifies all three writes:
 //   create — before = null            (no prior ids; set fields are added)
 //   update — before/after are rows     (a field absent from `after` is untouched)
 //   delete — after = null              (every current id is removed)
@@ -37,12 +39,16 @@ export function topLevelMediaDelta(
   const removed: string[] = []
 
   for (const f of mediaFields) {
-    // On a partial update, a media field not present in the patch body is untouched.
-    // (after === null is a delete — every field is in scope.)
-    if (after !== null && !(f.name in after)) continue
+    // Media fields are always column-backed, so the storage key always exists.
+    const key = f.db_column?.column_name
+    if (key === undefined || key === '') continue
 
-    const oldId = before ? extractMediaId(before[f.name]) : null
-    const newId = after ? extractMediaId(after[f.name]) : null
+    // On a partial update, a media field not present in the patch is untouched.
+    // (after === null is a delete — every field is in scope.)
+    if (after !== null && !(key in after)) continue
+
+    const oldId = before ? extractMediaId(before[key]) : null
+    const newId = after ? extractMediaId(after[key]) : null
     if (newId === oldId) continue
     if (oldId) removed.push(oldId)
     if (newId) added.push(newId)

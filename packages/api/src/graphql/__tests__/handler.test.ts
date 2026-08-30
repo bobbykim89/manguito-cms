@@ -7,6 +7,7 @@ import * as dataloaders from '../dataloaders'
 import type { SchemaRegistry, ContentRepository } from '@bobbykim/manguito-cms-core'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import type { ProgrammaticResolver } from '../../programmatic/resolve'
+import { createFieldKeyMap, type FieldKeyMap } from '../../field-keys'
 
 const registry = {
   content_types: {
@@ -20,6 +21,14 @@ const registry = {
   },
   taxonomy_types: {}, paragraph_types: {}, enum_types: {},
 } as unknown as SchemaRegistry
+
+// This suite's only field's label already equals its column (`blog_title`), so
+// this map never diverges — it exists so `createGraphQLHandler` has the same
+// per-type maps `app.ts` builds at startup, not to exercise divergence itself
+// (see resolvers.divergence.test.ts and filters.test.ts for that).
+const fieldKeyMaps: Record<string, FieldKeyMap> = {
+  'content--post': createFieldKeyMap(registry.content_types['content--post']!.fields),
+}
 
 describe('graphql handler over Hono', () => {
   it('answers a POST query', async () => {
@@ -96,7 +105,7 @@ describe('createGraphQLHandler', () => {
   }
 
   function buildApp(options: ResolvedGraphQLOptions): Hono {
-    const handler = createGraphQLHandler(registry, repos, resolver, db, options)
+    const handler = createGraphQLHandler(registry, repos, fieldKeyMaps, resolver, db, options)
     const app = new Hono()
     app.all('/graphql', handler)
     return app
@@ -178,7 +187,7 @@ describe('createGraphQLHandler', () => {
       logged.push(args)
     })
 
-    const handler = createGraphQLHandler(registry, throwingRepos, resolver, db, baseOptions)
+    const handler = createGraphQLHandler(registry, throwingRepos, fieldKeyMaps, resolver, db, baseOptions)
     const app = new Hono()
     app.all('/graphql', handler)
 

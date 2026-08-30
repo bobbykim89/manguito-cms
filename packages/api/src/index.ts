@@ -4,6 +4,7 @@ import type {
   GraphQLModuleConfig,
   ResolvedGraphQLConfig,
 } from '@bobbykim/manguito-cms-core'
+import { normalizePrefix } from './paths.js'
 
 export { createCmsApp } from './app.js'
 export type { CreateCmsAppOptions } from './app.js'
@@ -37,7 +38,7 @@ function resolveGraphQL(cfg: GraphQLModuleConfig): ResolvedGraphQLConfig {
 }
 
 export function createAPIAdapter(options: APIAdapterOptions = {}): APIAdapter {
-  const prefix = options.prefix ?? '/api'
+  const prefix = normalizePrefix(options.prefix)
   const media = options.media?.max_file_size !== undefined
     ? { max_file_size: options.media.max_file_size }
     : undefined

@@ -36,10 +36,16 @@ export function parseInclude(includeParam: string | undefined): string[] {
 
 export function parseFilters(
   url: string,
-  validFields: Set<string>
+  validFields: Set<string>,
+  columnFor?: (label: string) => string | undefined
 ): { ok: true; filters: Record<string, FilterValue> } | { ok: false; invalidField: string } {
   const { searchParams } = new URL(url)
   const filters: Record<string, FilterValue> = {}
+
+  // Filters are validated against LABELS (what the client sends) and emitted as
+  // storage keys (what the repository queries). Without a mapper the two are
+  // the same, which is the pre-versioning behavior.
+  const toKey = (label: string): string => columnFor?.(label) ?? label
 
   for (const [key, value] of searchParams.entries()) {
     const simpleMatch = /^filter\[([^\]]+)\]$/.exec(key)
@@ -48,21 +54,23 @@ export function parseFilters(
     if (simpleMatch) {
       const field = simpleMatch[1]!
       if (!validFields.has(field)) return { ok: false, invalidField: field }
-      const existing = filters[field]
+      const storageKey = toKey(field)
+      const existing = filters[storageKey]
       if (existing !== undefined) {
-        filters[field] = Array.isArray(existing)
+        filters[storageKey] = Array.isArray(existing)
           ? [...existing, value]
           : [existing as string | number | boolean, value]
       } else {
-        filters[field] = value
+        filters[storageKey] = value
       }
     } else if (opMatch) {
       const field = opMatch[1]!
       const operator = opMatch[2]!
       if (!validFields.has(field)) return { ok: false, invalidField: field }
       if (!['gt', 'gte', 'lt', 'lte'].includes(operator)) continue
-      const existing = (filters[field] as FilterOperator | undefined) ?? {}
-      filters[field] = { ...(existing as FilterOperator), [operator]: value }
+      const storageKey = toKey(field)
+      const existing = (filters[storageKey] as FilterOperator | undefined) ?? {}
+      filters[storageKey] = { ...(existing as FilterOperator), [operator]: value }
     }
   }
 
