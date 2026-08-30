@@ -462,6 +462,8 @@ Move the whole `fieldKeyMaps` block (and the two blocks you add in Steps 1-2) so
 
 **Do NOT add paragraph types to the existing `fieldKeyMaps`.** That object is passed to `createGraphQLHandler` (`app.ts:304`), and `graphql/schema.ts:175` does `fieldKeyMaps[machineName]` inside `buildObjectType`, which is shared by content, taxonomy **and paragraph** types. Paragraph types resolve to `undefined` there today, and a GraphQL test pins that unmapped fallback. Widening `fieldKeyMaps` would silently change GraphQL's programmatic-record behavior for paragraph types and break that test — out of scope for this stage, and it would require altering an existing assertion.
 
+> **SUPERSEDED — the claim above is false (final review, this stage).** No GraphQL test pins that fallback. The only candidate, `packages/api/src/graphql/__tests__/resolvers.divergence.test.ts`'s *'leaves the record unmapped when no field key map is supplied'*, calls `programmaticFieldResolver` **directly**, with no map, for a **content** type — it never reaches `buildObjectType`. The separation's only lasting effect was to leave a programmatic field on a *paragraph* type receiving a storage-keyed record, so `ctx.get(label)` would be `undefined` under divergence. The final review caught it; the fix wave merged the two objects into one, passed the union to `createGraphQLHandler`, and added tests. **The single-map version in `app.ts` is correct — this step is retained only as a record of a wrong instruction, not as guidance.**
+
 So in `packages/api/src/app.ts`, build a second object beside the first:
 
 ```ts
