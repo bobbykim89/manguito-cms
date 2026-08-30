@@ -103,3 +103,36 @@ export const manyToManyField: ParsedField = {
   },
   ui_component: { component: 'typeahead-select', ref: 'taxonomy--tag', rel: 'many-to-many' },
 }
+
+import type { ParsedContentType, ParsedParagraphType } from '@bobbykim/manguito-cms-core'
+
+// A paragraph type whose single field's label ('title') differs from its
+// storage column ('blog_title'). Reuses divergentTextField above.
+export const divergentParagraphType: ParsedParagraphType = {
+  schema_type: 'paragraph-type',
+  name: 'paragraph--card',
+  label: 'Card',
+  source_file: 'paragraph--card.json',
+  system_fields: [],
+  fields: [divergentTextField],
+  db: { table_name: 'paragraph_card' },
+} as ParsedParagraphType
+
+// A reference/junction TARGET type with the same divergence.
+export const divergentTargetType: ParsedContentType = {
+  schema_type: 'content-type',
+  name: 'content--category',
+  label: 'Category',
+  source_file: 'content--category.json',
+  only_one: false,
+  default_base_path: 'category',
+  system_fields: [],
+  fields: [divergentTextField],
+  ui: { tabs: [] },
+  db: { table_name: 'content_category', junction_tables: [] },
+  api: {
+    default_base_path: 'category',
+    http_methods: ['GET'],
+    item_path: '/api/category/:slug',
+  },
+} as ParsedContentType
