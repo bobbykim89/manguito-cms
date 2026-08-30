@@ -134,8 +134,18 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
 
   // ── Field key maps ──────────────────────────────────────────────────────────
   //
-  // One per content/taxonomy type, built once at startup. Throws on a label /
-  // column collision — the server must not boot with an ambiguous mapping.
+  // One per content, taxonomy AND paragraph type, built once at startup, keyed
+  // by machine name. Throws on a label / column collision — the server must not
+  // boot with an ambiguous mapping.
+  //
+  // Paragraph types belong in the same object as the other two, not a sidecar:
+  // both consumers index it by machine name over a key space that includes
+  // them. `buildProjectors` walks `registry.paragraph_types` to project
+  // paragraph children, and `graphql/schema.ts`'s `buildObjectType` runs over
+  // paragraph types too — so a programmatic field on a paragraph type needs its
+  // map here to be handed a label-keyed record, exactly like one on a content
+  // type. Every other GraphQL field resolves per field by column and is
+  // indifferent to this map.
   const fieldKeyMaps: Record<string, FieldKeyMap> = Object.fromEntries([
     ...Object.entries(registry.content_types).map(([typeName, ct]) => [
       typeName,
@@ -145,23 +155,15 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
       typeName,
       createFieldKeyMap((tt as ParsedTaxonomyType).fields),
     ]),
-  ])
-
-  // Paragraph types need key maps for nested projection, but deliberately NOT
-  // for GraphQL: buildObjectType looks types up in `fieldKeyMaps`, and paragraph
-  // types resolving to `undefined` there is existing, pinned behavior. Keeping
-  // these separate means projection gains paragraph maps while GraphQL sees the
-  // same content+taxonomy map it always has.
-  const paragraphFieldKeyMaps: Record<string, FieldKeyMap> = Object.fromEntries(
-    Object.entries(registry.paragraph_types).map(([typeName, pt]) => [
+    ...Object.entries(registry.paragraph_types).map(([typeName, pt]) => [
       typeName,
       createFieldKeyMap((pt as ParsedParagraphType).fields),
-    ])
-  )
+    ]),
+  ])
 
-  // Recursive outbound projection. Built once from BOTH map objects; every read
-  // response is projected through this rather than through a bare toLabels.
-  const projectors = buildProjectors(registry, { ...fieldKeyMaps, ...paragraphFieldKeyMaps })
+  // Recursive outbound projection. Every read response is projected through
+  // this rather than through a bare toLabels.
+  const projectors: Projectors = buildProjectors(registry, fieldKeyMaps)
 
   // Maps SORTABLE_FIELDS' labels to this type's storage columns, so the
   // repository can validate sort_by against columns once the route has mapped

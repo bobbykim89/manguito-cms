@@ -1,10 +1,21 @@
 import { describe, it, expect } from 'vitest'
 import { graphql } from 'graphql'
-import type { SchemaRegistry } from '@bobbykim/manguito-cms-core'
+import { programmaticField } from '@bobbykim/manguito-cms-core'
+import type {
+  ParsedContentType,
+  ParsedField,
+  ParsedParagraphType,
+  SchemaRegistry,
+} from '@bobbykim/manguito-cms-core'
 import { buildGraphQLSchema } from '../schema'
 import type { GraphQLContext } from '../context'
 import { createFieldKeyMap } from '../../field-keys'
-import { divergentTargetType } from '../../field-keys.test-fixtures'
+import { createProgrammaticResolver, resolverKey } from '../../programmatic/resolve'
+import {
+  divergentParagraphType,
+  divergentTargetType,
+  divergentTextField,
+} from '../../field-keys.test-fixtures'
 
 // Divergence proofs that run through the whole built schema rather than a
 // single resolver. The sibling resolvers.divergence.test.ts calls resolvers
@@ -80,5 +91,115 @@ describe('GraphQL sortBy with a divergent label', () => {
 
     expect(result.errors).toBeUndefined()
     expect(captured.opts?.['sort_by']).toBe('title')
+  })
+})
+
+// ─── A programmatic field on a PARAGRAPH type ────────────────────────────────
+//
+// buildObjectType runs over paragraph types too, so a programmatic field there
+// is built with `fieldKeyMaps['paragraph--card']`. When paragraph maps are kept
+// out of that object the map is `undefined`, the projection to labels silently
+// degrades to identity, and `ctx.get('title')` reads a storage-keyed record and
+// returns undefined — contradicting the rule that the programmatic record is
+// the one row GraphQL projects.
+
+const paragraphSummaryField: ParsedField = {
+  name: 'summary',
+  label: 'Summary',
+  field_type: 'programmatic',
+  required: false,
+  nullable: true,
+  order: 1,
+  validation: { required: false },
+  db_column: null,
+  ui_component: { component: 'computed-display' },
+}
+
+// divergentParagraphType plus a programmatic sibling of its divergent field.
+const cardType: ParsedParagraphType = {
+  ...divergentParagraphType,
+  fields: [divergentTextField, paragraphSummaryField],
+}
+
+const cardsField: ParsedField = {
+  name: 'cards',
+  label: 'Cards',
+  field_type: 'paragraph',
+  required: false,
+  nullable: true,
+  order: 1,
+  validation: { required: false },
+  db_column: null,
+  ui_component: { component: 'paragraph-embed', ref: 'paragraph--card', rel: 'one-to-many' },
+}
+
+// divergentTargetType renamed and given the paragraph field — the parent whose
+// query reaches the paragraph type.
+const postType: ParsedContentType = {
+  ...divergentTargetType,
+  name: 'content--post',
+  fields: [divergentTextField, cardsField],
+}
+
+const paragraphRegistry = {
+  content_types: { 'content--post': postType },
+  taxonomy_types: {},
+  paragraph_types: { 'paragraph--card': cardType },
+  enum_types: {},
+} as unknown as SchemaRegistry
+
+function paragraphCtx(): GraphQLContext {
+  const repo = {
+    findMany: async () => ({
+      data: [{ id: 'c1', blog_title: 'Parent' }],
+      meta: { total: 1, page: 1, per_page: 10, total_pages: 1, has_next: false, has_prev: false },
+    }),
+  }
+  const resolvers = new Map([
+    [
+      resolverKey('paragraph--card', 'summary'),
+      programmaticField({ schema: 'paragraph--card', field: 'summary' }, (ctx) =>
+        `S:${String(ctx.get('title'))}`
+      ),
+    ],
+  ])
+  return {
+    repos: { 'content--post': repo },
+    resolver: createProgrammaticResolver(resolvers),
+    // Stand in for the paragraph dataloader: hands back storage-keyed child rows.
+    loaders: {
+      load: async (_type: string, field: string) =>
+        field === 'cards' ? [{ id: 'p1', blog_title: 'Card One' }] : null,
+    },
+    programmaticMemo: new WeakMap(),
+  } as unknown as GraphQLContext
+}
+
+describe('GraphQL programmatic field on a paragraph type', () => {
+  const query = '{ posts { data { cards { summary } } } }'
+
+  it('hands the resolver a label-keyed record when the paragraph map is present', async () => {
+    const schema = buildGraphQLSchema(paragraphRegistry, {
+      'content--post': createFieldKeyMap(postType.fields),
+      'paragraph--card': createFieldKeyMap(cardType.fields),
+    })
+
+    const result = await graphql({ schema, source: query, contextValue: paragraphCtx() })
+
+    expect(result.errors).toBeUndefined()
+    const data = result.data as { posts: { data: Array<{ cards: Array<{ summary: string }> }> } }
+    expect(data.posts.data[0]!.cards[0]!.summary).toBe('S:Card One')
+  })
+
+  it('reads nothing when the paragraph type has no map — the gap this closes', async () => {
+    const schema = buildGraphQLSchema(paragraphRegistry, {
+      'content--post': createFieldKeyMap(postType.fields),
+    })
+
+    const result = await graphql({ schema, source: query, contextValue: paragraphCtx() })
+
+    expect(result.errors).toBeUndefined()
+    const data = result.data as { posts: { data: Array<{ cards: Array<{ summary: string }> }> } }
+    expect(data.posts.data[0]!.cards[0]!.summary).toBe('S:undefined')
   })
 })
