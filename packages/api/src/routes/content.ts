@@ -5,6 +5,7 @@ import type {
 } from '@bobbykim/manguito-cms-core'
 import type { ProgrammaticResolver } from '../programmatic/resolve.js'
 import type { Projectors } from '../projector.js'
+import { projectRow } from '../projector.js'
 import type { PublicPaths } from '../paths.js'
 import {
   SORTABLE_FIELDS,
@@ -100,7 +101,7 @@ export function registerPublicContentRoutes(
           )
         }
         // Outbound boundary (see "Response projection order" above).
-        let data = projectors[typeName]!.map.toLabels(result.data[0] as Record<string, unknown>)
+        let data = projectRow(result.data[0] as Record<string, unknown>, typeName, projectors)
         if (resolver?.hasSchema(typeName)) data = await resolver.resolveItem(typeName, data)
         return c.json({ ok: true, data })
       })
@@ -193,7 +194,7 @@ export function registerPublicContentRoutes(
 
         // Outbound boundary (see "Response projection order" above).
         const labeled = (result.data as Record<string, unknown>[]).map((row) =>
-          fieldKeys.toLabels(row)
+          projectRow(row, typeName, projectors)
         )
         const data = resolver?.hasSchema(typeName)
           ? await resolver.resolveList(typeName, labeled)
@@ -236,7 +237,7 @@ export function registerPublicContentRoutes(
         }
 
         // Outbound boundary (see "Response projection order" above).
-        let data = projectors[typeName]!.map.toLabels(item as Record<string, unknown>)
+        let data = projectRow(item as Record<string, unknown>, typeName, projectors)
         if (resolver?.hasSchema(typeName)) data = await resolver.resolveItem(typeName, data)
         return c.json({ ok: true, data })
       })
@@ -269,10 +270,8 @@ export function registerPublicContentRoutes(
       })
 
       // Outbound boundary (see "Response projection order" above).
-      const projector = projectors[typeName]!
-      const fieldKeys = projector.map
       const labeled = (result.data as Record<string, unknown>[]).map((row) =>
-        fieldKeys.toLabels(row)
+        projectRow(row, typeName, projectors)
       )
       const data = resolver?.hasSchema(typeName)
         ? await resolver.resolveList(typeName, labeled)
@@ -296,7 +295,7 @@ export function registerPublicContentRoutes(
       }
 
       // Outbound boundary (see "Response projection order" above).
-      let data = projectors[typeName]!.map.toLabels(item as Record<string, unknown>)
+      let data = projectRow(item as Record<string, unknown>, typeName, projectors)
       if (resolver?.hasSchema(typeName)) data = await resolver.resolveItem(typeName, data)
       return c.json({ ok: true, data })
     })
