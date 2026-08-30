@@ -3,7 +3,14 @@ import { Hono } from 'hono'
 import { sql } from 'drizzle-orm'
 import { createPostgresAdapter } from '@bobbykim/manguito-cms-db'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
-import type { SchemaRegistry, ParsedContentType, ParsedRole } from '@bobbykim/manguito-cms-core'
+import type {
+  SchemaRegistry,
+  ParsedContentType,
+  ParsedParagraphType,
+  ParsedTaxonomyType,
+  ParsedField,
+  ParsedRole,
+} from '@bobbykim/manguito-cms-core'
 import { createCmsApp } from '../app'
 import { createLocalAdapter } from '../storage/adapters/local'
 import { createDrizzleContentRepository } from '../repositories/content'
@@ -11,7 +18,7 @@ import { createMediaRepository } from '../repositories/media'
 import { registerAdminContentRoutes } from '../routes/admin/content'
 import { createFieldKeyMap } from '../field-keys'
 import { buildProjectors } from '../projector'
-import { divergentTextField, divergentMediaField } from '../field-keys.test-fixtures'
+import { divergentTextField, divergentMediaField, divergentParagraphType } from '../field-keys.test-fixtures'
 import type { createPermissionMiddleware } from '../middleware/permission'
 
 // End-to-end proof (Stage 1, Task 9) that a field's public LABEL and its
@@ -31,9 +38,79 @@ const TABLE = 'content_divergence_test'
 const TYPE_NAME = 'divergence_test'
 const BASE_PATH = 'divergence_test'
 
+// A paragraph child table and a reference target table, both storage-named,
+// added for Task 6 to drive nested projection (?include=, paragraph children)
+// and sort mapping against real Postgres — not just the top-level row Tasks
+// 1-8 already covered.
+const PARAGRAPH_TABLE = 'paragraph_divergence_card'
+const CATEGORY_TABLE = 'taxonomy_divergence_category'
+
+// A one-to-one reference field whose label ('category') diverges from its
+// storage column ('category_id'). `ui_component.ref` names the registry key
+// ('taxonomy--category') the projector uses to map the resolved target's
+// labels; `db_column.foreign_key.table` names the physical Postgres table
+// (CATEGORY_TABLE) `resolveRelationField` actually queries — deliberately two
+// different strings, the same split `divergentReferenceField` exercises.
+const CATEGORY_FIELD: ParsedField = {
+  name: 'category',
+  label: 'Category',
+  field_type: 'reference',
+  required: false,
+  nullable: true,
+  order: 2,
+  validation: { required: false },
+  db_column: {
+    column_name: 'category_id',
+    column_type: 'uuid',
+    nullable: true,
+    foreign_key: { table: CATEGORY_TABLE, column: 'id', on_delete: 'SET NULL' },
+  },
+  ui_component: { component: 'typeahead-select', ref: 'taxonomy--category', rel: 'one-to-one' },
+}
+
+// A paragraph field whose children live on PARAGRAPH_TABLE, keyed by the
+// paragraph type's machine name 'paragraph--card' (divergentParagraphType).
+const CARDS_FIELD: ParsedField = {
+  name: 'cards',
+  label: 'Cards',
+  field_type: 'paragraph',
+  required: false,
+  nullable: true,
+  order: 3,
+  validation: { required: false },
+  db_column: null,
+  ui_component: { component: 'paragraph-embed', ref: 'paragraph--card', rel: 'one-to-many' },
+}
+
+// divergentParagraphType (fixture) with its table pointed at PARAGRAPH_TABLE
+// instead of its default 'paragraph_card' — this suite creates its own table.
+const CARD_PARAGRAPH_TYPE: ParsedParagraphType = {
+  ...divergentParagraphType,
+  db: { table_name: PARAGRAPH_TABLE },
+}
+
+// The reference field's target: a taxonomy type with the same label/column
+// divergence (label `title` over column `blog_title`, divergentTextField).
+const CATEGORY_TAXONOMY_TYPE: ParsedTaxonomyType = {
+  schema_type: 'taxonomy-type',
+  name: 'taxonomy--category',
+  label: 'Category',
+  source_file: 'taxonomy--category.yml',
+  system_fields: [
+    { name: 'id', db_type: 'uuid', primary_key: true, nullable: false },
+    { name: 'slug', db_type: 'varchar', nullable: false },
+    { name: 'published', db_type: 'boolean', default: 'true', nullable: false },
+  ],
+  fields: [divergentTextField],
+  db: { table_name: CATEGORY_TABLE },
+  api: { collection_path: '/api/taxonomy/category', item_path: '/api/taxonomy/category/:id' },
+}
+
 // The registry entry: label `title` over column `blog_title` (divergentTextField)
 // and label `hero` over column `blog_hero_image` (divergentMediaField) — the
 // exact fixtures Tasks 3/5 already exercise, now driven against a real table.
+// Plus CATEGORY_FIELD and CARDS_FIELD (Task 6), reaching one level of nesting
+// in each direction: a resolved reference target and a paragraph child row.
 const DIVERGENT_TYPE: ParsedContentType = {
   schema_type: 'content-type',
   name: TYPE_NAME,
@@ -48,7 +125,7 @@ const DIVERGENT_TYPE: ParsedContentType = {
     { name: 'created_at', db_type: 'timestamp', default: 'now()', nullable: false },
     { name: 'updated_at', db_type: 'timestamp', default: 'now()', nullable: false },
   ],
-  fields: [divergentTextField, divergentMediaField],
+  fields: [divergentTextField, divergentMediaField, CATEGORY_FIELD, CARDS_FIELD],
   ui: { tabs: [] },
   db: { table_name: TABLE, junction_tables: [] },
   api: {
@@ -75,8 +152,8 @@ const REGISTRY: SchemaRegistry = {
   roles: { roles: SYSTEM_ROLES, valid_permissions: [] },
   schemas: {},
   content_types: { [TYPE_NAME]: DIVERGENT_TYPE },
-  paragraph_types: {},
-  taxonomy_types: {},
+  paragraph_types: { 'paragraph--card': CARD_PARAGRAPH_TYPE },
+  taxonomy_types: { 'taxonomy--category': CATEGORY_TAXONOMY_TYPE },
   enum_types: {},
   all_schemas: [],
 }
@@ -114,18 +191,50 @@ beforeAll(async () => {
       created_at timestamp DEFAULT now(),
       updated_at timestamp DEFAULT now(),
       blog_title varchar(255),
-      blog_hero_image uuid
+      blog_hero_image uuid,
+      category_id uuid
+    )`)
+  )
+
+  // Paragraph child table — scoped by parent_id AND parent_field (two
+  // paragraph fields of the same type would otherwise share rows), ordered by
+  // "order". Storage-named (blog_title), same divergence as the parent row.
+  await db.execute(
+    sql.raw(`CREATE TABLE "${PARAGRAPH_TABLE}" (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      parent_id uuid NOT NULL,
+      parent_type varchar(255),
+      parent_field varchar(255) NOT NULL,
+      "order" integer NOT NULL DEFAULT 0,
+      blog_title varchar(255)
+    )`)
+  )
+
+  // Reference target table — same divergence again, one level of nesting via
+  // ?include=category.
+  await db.execute(
+    sql.raw(`CREATE TABLE "${CATEGORY_TABLE}" (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      slug varchar(255) NOT NULL UNIQUE,
+      published boolean NOT NULL DEFAULT true,
+      blog_title varchar(255)
     )`)
   )
 }, 30_000)
 
 afterAll(async () => {
   await db.execute(sql.raw(`DROP TABLE IF EXISTS "${TABLE}"`))
+  await db.execute(sql.raw(`DROP TABLE IF EXISTS "${PARAGRAPH_TABLE}"`))
+  await db.execute(sql.raw(`DROP TABLE IF EXISTS "${CATEGORY_TABLE}"`))
   await pgAdapter.disconnect()
 })
 
 beforeEach(async () => {
-  await db.execute(sql.raw(`TRUNCATE TABLE "${TABLE}" RESTART IDENTITY CASCADE`))
+  await db.execute(
+    sql.raw(
+      `TRUNCATE TABLE "${TABLE}", "${PARAGRAPH_TABLE}", "${CATEGORY_TABLE}" RESTART IDENTITY CASCADE`
+    )
+  )
 })
 
 function makePublicApp() {
@@ -229,5 +338,77 @@ describe('field label / storage column divergence, end to end', () => {
       sql.raw(`SELECT blog_title FROM "${TABLE}" WHERE slug = 'created-one'`)
     )
     expect((row.rows[0] as { blog_title: string }).blog_title).toBe('Created')
+  })
+
+  // ─── Task 6: end-to-end proof — nested projection and sort mapping ─────────
+  //
+  // Everything above proved the TOP-LEVEL row against real Postgres. These
+  // three drive the recursive projectRow walk (a resolved reference target,
+  // a paragraph child row) and the split sort guard, all against real tables
+  // whose columns are storage names — not a mock repo, not a hand-built app.
+
+  it('public ?include= returns the target type labels, never its columns', async () => {
+    const categoryResult = await db.execute(
+      sql.raw(`INSERT INTO "${CATEGORY_TABLE}" (slug, published, blog_title)
+               VALUES ('news', true, 'News') RETURNING id`)
+    )
+    const categoryId = (categoryResult.rows[0] as { id: string }).id
+
+    await db.execute(
+      sql`INSERT INTO ${sql.raw(`"${TABLE}"`)} (slug, published, blog_title, category_id)
+          VALUES ('published-one', true, 'Hello', ${categoryId})`
+    )
+
+    const app = makePublicApp()
+    const res = await app.request('/api/divergence_test/published-one?include=category')
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(body.data.category.title).toBe('News')
+    expect(body.data.category).not.toHaveProperty('blog_title')
+  })
+
+  it('public paragraph children return paragraph labels', async () => {
+    const contentResult = await db.execute(
+      sql.raw(`INSERT INTO "${TABLE}" (slug, published, blog_title)
+               VALUES ('published-one', true, 'Hello') RETURNING id`)
+    )
+    const contentId = (contentResult.rows[0] as { id: string }).id
+
+    // parent_field is seeded with the paragraph field's LABEL ('cards'), the
+    // same key resolveRelationField/resolveRelationBareIds scope their SELECT
+    // by (buildRelationsMap keys relations by field.name, not by column).
+    await db.execute(
+      sql`INSERT INTO ${sql.raw(`"${PARAGRAPH_TABLE}"`)}
+          (parent_id, parent_type, parent_field, "order", blog_title)
+          VALUES (${contentId}, ${TABLE}, 'cards', 0, 'One')`
+    )
+
+    const app = makePublicApp()
+    const res = await app.request('/api/divergence_test/published-one')
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(body.data.cards[0].title).toBe('One')
+    expect(body.data.cards[0]).not.toHaveProperty('blog_title')
+  })
+
+  it('sorting by a label orders by the storage column', async () => {
+    // Two published rows with different titles, seeded out of alphabetical
+    // order — if the mapped ORDER BY were not actually applied, the response
+    // would come back in insertion order and fail the equality check below.
+    await db.execute(
+      sql.raw(`INSERT INTO "${TABLE}" (slug, published, blog_title)
+               VALUES ('sort-b', true, 'Zeta'), ('sort-a', true, 'Alpha')`)
+    )
+
+    const app = makePublicApp()
+    const res = await app.request('/api/divergence_test?sort_by=title&sort_order=asc')
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(body.data.map((r: { title: string }) => r.title)).toEqual(
+      [...body.data.map((r: { title: string }) => r.title)].sort()
+    )
   })
 })
