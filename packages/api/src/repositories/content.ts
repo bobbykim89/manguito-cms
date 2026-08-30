@@ -177,10 +177,13 @@ export function createDrizzleContentRepository<T>(
       // fall back to the label allowlist — the pre-versioning behavior.
       const allowed = sortableColumns ?? SORTABLE_FIELDS
       if (!allowed.has(sort_by as string)) {
-        throw codeError(
-          'INVALID_SORT_FIELD',
-          `'${sort_by}' is not sortable. Allowed: ${[...allowed].join(', ')}`
-        )
+        // Deliberately does NOT enumerate `allowed`: when the caller supplied
+        // `sortableColumns` that set holds STORAGE COLUMNS, which are private
+        // to the database and must never reach a client envelope. The REST
+        // routes validate the label before calling in and emit their own
+        // message naming the valid LABELS (routes/content.ts,
+        // routes/admin/content.ts); this guard is the backstop behind them.
+        throw codeError('INVALID_SORT_FIELD', `'${sort_by}' is not sortable.`)
       }
 
       const offset = (page - 1) * per_page
