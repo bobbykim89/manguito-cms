@@ -384,13 +384,45 @@ describe('field label / storage column divergence, end to end', () => {
           VALUES (${contentId}, ${TABLE}, 'cards', 0, 'One')`
     )
 
+    // ?include=cards is required: resolveRows (repositories/content.ts) only
+    // fully resolves a non-media relation when its field name is explicitly
+    // included — otherwise resolveRelationBareIds hands back bare child ids
+    // (see the sibling test below). This is the path that actually exercises
+    // the recursive projectRow walk into a resolved paragraph row.
     const app = makePublicApp()
-    const res = await app.request('/api/divergence_test/published-one')
+    const res = await app.request('/api/divergence_test/published-one?include=cards')
     const body = await res.json()
 
     expect(res.status).toBe(200)
     expect(body.data.cards[0].title).toBe('One')
     expect(body.data.cards[0]).not.toHaveProperty('blog_title')
+  })
+
+  it('public paragraph children NOT ?include=d come back as bare ids, left alone', async () => {
+    const contentResult = await db.execute(
+      sql.raw(`INSERT INTO "${TABLE}" (slug, published, blog_title)
+               VALUES ('published-one', true, 'Hello') RETURNING id`)
+    )
+    const contentId = (contentResult.rows[0] as { id: string }).id
+
+    const cardResult = await db.execute(
+      sql`INSERT INTO ${sql.raw(`"${PARAGRAPH_TABLE}"`)}
+          (parent_id, parent_type, parent_field, "order", blog_title)
+          VALUES (${contentId}, ${TABLE}, 'cards', 0, 'One') RETURNING id`
+    )
+    const cardId = (cardResult.rows[0] as { id: string }).id
+
+    // No ?include=cards this time: resolveRelationBareIds populates `cards`
+    // with an array of raw child ids rather than resolved rows, and
+    // projectRow's isPlainRow guard correctly leaves a string alone — there
+    // is nothing to project because nothing was resolved. Pinning this so the
+    // distinction from the test above is documented, not rediscovered.
+    const app = makePublicApp()
+    const res = await app.request('/api/divergence_test/published-one')
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(body.data.cards).toEqual([cardId])
   })
 
   it('sorting by a label orders by the storage column', async () => {
