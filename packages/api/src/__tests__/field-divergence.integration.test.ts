@@ -241,10 +241,22 @@ function makePublicApp() {
   return createCmsApp({ storage: createLocalAdapter(), registry: REGISTRY, db }).app
 }
 
+// Every type in REGISTRY, exactly as createCmsApp builds them: a projector is
+// only created for a type whose map is present, so omitting the paragraph and
+// taxonomy maps here would silently drop those two from the projector set and
+// leave a nested admin assertion passing for the wrong reason.
+function makeFieldKeyMaps() {
+  return {
+    [TYPE_NAME]: createFieldKeyMap(DIVERGENT_TYPE.fields),
+    'paragraph--card': createFieldKeyMap(CARD_PARAGRAPH_TYPE.fields),
+    'taxonomy--category': createFieldKeyMap(CATEGORY_TAXONOMY_TYPE.fields),
+  }
+}
+
 function makeAdminApp() {
   const repo = createDrizzleContentRepository(db, TABLE)
   const mediaRepo = createMediaRepository(db)
-  const projectors = buildProjectors(REGISTRY, { [TYPE_NAME]: createFieldKeyMap(DIVERGENT_TYPE.fields) })
+  const projectors = buildProjectors(REGISTRY, makeFieldKeyMaps())
 
   const app = new Hono()
   registerAdminContentRoutes(
