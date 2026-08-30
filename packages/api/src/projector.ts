@@ -61,9 +61,9 @@ export function buildProjectors(
 ): Projectors {
   const projectors: Projectors = {}
   const sources: Array<Record<string, { fields: ParsedField[] }>> = [
-    registry.content_types as unknown as Record<string, { fields: ParsedField[] }>,
-    registry.taxonomy_types as unknown as Record<string, { fields: ParsedField[] }>,
-    registry.paragraph_types as unknown as Record<string, { fields: ParsedField[] }>,
+    registry.content_types,
+    registry.taxonomy_types,
+    registry.paragraph_types,
   ]
 
   for (const source of sources) {

@@ -116,7 +116,7 @@ export const divergentParagraphType: ParsedParagraphType = {
   system_fields: [],
   fields: [divergentTextField],
   db: { table_name: 'paragraph_card' },
-} as ParsedParagraphType
+}
 
 // A reference/junction TARGET type with the same divergence.
 export const divergentTargetType: ParsedContentType = {
@@ -135,4 +135,4 @@ export const divergentTargetType: ParsedContentType = {
     http_methods: ['GET'],
     item_path: '/api/category/:slug',
   },
-} as ParsedContentType
+}
