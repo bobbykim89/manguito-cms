@@ -235,14 +235,22 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
   // `published_only: true`, and the dataloaders filter relation targets by
   // published (ADR api/0002). Built separately from the admin `repos` so a
   // future change there can never silently widen the public surface.
+  //
+  // They do take `sortableColumns`, like every other repo here: the GraphQL
+  // sort enum's `title` value is a schema field's LABEL, which
+  // `collectionResolver` maps to a column before calling findMany.
   const graphqlRepos = Object.fromEntries([
     ...Object.entries(registry.content_types).map(([typeName, ct]) => [
       typeName,
-      createDrizzleContentRepository(db, (ct as ParsedContentType).db.table_name),
+      createDrizzleContentRepository(db, (ct as ParsedContentType).db.table_name, {
+        sortableColumns: sortableColumnsFor(typeName),
+      }),
     ]),
     ...Object.entries(registry.taxonomy_types).map(([typeName, tt]) => [
       typeName,
-      createDrizzleContentRepository(db, (tt as ParsedTaxonomyType).db.table_name),
+      createDrizzleContentRepository(db, (tt as ParsedTaxonomyType).db.table_name, {
+        sortableColumns: sortableColumnsFor(typeName),
+      }),
     ]),
   ])
 

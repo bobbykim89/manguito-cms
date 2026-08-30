@@ -86,7 +86,12 @@ async function resolveProgrammaticRow(
 type CollectionArgs = {
   page?: number
   perPage?: number
-  sortBy?: string // already the snake_case column (enum internal value)
+  /**
+   * The sort enum's internal value (filters.ts `SORTABLE`), which mixes two key
+   * spaces: `created_at` / `updated_at` are system COLUMNS, but `title` is a
+   * schema field's LABEL. It must be mapped before it reaches the repository.
+   */
+  sortBy?: string
   sortOrder?: 'asc' | 'desc'
   filter?: Record<string, unknown>
 }
@@ -106,11 +111,17 @@ export function collectionResolver(
       throw codeError('INVALID_PAGINATION', 'perPage must be between 1 and 100')
     }
     const repo = ctx.repos[typeName]!
+    // `ORDER BY` takes a storage column, never a label. `columnFor` resolves a
+    // schema field's label to its column; a system column (`created_at`,
+    // `updated_at`) is not a label at all, so it has no entry and falls
+    // through unchanged. Identity today, since every label equals its column.
+    const sortBy = args.sortBy ?? 'created_at'
+    const sortColumn = fieldKeys?.columnFor(sortBy) ?? sortBy
     const result = await repo.findMany({
       published_only: true,
       page,
       per_page: perPage,
-      sort_by: (args.sortBy ?? 'created_at') as 'title' | 'created_at' | 'updated_at',
+      sort_by: sortColumn as 'title' | 'created_at' | 'updated_at',
       sort_order: args.sortOrder ?? 'asc',
       filters: translateFilters(args.filter, nameMap, fieldKeys?.columnFor),
     })

@@ -25,17 +25,23 @@ export const SortOrderEnum = new GraphQLEnumType({
   values: { ASC: { value: 'asc' }, DESC: { value: 'desc' } },
 })
 
-// Only these system fields are sortable (mirrors the REST SORTABLE_FIELDS).
-const SORTABLE: Array<{ gql: string; column: string }> = [
-  { gql: 'title', column: 'title' },
-  { gql: 'createdAt', column: 'created_at' },
-  { gql: 'updatedAt', column: 'updated_at' },
+// Only these fields are sortable (mirrors the REST SORTABLE_FIELDS).
+//
+// `value` is the enum's internal value, and it is NOT uniformly a storage
+// column: `created_at` / `updated_at` are the snake_case forms of real system
+// columns, but `title` is a schema field's LABEL — the same value REST accepts
+// in `?sort_by=`. `collectionResolver` maps it to a column through the type's
+// FieldKeyMap before the repository builds its ORDER BY.
+const SORTABLE: Array<{ gql: string; value: string }> = [
+  { gql: 'title', value: 'title' },
+  { gql: 'createdAt', value: 'created_at' },
+  { gql: 'updatedAt', value: 'updated_at' },
 ]
 
 export function buildSortFieldEnum(typeName: string): GraphQLEnumType {
   return new GraphQLEnumType({
     name: `${typeName}SortField`,
-    values: Object.fromEntries(SORTABLE.map((s) => [s.gql, { value: s.column }])),
+    values: Object.fromEntries(SORTABLE.map((s) => [s.gql, { value: s.value }])),
   })
 }
 
