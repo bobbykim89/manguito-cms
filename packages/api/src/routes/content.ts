@@ -4,7 +4,7 @@ import type {
   ContentRepository,
 } from '@bobbykim/manguito-cms-core'
 import type { ProgrammaticResolver } from '../programmatic/resolve.js'
-import type { FieldKeyMap } from '../field-keys.js'
+import type { Projectors } from '../projector.js'
 import type { PublicPaths } from '../paths.js'
 import {
   SORTABLE_FIELDS,
@@ -37,7 +37,7 @@ export function registerPublicContentRoutes(
   app: Hono,
   registry: SchemaRegistry,
   repos: ContentRepos,
-  fieldKeyMaps: Record<string, FieldKeyMap>,
+  projectors: Projectors,
   paths: PublicPaths,
   listRateLimit?: MiddlewareHandler,
   resolver?: ProgrammaticResolver
@@ -100,14 +100,15 @@ export function registerPublicContentRoutes(
           )
         }
         // Outbound boundary (see "Response projection order" above).
-        let data = fieldKeyMaps[typeName]!.toLabels(result.data[0] as Record<string, unknown>)
+        let data = projectors[typeName]!.map.toLabels(result.data[0] as Record<string, unknown>)
         if (resolver?.hasSchema(typeName)) data = await resolver.resolveItem(typeName, data)
         return c.json({ ok: true, data })
       })
     } else {
       registerListRoute(paths.collection(basePath), async (c) => {
         // Inbound boundary: query params speak labels; filters query storage keys.
-        const fieldKeys = fieldKeyMaps[typeName]!
+        const projector = projectors[typeName]!
+        const fieldKeys = projector.map
         const pagination = parsePagination(c.req.query('page'), c.req.query('per_page'))
         if (!pagination.ok) {
           return c.json(
@@ -235,7 +236,7 @@ export function registerPublicContentRoutes(
         }
 
         // Outbound boundary (see "Response projection order" above).
-        let data = fieldKeyMaps[typeName]!.toLabels(item as Record<string, unknown>)
+        let data = projectors[typeName]!.map.toLabels(item as Record<string, unknown>)
         if (resolver?.hasSchema(typeName)) data = await resolver.resolveItem(typeName, data)
         return c.json({ ok: true, data })
       })
@@ -268,7 +269,8 @@ export function registerPublicContentRoutes(
       })
 
       // Outbound boundary (see "Response projection order" above).
-      const fieldKeys = fieldKeyMaps[typeName]!
+      const projector = projectors[typeName]!
+      const fieldKeys = projector.map
       const labeled = (result.data as Record<string, unknown>[]).map((row) =>
         fieldKeys.toLabels(row)
       )
@@ -294,7 +296,7 @@ export function registerPublicContentRoutes(
       }
 
       // Outbound boundary (see "Response projection order" above).
-      let data = fieldKeyMaps[typeName]!.toLabels(item as Record<string, unknown>)
+      let data = projectors[typeName]!.map.toLabels(item as Record<string, unknown>)
       if (resolver?.hasSchema(typeName)) data = await resolver.resolveItem(typeName, data)
       return c.json({ ok: true, data })
     })

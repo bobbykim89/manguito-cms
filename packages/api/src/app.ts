@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import type { Handler } from 'hono'
 import { sql } from 'drizzle-orm'
-import type { StorageAdapter, SchemaRegistry, ParsedContentType, ParsedTaxonomyType, ResolvedRateLimitConfig, CorsConfig, ResolvedGraphQLConfig } from '@bobbykim/manguito-cms-core'
+import type { StorageAdapter, SchemaRegistry, ParsedContentType, ParsedTaxonomyType, ParsedParagraphType, ResolvedRateLimitConfig, CorsConfig, ResolvedGraphQLConfig } from '@bobbykim/manguito-cms-core'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import { createCorsMiddleware } from './middleware/cors.js'
 import { createSecurityHeadersMiddleware } from './middleware/security-headers.js'
@@ -25,6 +25,7 @@ import { createDrizzleContentRepository } from './repositories/content.js'
 import { buildRelationsMap } from './relations.js'
 import { createMediaRepository } from './repositories/media.js'
 import { createFieldKeyMap, type FieldKeyMap } from './field-keys.js'
+import { buildProjectors, type Projectors } from './projector.js'
 import { normalizePrefix, createPublicPaths } from './paths.js'
 
 export type CreateCmsAppOptions = {
@@ -129,6 +130,37 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
   }
 
   const requireHierarchy = createHierarchyMiddleware(rolesRegistry, getUserRole)
+
+  // ── Field key maps ──────────────────────────────────────────────────────────
+  //
+  // One per content/taxonomy type, built once at startup. Throws on a label /
+  // column collision — the server must not boot with an ambiguous mapping.
+  const fieldKeyMaps: Record<string, FieldKeyMap> = Object.fromEntries([
+    ...Object.entries(registry.content_types).map(([typeName, ct]) => [
+      typeName,
+      createFieldKeyMap((ct as ParsedContentType).fields),
+    ]),
+    ...Object.entries(registry.taxonomy_types).map(([typeName, tt]) => [
+      typeName,
+      createFieldKeyMap((tt as ParsedTaxonomyType).fields),
+    ]),
+  ])
+
+  // Paragraph types need key maps for nested projection, but deliberately NOT
+  // for GraphQL: buildObjectType looks types up in `fieldKeyMaps`, and paragraph
+  // types resolving to `undefined` there is existing, pinned behavior. Keeping
+  // these separate means projection gains paragraph maps while GraphQL sees the
+  // same content+taxonomy map it always has.
+  const paragraphFieldKeyMaps: Record<string, FieldKeyMap> = Object.fromEntries(
+    Object.entries(registry.paragraph_types).map(([typeName, pt]) => [
+      typeName,
+      createFieldKeyMap((pt as ParsedParagraphType).fields),
+    ])
+  )
+
+  // Recursive outbound projection. Built once from BOTH map objects; every read
+  // response is projected through this rather than through a bare toLabels.
+  const projectors = buildProjectors(registry, { ...fieldKeyMaps, ...paragraphFieldKeyMaps })
 
   // ── Repositories ──────────────────────────────────────────────────────────────
 
@@ -255,24 +287,9 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
     })
   )
 
-  // ── Field key maps ──────────────────────────────────────────────────────────
-  //
-  // One per content/taxonomy type, built once at startup. Throws on a label /
-  // column collision — the server must not boot with an ambiguous mapping.
-  const fieldKeyMaps: Record<string, FieldKeyMap> = Object.fromEntries([
-    ...Object.entries(registry.content_types).map(([typeName, ct]) => [
-      typeName,
-      createFieldKeyMap((ct as ParsedContentType).fields),
-    ]),
-    ...Object.entries(registry.taxonomy_types).map(([typeName, tt]) => [
-      typeName,
-      createFieldKeyMap((tt as ParsedTaxonomyType).fields),
-    ]),
-  ])
-
   // ── Public routes ─────────────────────────────────────────────────────────────
 
-  registerPublicContentRoutes(app, registry, publicRepos, fieldKeyMaps, publicPaths, listRateLimit, programmaticResolver)
+  registerPublicContentRoutes(app, registry, publicRepos, projectors, publicPaths, listRateLimit, programmaticResolver)
   registerPublicMediaRoutes(app, mediaRepo, publicPaths, listRateLimit)
 
   // ── GraphQL (opt-in) ──────────────────────────────────────────────────────────
@@ -345,7 +362,7 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
   registerSchemaRoute(app, registry, db)
   registerUserRoutes(app, db, requirePermission, requireHierarchy)
 
-  registerAdminContentRoutes(app, registry, repos, fieldKeyMaps, mediaRepo, requirePermission, db)
+  registerAdminContentRoutes(app, registry, repos, projectors, mediaRepo, requirePermission, db)
   registerAdminMediaRoutes(app, mediaRepo, storage, requirePermission, maxFileSize)
 
   return { prefix, app }

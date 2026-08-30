@@ -10,6 +10,7 @@ import { createDrizzleContentRepository } from '../repositories/content'
 import { createMediaRepository } from '../repositories/media'
 import { registerAdminContentRoutes } from '../routes/admin/content'
 import { createFieldKeyMap } from '../field-keys'
+import { buildProjectors } from '../projector'
 import { divergentTextField, divergentMediaField } from '../field-keys.test-fixtures'
 import type { createPermissionMiddleware } from '../middleware/permission'
 
@@ -134,14 +135,14 @@ function makePublicApp() {
 function makeAdminApp() {
   const repo = createDrizzleContentRepository(db, TABLE)
   const mediaRepo = createMediaRepository(db)
-  const fieldKeyMaps = { [TYPE_NAME]: createFieldKeyMap(DIVERGENT_TYPE.fields) }
+  const projectors = buildProjectors(REGISTRY, { [TYPE_NAME]: createFieldKeyMap(DIVERGENT_TYPE.fields) })
 
   const app = new Hono()
   registerAdminContentRoutes(
     app,
     REGISTRY,
     { [TYPE_NAME]: repo },
-    fieldKeyMaps,
+    projectors,
     mediaRepo,
     noopRequirePermission
   )

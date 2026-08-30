@@ -10,6 +10,7 @@ import type {
 import { registerPublicContentRoutes } from '../content'
 import { createProgrammaticResolver, resolverKey } from '../../programmatic/resolve'
 import { createFieldKeyMap } from '../../field-keys'
+import { buildProjectors } from '../../projector'
 import { createPublicPaths } from '../../paths'
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -112,7 +113,7 @@ function repoWith(rows: Record<string, unknown>[]): ContentRepository<unknown> {
   }
 }
 
-const FIELD_KEY_MAPS = { 'content--blog_post': createFieldKeyMap(BLOG.fields) }
+const PROJECTORS = buildProjectors(REGISTRY, { 'content--blog_post': createFieldKeyMap(BLOG.fields) })
 
 // The same schema after a Stage 2 rename: `title` is still the public label but
 // its storage column stayed `blog_title`. A resolver's `ctx.get('title')` must
@@ -135,9 +136,9 @@ const DIVERGENT_REGISTRY: SchemaRegistry = {
   content_types: { 'content--blog_post': DIVERGENT_BLOG },
 }
 
-const DIVERGENT_FIELD_KEY_MAPS = {
+const DIVERGENT_PROJECTORS = buildProjectors(DIVERGENT_REGISTRY, {
   'content--blog_post': createFieldKeyMap(DIVERGENT_BLOG.fields),
-}
+})
 
 function resolverFor() {
   const summary = programmaticField(
@@ -183,7 +184,7 @@ describe('programmatic resolution in public routes', () => {
       app,
       REGISTRY,
       { 'content--blog_post': repoWith(rows) },
-      FIELD_KEY_MAPS,
+      PROJECTORS,
       createPublicPaths('/api'),
       undefined,
       resolverFor()
@@ -201,7 +202,7 @@ describe('programmatic resolution in public routes', () => {
       app,
       REGISTRY,
       { 'content--blog_post': repoWith(rows) },
-      FIELD_KEY_MAPS,
+      PROJECTORS,
       createPublicPaths('/api'),
       undefined,
       resolverFor()
@@ -227,7 +228,7 @@ describe('programmatic resolution in public routes', () => {
       app,
       REGISTRY,
       { 'content--blog_post': repoWith([]) },
-      FIELD_KEY_MAPS,
+      PROJECTORS,
       createPublicPaths('/api'),
       undefined,
       resolverFor()
@@ -247,7 +248,7 @@ describe('programmatic resolution with a divergent field label', () => {
       app,
       DIVERGENT_REGISTRY,
       { 'content--blog_post': repoWith(rows) },
-      DIVERGENT_FIELD_KEY_MAPS,
+      DIVERGENT_PROJECTORS,
       createPublicPaths('/api'),
       undefined,
       divergentResolverFor()
@@ -267,7 +268,7 @@ describe('programmatic resolution with a divergent field label', () => {
       app,
       DIVERGENT_REGISTRY,
       { 'content--blog_post': repoWith(rows) },
-      DIVERGENT_FIELD_KEY_MAPS,
+      DIVERGENT_PROJECTORS,
       createPublicPaths('/api'),
       undefined,
       divergentResolverFor()

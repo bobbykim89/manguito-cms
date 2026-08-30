@@ -28,7 +28,8 @@ import {
 } from '../../relations.js'
 import type { createPermissionMiddleware } from '../../middleware/permission.js'
 import type { ContentRepos } from '../content.js'
-import { isColumnBacked, type FieldKeyMap } from '../../field-keys.js'
+import { isColumnBacked } from '../../field-keys.js'
+import type { Projectors } from '../../projector.js'
 
 // ─── SQL helpers ─────────────────────────────────────────────────────────────
 
@@ -204,7 +205,7 @@ export function registerAdminContentRoutes(
   app: Hono,
   registry: SchemaRegistry,
   repos: ContentRepos,
-  fieldKeyMaps: Record<string, FieldKeyMap>,
+  projectors: Projectors,
   mediaRepo: MediaRepository,
   requirePermission: ReturnType<typeof createPermissionMiddleware>,
   db?: DrizzlePostgresInstance,
@@ -227,7 +228,8 @@ export function registerAdminContentRoutes(
         .map((f) => f.name)
     )
 
-    const fieldKeys = fieldKeyMaps[typeName]!
+    const projector = projectors[typeName]!
+    const fieldKeys = projector.map
 
     const requiredFields = contentType.fields.filter((f) => f.required)
 
@@ -751,7 +753,8 @@ export function registerAdminContentRoutes(
         .map((f) => f.name)
     )
 
-    const fieldKeys = fieldKeyMaps[typeName]!
+    const projector = projectors[typeName]!
+    const fieldKeys = projector.map
 
     const requiredFields = taxonomyType.fields.filter((f) => f.required)
 

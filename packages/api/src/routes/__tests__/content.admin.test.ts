@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { Hono } from 'hono'
 import { registerAdminContentRoutes } from '../admin/content'
 import { createFieldKeyMap, type FieldKeyMap } from '../../field-keys'
+import { buildProjectors } from '../../projector'
 import { divergentTextField } from '../../field-keys.test-fixtures'
 import type {
   ContentRepository,
@@ -236,13 +237,14 @@ function buildDivergentAdminApp(
   const fieldKeyMaps: Record<string, FieldKeyMap> = {
     'divergent-post': createFieldKeyMap(fields),
   }
+  const projectors = buildProjectors(registry, fieldKeyMaps)
 
   const app = new Hono()
   registerAdminContentRoutes(
     app,
     registry,
     { 'divergent-post': repo },
-    fieldKeyMaps,
+    projectors,
     makeMockMediaRepo(),
     noopRequirePermission
   )
@@ -286,6 +288,7 @@ describe('admin content routes', () => {
       createFieldKeyMap(tt.fields),
     ]),
   ])
+  const projectors = buildProjectors(registry, fieldKeyMaps)
 
   beforeEach(() => {
     mockBlogRepo = makeMockRepo()
@@ -299,7 +302,7 @@ describe('admin content routes', () => {
       'home-page': mockSingletonRepo,
       'page-with-image': mockMediaTypeRepo,
       category: mockCategoryRepo,
-    }, fieldKeyMaps, mockMediaRepo, noopRequirePermission)
+    }, projectors, mockMediaRepo, noopRequirePermission)
   })
 
   describe('PATCH — publish validation', () => {
@@ -555,7 +558,7 @@ describe('admin content routes', () => {
         'home-page': mockSingletonRepo,
         'page-with-image': mockMediaTypeRepo,
         category: mockCategoryRepo,
-      }, fieldKeyMaps, mockMediaRepo, selectiveRequirePermission)
+      }, projectors, mockMediaRepo, selectiveRequirePermission)
       return createOnlyApp
     }
 
