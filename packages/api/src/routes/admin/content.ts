@@ -29,7 +29,7 @@ import {
 import type { createPermissionMiddleware } from '../../middleware/permission.js'
 import type { ContentRepos } from '../content.js'
 import { isColumnBacked } from '../../field-keys.js'
-import type { Projectors } from '../../projector.js'
+import { projectRow, type Projectors } from '../../projector.js'
 
 // ─── SQL helpers ─────────────────────────────────────────────────────────────
 
@@ -279,7 +279,9 @@ export function registerAdminContentRoutes(
         const result = await repo.findMany(findOpts)
 
         // Outbound boundary: rows are storage-keyed; responses speak labels.
-        const data = result.data.map((row) => fieldKeys.toLabels(row as Record<string, unknown>))
+        const data = result.data.map((row) =>
+          projectRow(row as Record<string, unknown>, typeName, projectors)
+        )
 
         return c.json({ ...result, data })
       }
@@ -330,7 +332,7 @@ export function registerAdminContentRoutes(
         // Outbound boundary: rows are storage-keyed; responses speak labels.
         // Mapped after the paragraph/junction population above so those
         // label-keyed additions survive.
-        const data = fieldKeys.toLabels(item as Record<string, unknown>)
+        const data = projectRow(item as Record<string, unknown>, typeName, projectors)
 
         return c.json({ ok: true, data })
       }
@@ -504,7 +506,7 @@ export function registerAdminContentRoutes(
         await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
 
         // Outbound boundary: rows are storage-keyed; responses speak labels.
-        const data = fieldKeys.toLabels(item as Record<string, unknown>)
+        const data = projectRow(item as Record<string, unknown>, typeName, projectors)
 
         return c.json({ ok: true, data }, 201)
     }
@@ -661,7 +663,7 @@ export function registerAdminContentRoutes(
         await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
 
         // Outbound boundary: rows are storage-keyed; responses speak labels.
-        const data = fieldKeys.toLabels(updated as Record<string, unknown>)
+        const data = projectRow(updated as Record<string, unknown>, typeName, projectors)
 
         return c.json({ ok: true, data })
     }
@@ -801,7 +803,9 @@ export function registerAdminContentRoutes(
         const result = await repo.findMany(findOpts)
 
         // Outbound boundary: rows are storage-keyed; responses speak labels.
-        const data = result.data.map((row) => fieldKeys.toLabels(row as Record<string, unknown>))
+        const data = result.data.map((row) =>
+          projectRow(row as Record<string, unknown>, typeName, projectors)
+        )
 
         return c.json({ ...result, data })
       }
@@ -823,7 +827,7 @@ export function registerAdminContentRoutes(
         }
 
         // Outbound boundary: rows are storage-keyed; responses speak labels.
-        const data = fieldKeys.toLabels(item as Record<string, unknown>)
+        const data = projectRow(item as Record<string, unknown>, typeName, projectors)
 
         return c.json({ ok: true, data })
       }
@@ -895,7 +899,7 @@ export function registerAdminContentRoutes(
         await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
 
         // Outbound boundary: rows are storage-keyed; responses speak labels.
-        const data = fieldKeys.toLabels(item as Record<string, unknown>)
+        const data = projectRow(item as Record<string, unknown>, typeName, projectors)
 
         return c.json({ ok: true, data }, 201)
       }
@@ -986,7 +990,7 @@ export function registerAdminContentRoutes(
         await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
 
         // Outbound boundary: rows are storage-keyed; responses speak labels.
-        const data = fieldKeys.toLabels(updated as Record<string, unknown>)
+        const data = projectRow(updated as Record<string, unknown>, typeName, projectors)
 
         return c.json({ ok: true, data })
       }
