@@ -452,6 +452,12 @@ export function registerAdminContentRoutes(
 
 Handlers that need a plain map reach it as `projectors[typeName]!.map` — one object threaded, not two.
 
+- [ ] **Step 0: Move the field-key-map block ABOVE repository construction**
+
+`fieldKeyMaps` is currently built at `app.ts:262`, but the repositories are constructed at `app.ts:135-197` — *before* it. Task 5 passes `sortableColumns` derived from `fieldKeyMaps` at repository construction, which would be a use-before-declaration error.
+
+Move the whole `fieldKeyMaps` block (and the two blocks you add in Steps 1-2) so it sits **above** `const contentRepos = ...`. It depends only on `registry`, which is available from the options at the top of `createCmsApp`, so the move is safe. Run the full api suite after the move alone, before making any other change, to confirm the reorder is inert.
+
 - [ ] **Step 1: Add paragraph field key maps — in a SEPARATE object**
 
 **Do NOT add paragraph types to the existing `fieldKeyMaps`.** That object is passed to `createGraphQLHandler` (`app.ts:304`), and `graphql/schema.ts:175` does `fieldKeyMaps[machineName]` inside `buildObjectType`, which is shared by content, taxonomy **and paragraph** types. Paragraph types resolve to `undefined` there today, and a GraphQL test pins that unmapped fallback. Widening `fieldKeyMaps` would silently change GraphQL's programmatic-record behavior for paragraph types and break that test — out of scope for this stage, and it would require altering an existing assertion.
