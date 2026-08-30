@@ -149,9 +149,24 @@ So the repository becomes column-aware at construction. It already takes an opti
 
 Both guards survive: the allowlist plus `quoteIdent` is what keeps `ORDER BY` free of injection, and neither is weakened. `created_at` and `updated_at` are system fields absent from the key map and pass through untouched. `codegen/routes.ts` keeps emitting the zod enum of the three labels — that is the public contract and does not move.
 
-### Known limitation, deliberately not fixed
+### The sortable set is arbitrary, and its stated rationale is false
 
-If a content type has **no field labeled `title`**, `columnFor('title')` returns `undefined` and `?sort_by=title` falls through to `ORDER BY "title"` — a Postgres error surfacing as a 500. This is today's behavior and unrelated to divergence. Fixing it means either returning 400 for a previously-500ing request (a behavior change needing its own changeset) or silently ignoring the sort, which hides a caller's mistake. It belongs with schema-driven sorting, which is out of scope. Recorded in ADR api/0011 as known.
+`packages/api/src/routes/query-params.ts` documents the restriction as *"Only indexed system fields are sortable."* Both halves are untrue:
+
+- **Nothing is indexed.** `packages/db/src/codegen/` generates no indexes at all — not on `created_at`, not on `updated_at`, not anywhere. Every sort today is already an unindexed scan-and-sort.
+- **`title` is not a system field.** `CONTENT_SYSTEM_FIELDS` is `id`, `slug`, `base_path_id`, `published`, `created_at`, `updated_at`. `title` is an ordinary schema field the schema never promises exists.
+
+This stage **corrects the comment** to say what is actually true, and changes nothing else about the sortable set.
+
+The consequence of `title` being unpromised: if a content type has no field labeled `title`, `columnFor('title')` returns `undefined` and `?sort_by=title` falls through to `ORDER BY "title"` — a Postgres error surfacing as a 500. That is today's behavior, unrelated to divergence, and it is left alone here. Returning 400 would change behavior for a previously-500ing request and needs its own changeset; silently ignoring the sort would hide a caller's mistake.
+
+### Schema-driven sorting is the agreed destination, on its own timeline
+
+Letting any column-backed field be sortable is the right end state, and the discovery above strengthens the case: the performance objection to widening the set is much weaker than it appears, because the project already accepts unindexed sorts on the three fields it allows. The current restriction is arbitrary.
+
+It is deliberately **not** in this stage. It widens `sort_by` in core, needs per-type enums in `codegen/routes.ts`, and requires a real decision on whether sortability is opt-in (a `sortable: true` schema flag, which also gives an author somewhere to hang an index) or implicit for every column-backed field. That is a user-visible feature deserving its own design pass, not a rider on a correctness stage that otherwise touches nothing outside `packages/api`.
+
+**The `sortableColumns` mechanism below is therefore knowingly interim** — roughly ten lines that a schema-driven sorting design would largely replace. It is paid deliberately, to close the divergence bug now and keep this stage api-only. Because it closes that bug, schema-driven sorting is **not a Stage 2 blocker** and can be scheduled on its own merits.
 
 ## Testing
 
@@ -186,6 +201,7 @@ The shared-object and no-mutation cases should be written first: they are the pr
 - `packages/api/src/app.ts` — paragraph types added to `fieldKeyMaps`; `projectors` built and threaded; `sortableColumns` per repository
 - `packages/api/src/routes/content.ts`, `packages/api/src/routes/admin/content.ts` — 11 sites to `projectRow`, 2 left shallow; `sort_by` mapped
 - `packages/api/src/repositories/content.ts` — `sortableColumns` option, validated in place of the label allowlist
+- `packages/api/src/routes/query-params.ts` — `sort_by` mapped; correct the false "Only indexed system fields are sortable" comment
 
 Nothing in `core`, `db`, `admin`, or `cli`.
 
@@ -199,3 +215,5 @@ Nothing in `core`, `db`, `admin`, or `cli`.
 ## What Stage 2 inherits after this
 
 One recorded prerequisite remains: **a branded label/storage type system**, narrowed by the spike above to branded *strings* rather than branded records, and reaching into core's query type. It is prevention rather than a live defect — after this stage there is no known label/column gap in the api package.
+
+**Schema-driven sorting is a separate, non-blocking item.** It is agreed as the destination and has its own design cycle ahead of it, but because this stage closes the sort divergence bug, Stage 2 does not wait on it.
