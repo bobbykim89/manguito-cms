@@ -44,6 +44,37 @@ describe('computeVersionModel', () => {
     expect(r.value.live).toEqual(['v1', 'v3', 'v4'])
   })
 
+  // Final-review M2: `live` is documented oldest-first, and
+  // checkAmbiguousRenames reads position in it as recency, so the order must
+  // come from the version number and not from the caller's array order.
+  it('orders `live` by version number regardless of the snapshots’ array order', () => {
+    const post = () => makeContentType('content--post', [{ name: 'a' }])
+    const snapshots = [
+      { version: 'v2', registry: makeRegistry([post()]) },
+      { version: 'v1', registry: makeRegistry([post()]) },
+    ]
+    const r = computeVersionModel({
+      current: makeRegistry([post()]), snapshots, history: EMPTY_HISTORY, pending: EMPTY_PENDING,
+    })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.value.live).toEqual(['v1', 'v2', 'v3'])
+  })
+
+  it('does not give one version two positions in `live`', () => {
+    const post = () => makeContentType('content--post', [{ name: 'a' }])
+    const snapshots = [
+      { version: 'v1', registry: makeRegistry([post()]) },
+      { version: 'v1', registry: makeRegistry([post()]) },
+    ]
+    const r = computeVersionModel({
+      current: makeRegistry([post()]), snapshots, history: EMPTY_HISTORY, pending: EMPTY_PENDING,
+    })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.value.live).toEqual(['v1', 'v2'])
+  })
+
   // Final-review C1.3, wired end to end: a stale pending rename whose two
   // endpoints BOTH still exist in current is malformed in no way the input
   // checks can see — every label is real, the window has no from/to overlap —

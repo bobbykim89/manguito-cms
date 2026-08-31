@@ -22,7 +22,17 @@ export function computeVersionModel(input: {
   // Current is one past the highest cut; v1 when nothing has been cut.
   const highest = snapshots.reduce((max, s) => Math.max(max, versionNumber(s.version)), 0)
   const currentVersion = `v${highest + 1}`
-  const live = [...snapshots.map((s) => s.version), currentVersion]
+  // `live` is documented oldest-first, and checkAmbiguousRenames' recency
+  // ranking reads position in it as recency — so the order comes from the
+  // version NUMBER, never from the caller's array order. `loadVersionModel`
+  // already discovers directories sorted, but a direct call with [v2, v1]
+  // would otherwise produce live: ['v2','v1','v3'] and rank v1 as newer than
+  // v2. Deduplicated for the same reason: two snapshots claiming one version
+  // must not occupy two ranks.
+  const live = [
+    ...new Set(snapshots.map((s) => s.version).sort((a, b) => versionNumber(a) - versionNumber(b))),
+    currentVersion,
+  ]
 
   // Validation runs BEFORE the union and projections are built: building them
   // on a model known to be invalid produces plausible-looking wrong output, and
