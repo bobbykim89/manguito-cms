@@ -23,6 +23,14 @@ export function buildProjections(input: {
     { version: currentVersion, registry: current },
   ]
 
+  // Both files' fallbacks, pending winning on a shared key. The pending window
+  // is exactly when a fallback is needed: the field is already out of the
+  // working schema, so every row written from now on puts null in a column an
+  // older live version still serves. Reading only history.fallbacks made a
+  // fallback declared alongside a `drops` entry — the pairing the spec's own
+  // pending.json example shows — silently inert until the next cut.
+  const fallbacks: Record<string, unknown> = { ...history.fallbacks, ...pending.fallbacks }
+
   const out: Record<string, VersionProjection> = {}
 
   for (const { version, registry } of byVersion) {
@@ -37,7 +45,7 @@ export function buildProjections(input: {
           label: f.name, type: typeName, version,
           live, history, pending, current: currentVersion,
         })
-        const fallback = history.fallbacks[`${typeName}.${column_name}`]
+        const fallback = fallbacks[`${typeName}.${column_name}`]
         // `fallback` is omitted entirely rather than set undefined, so the
         // identity case deep-equals cleanly in tests and over the wire.
         return fallback === undefined

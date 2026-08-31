@@ -72,6 +72,41 @@ describe('buildProjections', () => {
     expect(goneInCurrent).toBeUndefined()
   })
 
+  // Final-review I4. Only history.fallbacks was read, so a fallback declared
+  // in pending.json — beside the `drops` entry that made the field vanish, the
+  // pairing the spec's own pending.json example shows and CONTEXT.md already
+  // documents — was silently inert until the next cut, which is precisely the
+  // window in which new rows are writing null into a column v1 still serves.
+  it('honours a fallback declared in pending, not only in history', () => {
+    const snapshots = [{
+      version: 'v1',
+      registry: makeRegistry([makeContentType('content--post', [{ name: 'a' }, { name: 'gone' }])]),
+    }]
+    const current = makeRegistry([makeContentType('content--post', [{ name: 'a' }])])
+    const p = buildProjections({
+      current, currentVersion: 'v2', snapshots, live: ['v1', 'v2'],
+      history: EMPTY_HISTORY,
+      pending: { renames: [], drops: ['content--post.gone'], fallbacks: { 'content--post.gone': 'FB' } },
+    })
+    const gone = p['v1']!.types['content--post']!.fields.find((f) => f.column_name === 'gone')!
+    expect(gone).toEqual({ column_name: 'gone', exposed_as: 'gone', fallback: 'FB' })
+  })
+
+  it('lets a pending fallback win over a history fallback for the same column', () => {
+    const snapshots = [{
+      version: 'v1',
+      registry: makeRegistry([makeContentType('content--post', [{ name: 'a' }, { name: 'gone' }])]),
+    }]
+    const current = makeRegistry([makeContentType('content--post', [{ name: 'a' }])])
+    const p = buildProjections({
+      current, currentVersion: 'v2', snapshots, live: ['v1', 'v2'],
+      history: { renames: [], drops: [], fallbacks: { 'content--post.gone': 'OLD' } },
+      pending: { renames: [], drops: [], fallbacks: { 'content--post.gone': 'NEW' } },
+    })
+    const gone = p['v1']!.types['content--post']!.fields.find((f) => f.column_name === 'gone')!
+    expect(gone.fallback).toBe('NEW')
+  })
+
   it('keys a fallback by column even when a live version exposes it under a different label', () => {
     // The rename is tagged "after: v0" — before v1 itself — so v1's OWN
     // labels already reflect it: v1's schema shows "summary", not the
