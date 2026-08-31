@@ -31,6 +31,19 @@ describe('computeVersionModel', () => {
     expect(r.value.live).toEqual(['v1', 'v2', 'v3'])
   })
 
+  it('derives current from the HIGHEST snapshot number, not the snapshot count, when snapshots are non-contiguous', () => {
+    const snapshots = [
+      { version: 'v1', registry: makeRegistry([makeContentType('content--post', [{ name: 'a' }])]) },
+      { version: 'v3', registry: makeRegistry([makeContentType('content--post', [{ name: 'a' }])]) },
+    ]
+    const current = makeRegistry([makeContentType('content--post', [{ name: 'a' }])])
+    const r = computeVersionModel({ current, snapshots, history: EMPTY_HISTORY, pending: EMPTY_PENDING })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.value.current).toBe('v4')
+    expect(r.value.live).toEqual(['v1', 'v3', 'v4'])
+  })
+
   it('returns collected errors rather than a value when validation fails', () => {
     const snapshots = [{
       version: 'v1',
