@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { buildProjections } from '../projections'
-import { makeContentType, makeRegistry, EMPTY_HISTORY, EMPTY_PENDING } from './fixtures'
+import { makeContentType, makeTaxonomyType, makeRegistry, EMPTY_HISTORY, EMPTY_PENDING } from './fixtures'
 
 describe('buildProjections', () => {
   it('gives current an identity projection', () => {
@@ -10,6 +10,18 @@ describe('buildProjections', () => {
       history: EMPTY_HISTORY, pending: EMPTY_PENDING,
     })
     expect(p['v1']!.types['content--post']!.fields).toEqual([
+      { column_name: 'a', exposed_as: 'a' },
+      { column_name: 'b', exposed_as: 'b' },
+    ])
+  })
+
+  it('gives current an identity projection for a taxonomy type', () => {
+    const current = makeRegistry([makeTaxonomyType('taxonomy--tag', [{ name: 'a' }, { name: 'b' }])])
+    const p = buildProjections({
+      current, currentVersion: 'v1', snapshots: [], live: ['v1'],
+      history: EMPTY_HISTORY, pending: EMPTY_PENDING,
+    })
+    expect(p['v1']!.types['taxonomy--tag']!.fields).toEqual([
       { column_name: 'a', exposed_as: 'a' },
       { column_name: 'b', exposed_as: 'b' },
     ])
@@ -37,7 +49,7 @@ describe('buildProjections', () => {
     ])
   })
 
-  it('attaches a fallback to the right column', () => {
+  it('attaches a fallback to the right column, absent from current once dropped', () => {
     const snapshots = [{
       version: 'v1',
       registry: makeRegistry([makeContentType('content--post', [{ name: 'a' }, { name: 'gone' }])]),
@@ -50,6 +62,47 @@ describe('buildProjections', () => {
     })
     const gone = p['v1']!.types['content--post']!.fields.find((f) => f.column_name === 'gone')!
     expect(gone.fallback).toBe('')
+
+    // A dropped column must not resurface in current's own projection — this
+    // holds today because `current` (the raw parsed registry, not the union)
+    // is what's iterated for the current version, so a dropped field is never
+    // yielded. A convenience refactor that swapped in the union registry here
+    // would silently reintroduce it.
+    const goneInCurrent = p['v2']!.types['content--post']!.fields.find((f) => f.column_name === 'gone')
+    expect(goneInCurrent).toBeUndefined()
+  })
+
+  it('keys a fallback by column even when a live version exposes it under a different label', () => {
+    // The rename is tagged "after: v0" — before v1 itself — so v1's OWN
+    // labels already reflect it: v1's schema shows "summary", not the
+    // original "blog_desc". That makes column_name ('blog_desc') diverge
+    // from exposed_as ('summary') within v1's own projection, which is what
+    // lets this test tell column-keying apart from label-keying: under
+    // label-keying, the lookup key would be 'content--post.summary', which
+    // does not match the fallback's key 'content--post.blog_desc', so the
+    // fallback would silently go missing.
+    //
+    // (A rename tagged "after: v1" does not shape v1's OWN labels — per
+    // fold.ts, "after: vJ" only shapes labels for versions strictly newer
+    // than vJ — so a v1-tagged rename leaves column_name === exposed_as at
+    // v1 and does not discriminate the two keying schemes. Confirmed by
+    // trial: patching the implementation to key by label left that
+    // construction passing unchanged.)
+    const snapshots = [{
+      version: 'v1',
+      registry: makeRegistry([makeContentType('content--post', [{ name: 'summary' }])]),
+    }]
+    const current = makeRegistry([makeContentType('content--post', [{ name: 'a' }])])
+    const history = {
+      renames: [{ after: 'v0', type: 'content--post', from: 'blog_desc', to: 'summary' }],
+      drops: [], fallbacks: { 'content--post.blog_desc': 'N/A' },
+    }
+    const p = buildProjections({
+      current, currentVersion: 'v2', snapshots, live: ['v1', 'v2'],
+      history, pending: EMPTY_PENDING,
+    })
+    const field = p['v1']!.types['content--post']!.fields.find((f) => f.column_name === 'blog_desc')!
+    expect(field).toEqual({ column_name: 'blog_desc', exposed_as: 'summary', fallback: 'N/A' })
   })
 
   it('omits a type a version does not define', () => {
