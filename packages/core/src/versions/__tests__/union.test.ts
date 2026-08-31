@@ -107,6 +107,58 @@ describe('buildUnionRegistry', () => {
     expect(cols).toEqual(['blog_title'])
   })
 
+  // Final-review I2. `SchemaRegistry.schemas` is documented as "the one source
+  // of truth", so an ordinary registry cannot have it disagree with the typed
+  // maps. Before the fix, spreading `...current` left
+  // `union.schemas['content--post'] === current.schemas['content--post']` —
+  // unfolded column, no retained field — while `union.content_types` had both.
+  describe('registry consistency', () => {
+    function build() {
+      const snapshots = [{
+        version: 'v1',
+        registry: makeRegistry([
+          makeContentType('content--post', [{ name: 'blog_title' }, { name: 'gone' }]),
+          makeTaxonomyType('taxonomy--tag', [{ name: 'a' }, { name: 'tax_gone' }]),
+        ]),
+      }]
+      const current = makeRegistry([
+        makeContentType('content--post', [{ name: 'title' }]),
+        makeTaxonomyType('taxonomy--tag', [{ name: 'a' }]),
+      ])
+      return buildUnionRegistry({
+        current, currentVersion: 'v2', snapshots, live: ['v1', 'v2'],
+        history: {
+          renames: [{ after: 'v1', type: 'content--post', from: 'blog_title', to: 'title' }],
+          drops: [], fallbacks: {},
+        },
+        pending: EMPTY_PENDING,
+      })
+    }
+
+    it('holds the same object in `schemas` as in `content_types`', () => {
+      const union = build()
+      expect(union.schemas['content--post']).toBe(union.content_types['content--post'])
+    })
+
+    it('holds the same object in `schemas` as in `taxonomy_types`', () => {
+      const union = build()
+      expect(union.schemas['taxonomy--tag']).toBe(union.taxonomy_types['taxonomy--tag'])
+    })
+
+    it('shows the folded column and the retained column through `schemas` too', () => {
+      const union = build()
+      const cols = union.schemas['content--post']!.fields.map((f) => f.db_column?.column_name)
+      expect(cols).toEqual(['blog_title', 'gone'])
+    })
+
+    it('swaps the rebuilt objects into `all_schemas` as well', () => {
+      const union = build()
+      const post = union.all_schemas.find((s) => s.name === 'content--post')
+      expect(post).toBe(union.content_types['content--post'])
+      expect(union.all_schemas).toHaveLength(2)
+    })
+  })
+
   it('retains and relaxes a dropped taxonomy column too', () => {
     const snapshots = [{
       version: 'v1',

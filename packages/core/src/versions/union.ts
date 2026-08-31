@@ -1,5 +1,6 @@
 import type { SchemaRegistry } from '../parser/validate.js'
 import type { ParsedField } from '../registry/types.js'
+import type { ParsedSchema } from '../parser/parseSchema.js'
 import type { PendingChanges, VersionHistory, VersionSnapshot } from './types.js'
 import { columnOf } from './fold.js'
 
@@ -21,12 +22,15 @@ export function isColumnBacked(field: ParsedField): boolean {
 function unionTypeMap<T extends { fields: ParsedField[] }>(
   currentMap: Record<string, T>,
   snapshotMapOf: (snap: VersionSnapshot) => Record<string, T> | undefined,
-  snapshots: VersionSnapshot[],
-  currentVersion: string,
-  live: string[],
-  history: VersionHistory,
-  pending: PendingChanges
+  input: {
+    currentVersion: string
+    snapshots: VersionSnapshot[]
+    live: string[]
+    history: VersionHistory
+    pending: PendingChanges
+  }
 ): Record<string, T> {
+  const { currentVersion, snapshots, live, history, pending } = input
   const result: Record<string, T> = { ...currentMap }
 
   for (const [typeName, type] of Object.entries(currentMap)) {
@@ -102,17 +106,29 @@ export function buildUnionRegistry(input: {
     return current
   }
 
+  const shared = { currentVersion, snapshots, live, history, pending }
+  const content_types = unionTypeMap(current.content_types, (snap) => snap.registry.content_types, shared)
+  const taxonomy_types = unionTypeMap(current.taxonomy_types, (snap) => snap.registry.taxonomy_types, shared)
+
+  // `schemas` is documented as the one source of truth, so it must hold the
+  // SAME OBJECTS as the typed maps — not current's unfolded originals. Spreading
+  // `...current` and replacing only the two typed maps left
+  // `union.schemas[x] === current.schemas[x]`, showing unfolded columns and no
+  // retained column, disagreeing with `union.content_types[x]` about the same
+  // type. Nothing reads `schemas` downstream yet; 2b is handed an ordinary,
+  // fully consistent registry instead of one that only looks right through the
+  // two maps it happens to read.
+  const schemas: Record<string, ParsedSchema> = { ...current.schemas }
+  for (const [name, type] of Object.entries(content_types)) schemas[name] = type
+  for (const [name, type] of Object.entries(taxonomy_types)) schemas[name] = type
+
   return {
     ...current,
-    content_types: unionTypeMap(
-      current.content_types,
-      (snap) => snap.registry.content_types,
-      snapshots, currentVersion, live, history, pending
-    ),
-    taxonomy_types: unionTypeMap(
-      current.taxonomy_types,
-      (snap) => snap.registry.taxonomy_types,
-      snapshots, currentVersion, live, history, pending
-    ),
+    schemas,
+    content_types,
+    taxonomy_types,
+    // Original order and duplicates preserved (DUPLICATE_SCHEMA_NAME still
+    // detectable), each entry swapped for its rebuilt counterpart.
+    all_schemas: current.all_schemas.map((s) => schemas[s.name] ?? s),
   }
 }
