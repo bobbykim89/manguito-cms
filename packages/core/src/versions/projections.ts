@@ -4,8 +4,11 @@ import { columnOf } from './fold.js'
 import { isColumnBacked } from './union.js'
 
 // What each live version exposes: per type, each column and the label THAT
-// version exposes it under. The current version's projection is the identity,
-// which is why the api layer needs no special case for unversioned projects.
+// version exposes it under. The current version's projection is the identity
+// only when no rename applies to it (the zero-config case, with no
+// pending.json rename in effect) — that's why the api layer needs no special
+// case for an unversioned project. A pending rename still in effect between
+// cuts makes even the current version's projection diverge from identity.
 export function buildProjections(input: {
   current: SchemaRegistry
   currentVersion: string

@@ -56,7 +56,7 @@ _Avoid_: catalog, manifest, index
 A content field has a public **label** (`ParsedField.name`) and a storage **column** (`db_column.column_name`). They are identical for every schema the parser produces on its own; schema versioning is what lets them diverge, by renaming a label while leaving the column untouched.
 
 **Live version**:
-A version currently served — every cut snapshot under `schemas/versions/vN/` plus the current working schema. The current version is always live, and its projection is the identity.
+A version currently served — every cut snapshot under `schemas/versions/vN/` plus the current working schema. The current version is always live; its projection is the identity only when no rename applies to it — a `pending.json` rename still in effect between cuts means even the current version's columns diverge from its labels.
 _Avoid_: active version, supported version
 
 **Cut**:
@@ -64,7 +64,7 @@ Freezing the current schema as a named version. `version:cut` snapshots the sche
 _Avoid_: tag, release, freeze
 
 **Snapshot**:
-A frozen copy of one past version's schema files, stored under `versions/vN/` and never edited after being cut. Retirement deletes the directory outright — the version's renames still stand in `history.json`, which is never pruned.
+A frozen copy of one past version's schema files, stored under `versions/vN/` and never edited after being cut. Read using the current schema's `config.folders`, never hardcoded folder names, so a snapshot cut before a folder rename still loads correctly. Retirement deletes the directory outright — the version's renames still stand in `history.json`, which is never pruned.
 _Avoid_: frozen version, archive
 
 **pending.json / history.json**:
@@ -80,11 +80,11 @@ The value served in place of null for a retained column, declared in `pending.js
 _Avoid_: default value, null replacement
 
 **Union registry**:
-An ordinary `SchemaRegistry` — not a distinct type — holding every live version's fields merged and keyed by column. Feeds db codegen and drift detection. Differs from a plain merge in exactly one way: a column the current schema no longer exposes is retained and forced nullable, since rows created after the drop cannot populate it.
+An ordinary `SchemaRegistry` — not a distinct type — holding every live version's fields merged and keyed by column. Feeds db codegen and drift detection. Differs from a plain merge in two ways: a column the current schema no longer exposes is retained and forced nullable, since rows created after the drop cannot populate it; and a field current still exposes has its `db_column.column_name` corrected to its real column whenever a live or historical rename touches it — current's own label is never assumed to already be the column.
 _Avoid_: merged registry, combined schema
 
 **Projection**:
-What one live version exposes: per type, each column and the label that version exposes it under, plus any fallback. The current version's projection is the identity, so the API layer needs no special case for an unversioned project.
+What one live version exposes: per type, each column and the label that version exposes it under, plus any fallback. The current version's projection is the identity only when no rename applies — the zero-config case, which is what lets the API layer skip a special case for an unversioned project. A `pending.json` rename still in effect between cuts makes even the current version's projection diverge from identity.
 _Avoid_: view, mapping
 
 **Retained column**:

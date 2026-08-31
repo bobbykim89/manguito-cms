@@ -124,7 +124,7 @@ export type VersionModel = {
   live: string[]
   /** Every live version's fields merged; feeds db codegen and drift detection. */
   union: SchemaRegistry
-  /** Keyed by version name; includes current (an identity projection). */
+  /** Keyed by version name; current's entry is the identity only when no rename applies to it. */
   projections: Record<string, VersionProjection>
 }
 
@@ -225,7 +225,7 @@ That last case is the regression test for the retirement bug above. It is the on
 - nothing dropped → union is field-for-field equal to current
 
 **Projections**
-- current's projection is identity for every field
+- current's projection is identity for every field, when no rename applies
 - v1 exposes a renamed field under its **old** label
 - a fallback attaches to the right column
 - a type absent from a version does not appear in that version's projection
