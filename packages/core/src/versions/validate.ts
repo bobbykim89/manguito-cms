@@ -62,9 +62,19 @@ function columnMapOf(
 // Dropping either half turns an ordinary field removal (nothing of matching
 // shape appeared) or an unrelated addition (wrong type) into a false alarm.
 //
-// A drop declared in EITHER history.drops or pending.drops (both keyed
-// "<type>.<column>") suppresses the report outright: the ambiguity is
-// resolved by hand, not by guessing.
+// A drop declared in EITHER history.drops or pending.drops suppresses the
+// report outright: the ambiguity is resolved by hand, not by guessing. Per
+// the design spec (2026-08-30-version-model-core-design.md:97), a drop is
+// keyed "<type>.<label>" — the label AS IT STOOD WHEN REMOVED, which is what
+// an author reads and writes, unlike a fallback which keys by column because
+// a renamed-then-dropped field has no unambiguous label.
+//
+// A column can be exposed by more than one live snapshot under more than one
+// label (renamed once, then dropped): fold every snapshot's fields down to
+// column first, keeping only the MOST RECENT live version's label per
+// column, before ever building a message. That single resolved label is then
+// used for BOTH the message text and the drops match — one source, so they
+// cannot drift apart the way a per-snapshot loop let them.
 function checkAmbiguousRenames(input: {
   current: SchemaRegistry
   currentVersion: string
@@ -77,40 +87,60 @@ function checkAmbiguousRenames(input: {
   const errors: ParseError[] = []
   const foldInput = { live, history, pending, current: currentVersion }
 
-  const droppedKeys = new Set<string>([
+  // Keyed "<type>.<label>", per the spec — never the fold-derived column.
+  const droppedLabels = new Set<string>([
     ...history.drops.map((d) => d.field),
     ...pending.drops,
   ])
+
+  // `live` is documented oldest-first, so position in it is recency order.
+  const liveOrder = new Map(live.map((v, i) => [v, i]))
 
   for (const typeName of allTypeNames(current, snapshots)) {
     const currentByColumn = columnMapOf(current, typeName, currentVersion, foldInput)
     const currentColumns = new Set(currentByColumn.keys())
 
+    // One entry per column across ALL live snapshots, keeping whichever
+    // exposed it most recently — the label an author looking at the schema
+    // today would actually recognize, not a stale earlier one.
+    const historicalByColumn = new Map<string, { version: string; field: ParsedField }>()
     for (const snap of snapshots) {
       const snapByColumn = columnMapOf(snap.registry, typeName, snap.version, foldInput)
-
-      for (const [col, oldField] of snapByColumn) {
-        if (currentColumns.has(col)) continue // still exposed (directly or via a declared rename)
-        if (droppedKeys.has(`${typeName}.${col}`)) continue // declared drop — not ambiguous
-
-        for (const [newCol, newField] of currentByColumn) {
-          if (snapByColumn.has(newCol)) continue // pre-existing, not "appeared"
-          if (newField.field_type !== oldField.field_type) continue // condition (c) needs a type match
-
-          errors.push({
-            file: 'schemas/versions/pending.json',
-            code: 'AMBIGUOUS_RENAME',
-            message:
-              `Field "${oldField.name}" on "${typeName}" is exposed by ${snap.version} but is gone from the ` +
-              `current schema, and a new ${newField.field_type} field "${newField.name}" appeared. This is either a ` +
-              `rename or a removal, and the two cannot be told apart.\n` +
-              `  If it was renamed, add to schemas/versions/pending.json:\n` +
-              `    { "type": "${typeName}", "from": "${oldField.name}", "to": "${newField.name}" }  (under "renames")\n` +
-              `  If it was removed, add to schemas/versions/pending.json:\n` +
-              `    "${typeName}.${oldField.name}"  (under "drops")`,
-          })
+      const snapRank = liveOrder.get(snap.version) ?? -1
+      for (const [col, field] of snapByColumn) {
+        const existing = historicalByColumn.get(col)
+        if (!existing || snapRank > (liveOrder.get(existing.version) ?? -1)) {
+          historicalByColumn.set(col, { version: snap.version, field })
         }
       }
+    }
+
+    // Genuinely new: a column no live snapshot ever exposed under any label.
+    const newColumns = [...currentByColumn.entries()].filter(([col]) => !historicalByColumn.has(col))
+
+    for (const [col, { version, field: oldField }] of historicalByColumn) {
+      if (currentColumns.has(col)) continue // still exposed (directly or via a declared rename)
+      if (droppedLabels.has(`${typeName}.${oldField.name}`)) continue // declared drop, by label
+
+      // Exactly one message per ambiguous column: the first same-typed
+      // candidate is enough to report the ambiguity, and there is only ever
+      // one canonical label to name for this column.
+      const match = newColumns.find(([, newField]) => newField.field_type === oldField.field_type)
+      if (!match) continue // condition (c) needs a same-typed field to have appeared
+
+      const [, newField] = match
+      errors.push({
+        file: 'schemas/versions/pending.json',
+        code: 'AMBIGUOUS_RENAME',
+        message:
+          `Field "${oldField.name}" on "${typeName}" is exposed by ${version} but is gone from the ` +
+          `current schema, and a new ${newField.field_type} field "${newField.name}" appeared. This is either a ` +
+          `rename or a removal, and the two cannot be told apart.\n` +
+          `  If it was renamed, add to schemas/versions/pending.json:\n` +
+          `    { "type": "${typeName}", "from": "${oldField.name}", "to": "${newField.name}" }  (under "renames")\n` +
+          `  If it was removed, add to schemas/versions/pending.json:\n` +
+          `    "${typeName}.${oldField.name}"  (under "drops")`,
+      })
     }
   }
 

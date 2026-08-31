@@ -81,6 +81,63 @@ describe('FIELD_TYPE_CHANGED_WHILE_LIVE', () => {
   })
 })
 
+describe('AMBIGUOUS_RENAME — dedup and label-keyed drops (fix round 1)', () => {
+  // Reproduction: a field labelled `blog_title` at v1 is renamed to `title`
+  // by a rename tagged `after: 'v1'`, so live snapshot v2 exposes it under
+  // label `title` while its fold-derived column is still `blog_title`. It is
+  // then removed entirely from current, and a same-typed field appears.
+  //
+  // Two live snapshots (v1, v2) both expose the SAME folded column under two
+  // different labels. Before this fix: the check looped per (snapshot,
+  // oldField), so this one ambiguity produced one message per snapshot —
+  // several naming the stale v1 label `blog_title` rather than the label an
+  // author actually sees today (`title`, from the more recent v2) — and drops
+  // were matched against the fold-derived COLUMN rather than the LABEL the
+  // design spec requires (2026-08-30-version-model-core-design.md:97),
+  // making the tool's own suggested fix ineffective.
+  function buildInput(pending: typeof EMPTY_PENDING) {
+    return {
+      snapshots: [
+        { version: 'v1', registry: makeRegistry([makeContentType('content--post', [{ name: 'blog_title' }])]) },
+        { version: 'v2', registry: makeRegistry([makeContentType('content--post', [{ name: 'title' }])]) },
+      ],
+      current: makeRegistry([makeContentType('content--post', [{ name: 'headline' }])]),
+      currentVersion: 'v3',
+      live: ['v1', 'v2', 'v3'],
+      history: {
+        renames: [{ after: 'v1', type: 'content--post', from: 'blog_title', to: 'title' }],
+        drops: [], fallbacks: {},
+      },
+      pending,
+    }
+  }
+
+  it('fires exactly once, naming the most-recent live label', () => {
+    const errors = validateVersionModel(buildInput(EMPTY_PENDING))
+    const ambiguous = errors.filter((e) => e.code === 'AMBIGUOUS_RENAME')
+
+    expect(ambiguous).toHaveLength(1)
+    expect(ambiguous[0]!.message).toContain('title')
+    expect(ambiguous[0]!.message).not.toContain('blog_title')
+  })
+
+  it('is suppressed by writing the drops entry exactly as the message spells it', () => {
+    const before = validateVersionModel(buildInput(EMPTY_PENDING))
+    const ambiguous = before.find((e) => e.code === 'AMBIGUOUS_RENAME')!
+
+    // Extract the suggested drops literal straight from the message text,
+    // rather than hardcoding a label chosen independently of it — that
+    // independence is exactly what let the message and the matcher drift
+    // apart in the first place.
+    const match = ambiguous.message.match(/"([^"]+)"\s+\(under "drops"\)/)
+    expect(match).not.toBeNull()
+    const suggestedDrop = match![1]!
+
+    const after = validateVersionModel(buildInput({ renames: [], drops: [suggestedDrop!], fallbacks: {} }))
+    expect(after).toEqual([])
+  })
+})
+
 describe('UNRENAMEABLE_FIELD_KIND', () => {
   // NOTE: the brief's literal fixture for this test names a rename ("cards" ->
   // "blocks") that appears in NEITHER snapshot's schema — no field named
