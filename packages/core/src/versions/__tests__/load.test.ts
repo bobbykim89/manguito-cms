@@ -200,6 +200,83 @@ describe('loadVersionModel', () => {
     expect(r.value.current).toBe('v2')
   })
 
+  // Final-review I1. pending.json is the one file a human edits, and omitting
+  // a key they are not using is the likeliest mistake. Casting the raw parsed
+  // JSON to the type made every one of these THROW out of the fold
+  // ("pending.drops is not iterable") — a crash rather than a Result, from an
+  // expected condition. Each shape must come back as a collected ParseError
+  // naming the offending key.
+  describe('malformed pending.json / history.json shapes', () => {
+    function writeVersionsFile(name: string, body: string): void {
+      fs.mkdirSync(path.join(dir, 'versions'), { recursive: true })
+      fs.writeFileSync(path.join(dir, 'versions', name), body)
+    }
+
+    function load() {
+      const current = makeRegistry([makeContentType('content--post', [{ name: 'a' }])])
+      return loadVersionModel(config(), current)
+    }
+
+    const cases: Array<{ label: string; file: string; body: string; key?: string }> = [
+      {
+        label: 'pending.json with renames but no drops or fallbacks',
+        file: 'pending.json',
+        body: JSON.stringify({ renames: [{ type: 'content--post', from: 'a', to: 'b' }] }),
+        key: 'drops',
+      },
+      { label: 'an empty pending.json object', file: 'pending.json', body: '{}', key: 'renames' },
+      { label: 'a null pending.json', file: 'pending.json', body: 'null' },
+      { label: 'an array pending.json', file: 'pending.json', body: '[]' },
+      {
+        label: 'a pending rename missing its `to`',
+        file: 'pending.json',
+        body: JSON.stringify({ renames: [{ type: 'content--post', from: 'a' }], drops: [], fallbacks: {} }),
+        key: 'renames.0.to',
+      },
+      { label: 'an empty history.json object', file: 'history.json', body: '{}', key: 'renames' },
+      {
+        label: 'a history.json with null fallbacks',
+        file: 'history.json',
+        body: JSON.stringify({ renames: [], drops: [], fallbacks: null }),
+        key: 'fallbacks',
+      },
+    ]
+
+    for (const { label, file, body, key } of cases) {
+      it(`reports ${label} rather than throwing`, () => {
+        writeVersionsFile(file, body)
+        const r = load()
+        expect(r.ok).toBe(false)
+        if (r.ok) return
+        expect(r.errors.map((e) => e.code)).toContain('FILE_PARSE_ERROR')
+        if (key !== undefined) {
+          expect(r.errors.some((e) => e.path === key)).toBe(true)
+          expect(r.errors.some((e) => e.message.includes(`"${key}"`))).toBe(true)
+        }
+        expect(r.errors[0]!.file).toContain(file)
+      })
+    }
+
+    it('accepts a fully-specified pending.json with empty containers', () => {
+      writeVersionsFile('pending.json', JSON.stringify({ renames: [], drops: [], fallbacks: {} }))
+      writeVersionsFile('history.json', JSON.stringify({ renames: [], drops: [], fallbacks: {} }))
+      const r = load()
+      expect(r.ok).toBe(true)
+    })
+
+    it('names the missing key and how to write it', () => {
+      writeVersionsFile('pending.json', '{}')
+      const r = load()
+      expect(r.ok).toBe(false)
+      if (r.ok) return
+      const keys = r.errors.map((e) => e.path)
+      expect(keys).toContain('renames')
+      expect(keys).toContain('drops')
+      expect(keys).toContain('fallbacks')
+      expect(r.errors[0]!.message).toContain('Write [] or {}')
+    })
+  })
+
   // Mirrors decision 6: pending.json/history.json are optional when absent,
   // but a file that EXISTS and fails to parse is a real error that must
   // surface, not be swallowed into the empty shape.

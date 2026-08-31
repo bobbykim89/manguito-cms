@@ -1,5 +1,7 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import { z } from 'zod'
+import type { ZodError } from 'zod'
 import type { Result, ParseError, SchemaFile } from '../parser/loader.js'
 import { loadSchemaFile } from '../parser/loader.js'
 import { FOLDER_KEY_TO_SCHEMA_TYPE, directoryExists, isSupportedExtension } from '../parser/schema-folders.js'
@@ -124,11 +126,67 @@ function loadSnapshot(
 // Absent means the empty shape. A file that EXISTS but fails to parse is a
 // real error — loadSchemaFile already produces FILE_PARSE_ERROR for that, so
 // it is surfaced rather than swallowed.
-function loadOptionalJson<T>(filePath: string, fallback: T): Result<T> {
+//
+// Well-formed JSON of the WRONG SHAPE is just as real a failure, and the more
+// likely one: pending.json is the single file a human edits, and omitting a key
+// they are not using is the obvious mistake. Casting raw JSON to the type threw
+// a TypeError out of the fold ("pending.drops is not iterable") — a crash, not
+// a Result, from an expected condition. Both shapes are validated with zod, the
+// way the parser validates every other schema file.
+
+const RenameSchema = z.object({ type: z.string(), from: z.string(), to: z.string() })
+const FallbacksSchema = z.record(z.string(), z.unknown())
+
+const PendingChangesSchema: z.ZodType<PendingChanges> = z.object({
+  renames: z.array(RenameSchema),
+  drops: z.array(z.string()),
+  fallbacks: FallbacksSchema,
+})
+
+const VersionHistorySchema: z.ZodType<VersionHistory> = z.object({
+  renames: z.array(z.object({ after: z.string(), type: z.string(), from: z.string(), to: z.string() })),
+  drops: z.array(z.object({ after: z.string(), field: z.string() })),
+  fallbacks: FallbacksSchema,
+})
+
+const PENDING_HINT =
+  'pending.json must be an object with "renames" (array of { type, from, to }), "drops" ' +
+  '(array of "<type>.<label>") and "fallbacks" (object keyed "<type>.<column_name>"). ' +
+  'Write [] or {} for a key you are not using rather than omitting it.'
+
+const HISTORY_HINT =
+  'history.json must be an object with "renames" (array of { after, type, from, to }), "drops" ' +
+  '(array of { after, field }) and "fallbacks" (object). It is written by `version:cut` — ' +
+  'a hand edit or a merge resolution is the usual cause of a bad shape.'
+
+/** One ParseError per zod issue, each naming the offending key. */
+function shapeErrors(error: ZodError, filePath: string, hint: string): ParseError[] {
+  return error.issues.map((issue) => {
+    const key = issue.path.join('.')
+    return {
+      file: filePath,
+      code: 'FILE_PARSE_ERROR' as const,
+      message: key === ''
+        ? `${issue.message}. ${hint}`
+        : `"${key}": ${issue.message}. ${hint}`,
+      ...(key === '' ? {} : { path: key }),
+    }
+  })
+}
+
+function loadOptionalJson<T>(
+  filePath: string,
+  fallback: T,
+  schema: z.ZodType<T>,
+  hint: string
+): Result<T> {
   if (!fs.existsSync(filePath)) return { ok: true, value: fallback }
   const result = loadSchemaFile(filePath)
   if (!result.ok) return result
-  return { ok: true, value: result.value as T }
+
+  const parsed = schema.safeParse(result.value)
+  if (!parsed.success) return { ok: false, errors: shapeErrors(parsed.error, filePath, hint) }
+  return { ok: true, value: parsed.data }
 }
 
 // ─── loadVersionModel ─────────────────────────────────────────────────────────
@@ -146,10 +204,20 @@ export function loadVersionModel(config: ResolvedSchemaConfig, current: SchemaRe
     return computeVersionModel({ current, snapshots: [], history: EMPTY_HISTORY, pending: EMPTY_PENDING })
   }
 
-  const pendingResult = loadOptionalJson<PendingChanges>(path.join(versionsDir, 'pending.json'), EMPTY_PENDING)
+  const pendingResult = loadOptionalJson(
+    path.join(versionsDir, 'pending.json'),
+    EMPTY_PENDING,
+    PendingChangesSchema,
+    PENDING_HINT
+  )
   if (!pendingResult.ok) return pendingResult
 
-  const historyResult = loadOptionalJson<VersionHistory>(path.join(versionsDir, 'history.json'), EMPTY_HISTORY)
+  const historyResult = loadOptionalJson(
+    path.join(versionsDir, 'history.json'),
+    EMPTY_HISTORY,
+    VersionHistorySchema,
+    HISTORY_HINT
+  )
   if (!historyResult.ok) return historyResult
 
   const snapshots: VersionSnapshot[] = []

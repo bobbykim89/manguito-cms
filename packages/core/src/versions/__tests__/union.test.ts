@@ -147,8 +147,12 @@ describe('buildUnionRegistry', () => {
 
     it('shows the folded column and the retained column through `schemas` too', () => {
       const union = build()
-      const cols = union.schemas['content--post']!.fields.map((f) => f.db_column?.column_name)
-      expect(cols).toEqual(['blog_title', 'gone'])
+      const post = union.schemas['content--post']
+      // `schemas` is typed as the ParsedSchema union, which includes enum types
+      // (no `fields`) — narrow rather than cast.
+      expect(post && 'fields' in post).toBe(true)
+      if (!post || !('fields' in post)) return
+      expect(post.fields.map((f) => f.db_column?.column_name)).toEqual(['blog_title', 'gone'])
     })
 
     it('swaps the rebuilt objects into `all_schemas` as well', () => {
