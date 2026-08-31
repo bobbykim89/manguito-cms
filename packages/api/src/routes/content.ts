@@ -4,7 +4,8 @@ import type {
   ContentRepository,
 } from '@bobbykim/manguito-cms-core'
 import type { ProgrammaticResolver } from '../programmatic/resolve.js'
-import type { FieldKeyMap } from '../field-keys.js'
+import type { Projectors } from '../projector.js'
+import { projectRow } from '../projector.js'
 import type { PublicPaths } from '../paths.js'
 import {
   SORTABLE_FIELDS,
@@ -37,7 +38,7 @@ export function registerPublicContentRoutes(
   app: Hono,
   registry: SchemaRegistry,
   repos: ContentRepos,
-  fieldKeyMaps: Record<string, FieldKeyMap>,
+  projectors: Projectors,
   paths: PublicPaths,
   listRateLimit?: MiddlewareHandler,
   resolver?: ProgrammaticResolver
@@ -100,14 +101,15 @@ export function registerPublicContentRoutes(
           )
         }
         // Outbound boundary (see "Response projection order" above).
-        let data = fieldKeyMaps[typeName]!.toLabels(result.data[0] as Record<string, unknown>)
+        let data = projectRow(result.data[0] as Record<string, unknown>, typeName, projectors)
         if (resolver?.hasSchema(typeName)) data = await resolver.resolveItem(typeName, data)
         return c.json({ ok: true, data })
       })
     } else {
       registerListRoute(paths.collection(basePath), async (c) => {
         // Inbound boundary: query params speak labels; filters query storage keys.
-        const fieldKeys = fieldKeyMaps[typeName]!
+        const projector = projectors[typeName]!
+        const fieldKeys = projector.map
         const pagination = parsePagination(c.req.query('page'), c.req.query('per_page'))
         if (!pagination.ok) {
           return c.json(
@@ -180,11 +182,17 @@ export function registerPublicContentRoutes(
           }
         }
 
+        // sortBy is a validated label (checked above); map it to its storage
+        // column before it reaches the repository. The cast is a narrow lie —
+        // core types sort_by as the label union, but the repository
+        // immediately re-validates the mapped value against sortableColumns.
+        const sortColumn = fieldKeys.columnFor(sortBy) ?? sortBy
+
         const result = await repo.findMany({
           published_only: true,
           page: pagination.page,
           per_page: pagination.per_page,
-          sort_by: sortBy as 'title' | 'created_at' | 'updated_at',
+          sort_by: sortColumn as 'title' | 'created_at' | 'updated_at',
           sort_order: sortOrder as 'asc' | 'desc',
           filters: filtersResult.filters,
           include,
@@ -192,7 +200,7 @@ export function registerPublicContentRoutes(
 
         // Outbound boundary (see "Response projection order" above).
         const labeled = (result.data as Record<string, unknown>[]).map((row) =>
-          fieldKeys.toLabels(row)
+          projectRow(row, typeName, projectors)
         )
         const data = resolver?.hasSchema(typeName)
           ? await resolver.resolveList(typeName, labeled)
@@ -235,7 +243,7 @@ export function registerPublicContentRoutes(
         }
 
         // Outbound boundary (see "Response projection order" above).
-        let data = fieldKeyMaps[typeName]!.toLabels(item as Record<string, unknown>)
+        let data = projectRow(item as Record<string, unknown>, typeName, projectors)
         if (resolver?.hasSchema(typeName)) data = await resolver.resolveItem(typeName, data)
         return c.json({ ok: true, data })
       })
@@ -268,9 +276,8 @@ export function registerPublicContentRoutes(
       })
 
       // Outbound boundary (see "Response projection order" above).
-      const fieldKeys = fieldKeyMaps[typeName]!
       const labeled = (result.data as Record<string, unknown>[]).map((row) =>
-        fieldKeys.toLabels(row)
+        projectRow(row, typeName, projectors)
       )
       const data = resolver?.hasSchema(typeName)
         ? await resolver.resolveList(typeName, labeled)
@@ -294,7 +301,7 @@ export function registerPublicContentRoutes(
       }
 
       // Outbound boundary (see "Response projection order" above).
-      let data = fieldKeyMaps[typeName]!.toLabels(item as Record<string, unknown>)
+      let data = projectRow(item as Record<string, unknown>, typeName, projectors)
       if (resolver?.hasSchema(typeName)) data = await resolver.resolveItem(typeName, data)
       return c.json({ ok: true, data })
     })

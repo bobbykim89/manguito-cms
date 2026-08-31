@@ -54,6 +54,10 @@ _Avoid_: column name (when referring to identity rather than SQL), db name
 The per-content-type `FieldKeyMap` built once at startup that converts label-keyed request bodies to storage keys and storage-keyed rows back to labels. Throws on a label/column collision rather than booting ambiguous.
 _Avoid_: field mapper, key translator
 
+**Projection**:
+Converting a storage-keyed row into a label-keyed response, recursively — the top-level row plus paragraph children, resolved reference targets and junction targets, each through its own type's map. Applied once per response at the outbound boundary; never mutates its input, because the relation cache shares one nested object between parents.
+_Avoid_: serialization, mapping (when precision matters)
+
 ### Auth
 
 **auth_token / refresh_token**:

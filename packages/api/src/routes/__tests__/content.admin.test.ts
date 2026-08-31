@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { Hono } from 'hono'
 import { registerAdminContentRoutes } from '../admin/content'
 import { createFieldKeyMap, type FieldKeyMap } from '../../field-keys'
-import { divergentTextField } from '../../field-keys.test-fixtures'
+import { buildProjectors } from '../../projector'
+import { divergentTextField, paragraphField, divergentParagraphType } from '../../field-keys.test-fixtures'
 import type {
   ContentRepository,
   MediaRepository,
@@ -11,6 +12,7 @@ import type {
 } from '@bobbykim/manguito-cms-core'
 import type { ParsedContentType, ParsedField, ParsedTaxonomyType } from '@bobbykim/manguito-cms-core'
 import type { createPermissionMiddleware } from '../../middleware/permission'
+import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 
 // This suite exercises route business logic directly (validation, media/paragraph
 // wiring), not permission enforcement — that's covered by the admin integration
@@ -236,13 +238,14 @@ function buildDivergentAdminApp(
   const fieldKeyMaps: Record<string, FieldKeyMap> = {
     'divergent-post': createFieldKeyMap(fields),
   }
+  const projectors = buildProjectors(registry, fieldKeyMaps)
 
   const app = new Hono()
   registerAdminContentRoutes(
     app,
     registry,
     { 'divergent-post': repo },
-    fieldKeyMaps,
+    projectors,
     makeMockMediaRepo(),
     noopRequirePermission
   )
@@ -286,6 +289,7 @@ describe('admin content routes', () => {
       createFieldKeyMap(tt.fields),
     ]),
   ])
+  const projectors = buildProjectors(registry, fieldKeyMaps)
 
   beforeEach(() => {
     mockBlogRepo = makeMockRepo()
@@ -299,7 +303,7 @@ describe('admin content routes', () => {
       'home-page': mockSingletonRepo,
       'page-with-image': mockMediaTypeRepo,
       category: mockCategoryRepo,
-    }, fieldKeyMaps, mockMediaRepo, noopRequirePermission)
+    }, projectors, mockMediaRepo, noopRequirePermission)
   })
 
   describe('PATCH — publish validation', () => {
@@ -555,7 +559,7 @@ describe('admin content routes', () => {
         'home-page': mockSingletonRepo,
         'page-with-image': mockMediaTypeRepo,
         category: mockCategoryRepo,
-      }, fieldKeyMaps, mockMediaRepo, selectiveRequirePermission)
+      }, projectors, mockMediaRepo, selectiveRequirePermission)
       return createOnlyApp
     }
 
@@ -769,5 +773,93 @@ describe('admin publish validation with a divergent field label', () => {
     }
     expect(body.error.code).toBe('PUBLISH_VALIDATION_ERROR')
     expect(body.error.details.map((d) => d.field)).toEqual(['title'])
+  })
+})
+
+// ─── Recursive projection into paragraph children ─────────────────────────────
+
+// Same shape as DIVERGENT_TYPE, plus a paragraph field whose children have
+// their own label/column divergence.
+const DIVERGENT_POST_WITH_CARDS_TYPE: ParsedContentType = {
+  ...BLOG_TYPE,
+  name: 'divergent-post',
+  default_base_path: 'divergent-post',
+  fields: [
+    divergentTextField,
+    {
+      ...paragraphField,
+      ui_component: { component: 'paragraph-embed', ref: 'paragraph--card', rel: 'one-to-many' },
+    },
+  ],
+  db: { table_name: 'content--divergent_post', junction_tables: [] },
+  api: {
+    default_base_path: 'divergent-post',
+    http_methods: ['GET', 'POST', 'PATCH', 'DELETE'],
+    item_path: '/api/divergent-post/:slug',
+  },
+}
+
+const divergentRegistryWithCards: SchemaRegistry = {
+  routes: { base_paths: [] },
+  roles: { roles: [], valid_permissions: [] },
+  schemas: {},
+  content_types: { 'divergent-post': DIVERGENT_POST_WITH_CARDS_TYPE },
+  paragraph_types: { 'paragraph--card': divergentParagraphType },
+  taxonomy_types: {},
+  enum_types: {},
+  all_schemas: [],
+}
+
+type DbMock = { execute: (...args: unknown[]) => Promise<{ rows: unknown[] }> }
+
+// Admin app builder for the paragraph-projection regression test. Mirrors
+// buildDivergentAdminApp's shape, but also wires paragraph_types and a db
+// double: admin single-item reads load paragraph children through
+// db.execute (loadParagraphRows in admin/content.ts), not from the repo row
+// itself the way the public route's resolver does.
+function adminAppForDivergentPostWithCards(
+  repo: ContentRepository<unknown>,
+  db: Partial<DbMock>
+): Hono {
+  const projectors = buildProjectors(divergentRegistryWithCards, {
+    'divergent-post': createFieldKeyMap(DIVERGENT_POST_WITH_CARDS_TYPE.fields),
+    'paragraph--card': createFieldKeyMap(divergentParagraphType.fields),
+  })
+
+  const app = new Hono()
+  registerAdminContentRoutes(
+    app,
+    divergentRegistryWithCards,
+    { 'divergent-post': repo },
+    projectors,
+    makeMockMediaRepo(),
+    noopRequirePermission,
+    db as unknown as DrizzlePostgresInstance
+  )
+  return app
+}
+
+describe('admin reads project nested rows recursively', () => {
+  it('projects paragraph children to labels on an admin read', async () => {
+    const repo = makeMockRepo()
+    ;(repo.findOne as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'p1',
+      slug: 'a',
+      published: false,
+      blog_title: 'Hi',
+    })
+
+    const app = adminAppForDivergentPostWithCards(repo, {
+      // loadParagraphRows reads through db.execute; return one storage-keyed child.
+      execute: async () => ({ rows: [{ id: 'c1', parent_id: 'p1', blog_title: 'One', order: 0 }] }),
+    })
+
+    const res = await app.request('/admin/api/content/divergent-post/p1')
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(body.data.title).toBe('Hi')
+    expect(body.data.cards[0].title).toBe('One')
+    expect(body.data.cards[0]).not.toHaveProperty('blog_title')
   })
 })

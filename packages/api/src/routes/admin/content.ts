@@ -28,7 +28,8 @@ import {
 } from '../../relations.js'
 import type { createPermissionMiddleware } from '../../middleware/permission.js'
 import type { ContentRepos } from '../content.js'
-import { isColumnBacked, type FieldKeyMap } from '../../field-keys.js'
+import { isColumnBacked } from '../../field-keys.js'
+import { projectRow, type Projectors } from '../../projector.js'
 
 // ─── SQL helpers ─────────────────────────────────────────────────────────────
 
@@ -204,7 +205,7 @@ export function registerAdminContentRoutes(
   app: Hono,
   registry: SchemaRegistry,
   repos: ContentRepos,
-  fieldKeyMaps: Record<string, FieldKeyMap>,
+  projectors: Projectors,
   mediaRepo: MediaRepository,
   requirePermission: ReturnType<typeof createPermissionMiddleware>,
   db?: DrizzlePostgresInstance,
@@ -227,7 +228,8 @@ export function registerAdminContentRoutes(
         .map((f) => f.name)
     )
 
-    const fieldKeys = fieldKeyMaps[typeName]!
+    const projector = projectors[typeName]!
+    const fieldKeys = projector.map
 
     const requiredFields = contentType.fields.filter((f) => f.required)
 
@@ -261,10 +263,16 @@ export function registerAdminContentRoutes(
         const extraFilters: Record<string, FilterValue> = {}
         if (publishedParam === 'false') extraFilters['published'] = false
 
+        // parsed.sortBy is a validated label; map it to its storage column
+        // before it reaches the repository. The cast is a narrow lie — core
+        // types sort_by as the label union, but the repository immediately
+        // re-validates the mapped value against sortableColumns.
+        const sortColumn = fieldKeys.columnFor(parsed.sortBy) ?? parsed.sortBy
+
         const findOpts: Parameters<typeof repo.findMany>[0] = {
           page: parsed.pagination.page,
           per_page: parsed.pagination.per_page,
-          sort_by: parsed.sortBy as 'title' | 'created_at' | 'updated_at',
+          sort_by: sortColumn as 'title' | 'created_at' | 'updated_at',
           sort_order: parsed.sortOrder as 'asc' | 'desc',
           filters: { ...parsed.filters, ...extraFilters },
           include: parsed.include,
@@ -277,7 +285,9 @@ export function registerAdminContentRoutes(
         const result = await repo.findMany(findOpts)
 
         // Outbound boundary: rows are storage-keyed; responses speak labels.
-        const data = result.data.map((row) => fieldKeys.toLabels(row as Record<string, unknown>))
+        const data = result.data.map((row) =>
+          projectRow(row as Record<string, unknown>, typeName, projectors)
+        )
 
         return c.json({ ...result, data })
       }
@@ -328,7 +338,7 @@ export function registerAdminContentRoutes(
         // Outbound boundary: rows are storage-keyed; responses speak labels.
         // Mapped after the paragraph/junction population above so those
         // label-keyed additions survive.
-        const data = fieldKeys.toLabels(item as Record<string, unknown>)
+        const data = projectRow(item as Record<string, unknown>, typeName, projectors)
 
         return c.json({ ok: true, data })
       }
@@ -502,7 +512,7 @@ export function registerAdminContentRoutes(
         await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
 
         // Outbound boundary: rows are storage-keyed; responses speak labels.
-        const data = fieldKeys.toLabels(item as Record<string, unknown>)
+        const data = projectRow(item as Record<string, unknown>, typeName, projectors)
 
         return c.json({ ok: true, data }, 201)
     }
@@ -659,7 +669,7 @@ export function registerAdminContentRoutes(
         await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
 
         // Outbound boundary: rows are storage-keyed; responses speak labels.
-        const data = fieldKeys.toLabels(updated as Record<string, unknown>)
+        const data = projectRow(updated as Record<string, unknown>, typeName, projectors)
 
         return c.json({ ok: true, data })
     }
@@ -751,7 +761,8 @@ export function registerAdminContentRoutes(
         .map((f) => f.name)
     )
 
-    const fieldKeys = fieldKeyMaps[typeName]!
+    const projector = projectors[typeName]!
+    const fieldKeys = projector.map
 
     const requiredFields = taxonomyType.fields.filter((f) => f.required)
 
@@ -782,10 +793,16 @@ export function registerAdminContentRoutes(
         const extraFilters: Record<string, FilterValue> = {}
         if (publishedParam === 'false') extraFilters['published'] = false
 
+        // parsed.sortBy is a validated label; map it to its storage column
+        // before it reaches the repository. The cast is a narrow lie — core
+        // types sort_by as the label union, but the repository immediately
+        // re-validates the mapped value against sortableColumns.
+        const sortColumn = fieldKeys.columnFor(parsed.sortBy) ?? parsed.sortBy
+
         const findOpts: Parameters<typeof repo.findMany>[0] = {
           page: parsed.pagination.page,
           per_page: parsed.pagination.per_page,
-          sort_by: parsed.sortBy as 'title' | 'created_at' | 'updated_at',
+          sort_by: sortColumn as 'title' | 'created_at' | 'updated_at',
           sort_order: parsed.sortOrder as 'asc' | 'desc',
           filters: { ...parsed.filters, ...extraFilters },
           include: parsed.include,
@@ -798,7 +815,9 @@ export function registerAdminContentRoutes(
         const result = await repo.findMany(findOpts)
 
         // Outbound boundary: rows are storage-keyed; responses speak labels.
-        const data = result.data.map((row) => fieldKeys.toLabels(row as Record<string, unknown>))
+        const data = result.data.map((row) =>
+          projectRow(row as Record<string, unknown>, typeName, projectors)
+        )
 
         return c.json({ ...result, data })
       }
@@ -820,7 +839,7 @@ export function registerAdminContentRoutes(
         }
 
         // Outbound boundary: rows are storage-keyed; responses speak labels.
-        const data = fieldKeys.toLabels(item as Record<string, unknown>)
+        const data = projectRow(item as Record<string, unknown>, typeName, projectors)
 
         return c.json({ ok: true, data })
       }
@@ -892,7 +911,7 @@ export function registerAdminContentRoutes(
         await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
 
         // Outbound boundary: rows are storage-keyed; responses speak labels.
-        const data = fieldKeys.toLabels(item as Record<string, unknown>)
+        const data = projectRow(item as Record<string, unknown>, typeName, projectors)
 
         return c.json({ ok: true, data }, 201)
       }
@@ -983,7 +1002,7 @@ export function registerAdminContentRoutes(
         await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
 
         // Outbound boundary: rows are storage-keyed; responses speak labels.
-        const data = fieldKeys.toLabels(updated as Record<string, unknown>)
+        const data = projectRow(updated as Record<string, unknown>, typeName, projectors)
 
         return c.json({ ok: true, data })
       }

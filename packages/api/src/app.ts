@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import type { Handler } from 'hono'
 import { sql } from 'drizzle-orm'
-import type { StorageAdapter, SchemaRegistry, ParsedContentType, ParsedTaxonomyType, ResolvedRateLimitConfig, CorsConfig, ResolvedGraphQLConfig } from '@bobbykim/manguito-cms-core'
+import type { StorageAdapter, SchemaRegistry, ParsedContentType, ParsedTaxonomyType, ParsedParagraphType, ResolvedRateLimitConfig, CorsConfig, ResolvedGraphQLConfig } from '@bobbykim/manguito-cms-core'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import { createCorsMiddleware } from './middleware/cors.js'
 import { createSecurityHeadersMiddleware } from './middleware/security-headers.js'
@@ -25,6 +25,8 @@ import { createDrizzleContentRepository } from './repositories/content.js'
 import { buildRelationsMap } from './relations.js'
 import { createMediaRepository } from './repositories/media.js'
 import { createFieldKeyMap, type FieldKeyMap } from './field-keys.js'
+import { SORTABLE_FIELDS } from './routes/query-params.js'
+import { buildProjectors, type Projectors } from './projector.js'
 import { normalizePrefix, createPublicPaths } from './paths.js'
 
 export type CreateCmsAppOptions = {
@@ -130,18 +132,64 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
 
   const requireHierarchy = createHierarchyMiddleware(rolesRegistry, getUserRole)
 
+  // ── Field key maps ──────────────────────────────────────────────────────────
+  //
+  // One per content, taxonomy AND paragraph type, built once at startup, keyed
+  // by machine name. Throws on a label / column collision — the server must not
+  // boot with an ambiguous mapping.
+  //
+  // Paragraph types belong in the same object as the other two, not a sidecar:
+  // both consumers index it by machine name over a key space that includes
+  // them. `buildProjectors` walks `registry.paragraph_types` to project
+  // paragraph children, and `graphql/schema.ts`'s `buildObjectType` runs over
+  // paragraph types too — so a programmatic field on a paragraph type needs its
+  // map here to be handed a label-keyed record, exactly like one on a content
+  // type. Every other GraphQL field resolves per field by column and is
+  // indifferent to this map.
+  const fieldKeyMaps: Record<string, FieldKeyMap> = Object.fromEntries([
+    ...Object.entries(registry.content_types).map(([typeName, ct]) => [
+      typeName,
+      createFieldKeyMap((ct as ParsedContentType).fields),
+    ]),
+    ...Object.entries(registry.taxonomy_types).map(([typeName, tt]) => [
+      typeName,
+      createFieldKeyMap((tt as ParsedTaxonomyType).fields),
+    ]),
+    ...Object.entries(registry.paragraph_types).map(([typeName, pt]) => [
+      typeName,
+      createFieldKeyMap((pt as ParsedParagraphType).fields),
+    ]),
+  ])
+
+  // Recursive outbound projection. Every read response is projected through
+  // this rather than through a bare toLabels.
+  const projectors: Projectors = buildProjectors(registry, fieldKeyMaps)
+
+  // Maps SORTABLE_FIELDS' labels to this type's storage columns, so the
+  // repository can validate sort_by against columns once the route has mapped
+  // it. Identity today for every schema the parser produces — diverges only
+  // once schema versioning lands and a label's column_name differs from it.
+  const sortableColumnsFor = (typeName: string): Set<string> =>
+    new Set(
+      [...SORTABLE_FIELDS].map((label) => fieldKeyMaps[typeName]!.columnFor(label) ?? label)
+    )
+
   // ── Repositories ──────────────────────────────────────────────────────────────
 
   const contentRepos = Object.fromEntries(
     Object.entries(registry.content_types).map(([typeName, ct]) => [
       typeName,
-      createDrizzleContentRepository(db, (ct as ParsedContentType).db.table_name),
+      createDrizzleContentRepository(db, (ct as ParsedContentType).db.table_name, {
+        sortableColumns: sortableColumnsFor(typeName),
+      }),
     ])
   )
   const taxonomyRepos = Object.fromEntries(
     Object.entries(registry.taxonomy_types).map(([typeName, tt]) => [
       typeName,
-      createDrizzleContentRepository(db, (tt as ParsedTaxonomyType).db.table_name),
+      createDrizzleContentRepository(db, (tt as ParsedTaxonomyType).db.table_name, {
+        sortableColumns: sortableColumnsFor(typeName),
+      }),
     ])
   )
   const repos = { ...contentRepos, ...taxonomyRepos }
@@ -159,6 +207,7 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
       createDrizzleContentRepository(db, (ct as ParsedContentType).db.table_name, {
         relations: buildRelationsMap((ct as ParsedContentType).fields, registry),
         publishedRelations: true,
+        sortableColumns: sortableColumnsFor(typeName),
       }),
     ])
   )
@@ -168,6 +217,7 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
       createDrizzleContentRepository(db, (tt as ParsedTaxonomyType).db.table_name, {
         relations: buildRelationsMap((tt as ParsedTaxonomyType).fields, registry),
         publishedRelations: true,
+        sortableColumns: sortableColumnsFor(typeName),
       }),
     ])
   )
@@ -187,14 +237,22 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
   // `published_only: true`, and the dataloaders filter relation targets by
   // published (ADR api/0002). Built separately from the admin `repos` so a
   // future change there can never silently widen the public surface.
+  //
+  // They do take `sortableColumns`, like every other repo here: the GraphQL
+  // sort enum's `title` value is a schema field's LABEL, which
+  // `collectionResolver` maps to a column before calling findMany.
   const graphqlRepos = Object.fromEntries([
     ...Object.entries(registry.content_types).map(([typeName, ct]) => [
       typeName,
-      createDrizzleContentRepository(db, (ct as ParsedContentType).db.table_name),
+      createDrizzleContentRepository(db, (ct as ParsedContentType).db.table_name, {
+        sortableColumns: sortableColumnsFor(typeName),
+      }),
     ]),
     ...Object.entries(registry.taxonomy_types).map(([typeName, tt]) => [
       typeName,
-      createDrizzleContentRepository(db, (tt as ParsedTaxonomyType).db.table_name),
+      createDrizzleContentRepository(db, (tt as ParsedTaxonomyType).db.table_name, {
+        sortableColumns: sortableColumnsFor(typeName),
+      }),
     ]),
   ])
 
@@ -255,24 +313,9 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
     })
   )
 
-  // ── Field key maps ──────────────────────────────────────────────────────────
-  //
-  // One per content/taxonomy type, built once at startup. Throws on a label /
-  // column collision — the server must not boot with an ambiguous mapping.
-  const fieldKeyMaps: Record<string, FieldKeyMap> = Object.fromEntries([
-    ...Object.entries(registry.content_types).map(([typeName, ct]) => [
-      typeName,
-      createFieldKeyMap((ct as ParsedContentType).fields),
-    ]),
-    ...Object.entries(registry.taxonomy_types).map(([typeName, tt]) => [
-      typeName,
-      createFieldKeyMap((tt as ParsedTaxonomyType).fields),
-    ]),
-  ])
-
   // ── Public routes ─────────────────────────────────────────────────────────────
 
-  registerPublicContentRoutes(app, registry, publicRepos, fieldKeyMaps, publicPaths, listRateLimit, programmaticResolver)
+  registerPublicContentRoutes(app, registry, publicRepos, projectors, publicPaths, listRateLimit, programmaticResolver)
   registerPublicMediaRoutes(app, mediaRepo, publicPaths, listRateLimit)
 
   // ── GraphQL (opt-in) ──────────────────────────────────────────────────────────
@@ -345,7 +388,7 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
   registerSchemaRoute(app, registry, db)
   registerUserRoutes(app, db, requirePermission, requireHierarchy)
 
-  registerAdminContentRoutes(app, registry, repos, fieldKeyMaps, mediaRepo, requirePermission, db)
+  registerAdminContentRoutes(app, registry, repos, projectors, mediaRepo, requirePermission, db)
   registerAdminMediaRoutes(app, mediaRepo, storage, requirePermission, maxFileSize)
 
   return { prefix, app }

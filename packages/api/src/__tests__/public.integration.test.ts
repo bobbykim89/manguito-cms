@@ -9,6 +9,7 @@ import { createLocalAdapter } from '../storage/adapters/local'
 import { createDrizzleContentRepository } from '../repositories/content'
 import { registerPublicContentRoutes } from '../routes/content'
 import { createFieldKeyMap } from '../field-keys'
+import { buildProjectors } from '../projector'
 import { createPublicPaths } from '../paths'
 
 const DB_URL = process.env['DB_URL']
@@ -249,7 +250,7 @@ describe('public content routes — integration', () => {
       app,
       TEST_REGISTRY,
       { 'pub-test-blog': blogRepo },
-      { 'pub-test-blog': createFieldKeyMap(BLOG_TYPE.fields) },
+      buildProjectors(TEST_REGISTRY, { 'pub-test-blog': createFieldKeyMap(BLOG_TYPE.fields) }),
       createPublicPaths('/api')
     )
 

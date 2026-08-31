@@ -8,8 +8,14 @@ import type {
   FindManyOptions,
 } from '@bobbykim/manguito-cms-core'
 import type { ParsedContentType } from '@bobbykim/manguito-cms-core'
-import { divergentTextField, divergentReferenceField } from '../../field-keys.test-fixtures'
+import {
+  divergentTextField,
+  divergentReferenceField,
+  paragraphField,
+  divergentParagraphType,
+} from '../../field-keys.test-fixtures'
 import { createFieldKeyMap } from '../../field-keys'
+import { buildProjectors } from '../../projector'
 import { createProgrammaticResolver } from '../../programmatic/resolve'
 import { createPublicPaths } from '../../paths'
 
@@ -95,7 +101,7 @@ describe('public content routes', () => {
       app,
       mockRegistry,
       { 'blog-post': mockRepo },
-      { 'blog-post': createFieldKeyMap(BLOG_TYPE.fields) },
+      buildProjectors(mockRegistry, { 'blog-post': createFieldKeyMap(BLOG_TYPE.fields) }),
       createPublicPaths('/api')
     )
   })
@@ -157,7 +163,7 @@ describe('public content routes', () => {
       app,
       mockRegistry,
       { 'blog-post': repo },
-      { 'blog-post': createFieldKeyMap(BLOG_TYPE.fields) },
+      buildProjectors(mockRegistry, { 'blog-post': createFieldKeyMap(BLOG_TYPE.fields) }),
       createPublicPaths('/content-api'),
       undefined,
       createProgrammaticResolver(new Map())
@@ -202,7 +208,7 @@ describe('public reads with a divergent field label', () => {
       app,
       divergentRegistry,
       { 'divergent-post': repo },
-      { 'divergent-post': createFieldKeyMap([divergentTextField]) },
+      buildProjectors(divergentRegistry, { 'divergent-post': createFieldKeyMap([divergentTextField]) }),
       createPublicPaths('/api'),
       undefined,
       createProgrammaticResolver(new Map())
@@ -231,7 +237,7 @@ describe('public reads with a divergent field label', () => {
       app,
       divergentRegistry,
       { 'divergent-post': repo },
-      { 'divergent-post': createFieldKeyMap([divergentTextField]) },
+      buildProjectors(divergentRegistry, { 'divergent-post': createFieldKeyMap([divergentTextField]) }),
       createPublicPaths('/api'),
       undefined,
       createProgrammaticResolver(new Map())
@@ -284,7 +290,7 @@ describe('public reads with a divergent field label', () => {
       app,
       refRegistry,
       { 'divergent-ref-post': repo },
-      { 'divergent-ref-post': createFieldKeyMap([divergentReferenceField]) },
+      buildProjectors(refRegistry, { 'divergent-ref-post': createFieldKeyMap([divergentReferenceField]) }),
       createPublicPaths('/api'),
       undefined,
       createProgrammaticResolver(new Map())
@@ -298,5 +304,69 @@ describe('public reads with a divergent field label', () => {
     expect(body.ok).toBe(true)
     expect(body.data[0]).toMatchObject({ slug: 'a', category: categoryId })
     expect(body.data[0]).not.toHaveProperty('category_id')
+  })
+})
+
+// ─── Recursive projection into paragraph children ─────────────────────────────
+
+// Same shape as DIVERGENT_TYPE, plus a paragraph field whose children have
+// their own label/column divergence.
+const DIVERGENT_POST_WITH_CARDS_TYPE: ParsedContentType = {
+  ...BLOG_TYPE,
+  name: 'divergent-post',
+  default_base_path: 'divergent-post',
+  fields: [
+    divergentTextField,
+    { ...paragraphField, ui_component: { component: 'paragraph-embed', ref: 'paragraph--card', rel: 'one-to-many' } },
+  ],
+  db: { table_name: 'content--divergent_post', junction_tables: [] },
+  api: {
+    default_base_path: 'divergent-post',
+    http_methods: ['GET', 'POST', 'PATCH', 'DELETE'],
+    item_path: '/api/divergent-post/:slug',
+  },
+}
+
+const divergentRegistryWithCards: SchemaRegistry = {
+  ...mockRegistry,
+  content_types: { 'divergent-post': DIVERGENT_POST_WITH_CARDS_TYPE },
+  paragraph_types: { 'paragraph--card': divergentParagraphType },
+}
+
+function appForDivergentPostWithCards(repo: ContentRepository<unknown>): Hono {
+  const app = new Hono()
+  registerPublicContentRoutes(
+    app,
+    divergentRegistryWithCards,
+    { 'divergent-post': repo },
+    buildProjectors(divergentRegistryWithCards, {
+      'divergent-post': createFieldKeyMap(DIVERGENT_POST_WITH_CARDS_TYPE.fields),
+      'paragraph--card': createFieldKeyMap(divergentParagraphType.fields),
+    }),
+    createPublicPaths('/api'),
+    undefined,
+    createProgrammaticResolver(new Map())
+  )
+  return app
+}
+
+describe('public reads project nested rows recursively', () => {
+  it('projects paragraph children to labels, not columns', async () => {
+    const repo = makeMockRepo()
+    ;(repo.findBySlug as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'p1',
+      slug: 'a',
+      published: true,
+      blog_title: 'Hi',
+      cards: [{ id: 'c1', blog_title: 'One' }],
+    })
+
+    const res = await appForDivergentPostWithCards(repo).request('/api/divergent-post/a')
+    const body = await res.json() as { ok: boolean; data: Record<string, unknown> }
+
+    expect(res.status).toBe(200)
+    expect(body.data['title']).toBe('Hi')
+    expect(body.data['cards']).toEqual([{ id: 'c1', title: 'One' }])
+    expect((body.data['cards'] as Record<string, unknown>[])[0]).not.toHaveProperty('blog_title')
   })
 })

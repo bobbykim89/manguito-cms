@@ -2,7 +2,11 @@ import type { FilterValue, FilterOperator } from '@bobbykim/manguito-cms-core'
 
 // Query-param parsing shared by the public and admin content/taxonomy list routes.
 
-// Only indexed system fields are sortable.
+// The sortable set. NOT "indexed system fields", despite what this comment used
+// to say: db codegen generates no indexes at all, and `title` is an ordinary
+// schema field, not a system field — nothing guarantees a content type has one.
+// Sorting by a label a type lacks still reaches Postgres and 500s; widening this
+// set to any column-backed field is a separate design (see the Stage 1.5 spec).
 export const SORTABLE_FIELDS = new Set<string>(['title', 'created_at', 'updated_at'])
 
 // Field types whose values are relations rather than plain columns.
