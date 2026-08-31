@@ -89,7 +89,18 @@ export function buildUnionRegistry(input: {
   pending: PendingChanges
 }): SchemaRegistry {
   const { current, currentVersion, snapshots, live, history, pending } = input
-  if (snapshots.length === 0) return current
+  // Fast path only when nothing could possibly change a column: no other live
+  // version to merge against, and no rename declared anywhere (history or
+  // pending). If there are no renames at all, columnOf is the identity for
+  // every label, so unionTypeMap would return field objects equal to
+  // current's anyway — this is then a pure optimization, not a behavioral
+  // shortcut. Once a rename exists, even with zero snapshots (e.g. the
+  // renamed version has since retired and only `current` remains live),
+  // current's own field may still be labelled differently from its real
+  // column, and only unionTypeMap corrects that.
+  if (snapshots.length === 0 && history.renames.length === 0 && pending.renames.length === 0) {
+    return current
+  }
 
   return {
     ...current,

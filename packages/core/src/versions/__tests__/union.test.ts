@@ -73,6 +73,40 @@ describe('buildUnionRegistry', () => {
     expect(cols).toEqual(['blog_title'])
   })
 
+  it('corrects the column of a renamed field even when no other version is live', () => {
+    const current = makeRegistry([makeContentType('content--post', [{ name: 'title' }])])
+    const union = buildUnionRegistry({
+      current, currentVersion: 'v2', snapshots: [], live: ['v2'],
+      history: {
+        renames: [{ after: 'v1', type: 'content--post', from: 'blog_title', to: 'title' }],
+        drops: [], fallbacks: {},
+      },
+      pending: EMPTY_PENDING,
+    })
+    const cols = fieldsOf(union, 'content--post').map((f) => f.db_column?.column_name)
+    expect(cols).toEqual(['blog_title'])
+  })
+
+  it('returns current by reference in the zero-config case', () => {
+    const current = makeRegistry([makeContentType('content--post', [{ name: 'title' }])])
+    const union = buildUnionRegistry({
+      current, currentVersion: 'v1', snapshots: [], live: ['v1'],
+      history: EMPTY_HISTORY, pending: EMPTY_PENDING,
+    })
+    expect(union).toBe(current)
+  })
+
+  it('a pending-only rename also defeats the fast path', () => {
+    const current = makeRegistry([makeContentType('content--post', [{ name: 'title' }])])
+    const union = buildUnionRegistry({
+      current, currentVersion: 'v1', snapshots: [], live: ['v1'],
+      history: EMPTY_HISTORY,
+      pending: { renames: [{ type: 'content--post', from: 'blog_title', to: 'title' }], drops: [], fallbacks: {} },
+    })
+    const cols = fieldsOf(union, 'content--post').map((f) => f.db_column?.column_name)
+    expect(cols).toEqual(['blog_title'])
+  })
+
   it('retains and relaxes a dropped taxonomy column too', () => {
     const snapshots = [{
       version: 'v1',
