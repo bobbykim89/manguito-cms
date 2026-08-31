@@ -1,6 +1,15 @@
 import { describe, it, expect } from 'vitest'
-import { validateVersionModel } from '../validate'
-import { makeContentType, makeRegistry, EMPTY_HISTORY, EMPTY_PENDING } from './fixtures'
+import { validateVersionModel, validateModelStructure } from '../validate'
+import { buildUnionRegistry } from '../union'
+import { buildProjections } from '../projections'
+import {
+  makeContentType,
+  makeParagraphType,
+  makeTaxonomyType,
+  makeRegistry,
+  EMPTY_HISTORY,
+  EMPTY_PENDING,
+} from './fixtures'
 
 function withV1(v1Fields: Parameters<typeof makeContentType>[1], currentFields: Parameters<typeof makeContentType>[1]) {
   return {
@@ -135,6 +144,198 @@ describe('AMBIGUOUS_RENAME — dedup and label-keyed drops (fix round 1)', () =>
 
     const after = validateVersionModel(buildInput({ renames: [], drops: [suggestedDrop!], fallbacks: {} }))
     expect(after).toEqual([])
+  })
+})
+
+// Final-review I3. Retention covers columns inside content and taxonomy types
+// that CURRENT still defines — nothing else. Rather than quietly omitting live
+// storage from the union (and, for a deleted type, disagreeing with that same
+// version's projection), the boundary is refused out loud. Extending retention
+// to paragraph tables is a 2b/2e decision, not a fix-wave improvisation.
+describe('VERSION_RETENTION_UNSUPPORTED', () => {
+  it('fires when a live version exposes a content type current deleted', () => {
+    const errors = validateVersionModel({
+      snapshots: [{
+        version: 'v1',
+        registry: makeRegistry([makeContentType('content--old', [{ name: 'a' }])]),
+      }],
+      current: makeRegistry([makeContentType('content--post', [{ name: 'a' }])]),
+      currentVersion: 'v2',
+      live: ['v1', 'v2'],
+      history: EMPTY_HISTORY,
+      pending: EMPTY_PENDING,
+    })
+    const retention = errors.filter((e) => e.code === 'VERSION_RETENTION_UNSUPPORTED')
+    expect(retention).toHaveLength(1)
+    expect(retention[0]!.message).toContain('content--old')
+    expect(retention[0]!.message).toContain('retire v1')
+  })
+
+  it('fires when a live version exposes a taxonomy type current deleted', () => {
+    const errors = validateVersionModel({
+      snapshots: [{
+        version: 'v1',
+        registry: makeRegistry([makeTaxonomyType('taxonomy--old', [{ name: 'a' }])]),
+      }],
+      current: makeRegistry([makeContentType('content--post', [{ name: 'a' }])]),
+      currentVersion: 'v2',
+      live: ['v1', 'v2'],
+      history: EMPTY_HISTORY,
+      pending: EMPTY_PENDING,
+    })
+    expect(errors.map((e) => e.code)).toContain('VERSION_RETENTION_UNSUPPORTED')
+  })
+
+  it('fires when a live version’s paragraph type loses a column in current', () => {
+    const errors = validateVersionModel({
+      snapshots: [{
+        version: 'v1',
+        registry: makeRegistry([makeParagraphType('paragraph--card', [{ name: 'a' }, { name: 'gone' }])]),
+      }],
+      current: makeRegistry([makeParagraphType('paragraph--card', [{ name: 'a' }])]),
+      currentVersion: 'v2',
+      live: ['v1', 'v2'],
+      history: EMPTY_HISTORY,
+      pending: EMPTY_PENDING,
+    })
+    const retention = errors.filter((e) => e.code === 'VERSION_RETENTION_UNSUPPORTED')
+    expect(retention).toHaveLength(1)
+    expect(retention[0]!.message).toContain('gone')
+    expect(retention[0]!.message).toContain('paragraph--card')
+  })
+
+  it('fires when a live version’s paragraph type is gone from current entirely', () => {
+    const errors = validateVersionModel({
+      snapshots: [{
+        version: 'v1',
+        registry: makeRegistry([makeParagraphType('paragraph--card', [{ name: 'a' }])]),
+      }],
+      current: makeRegistry([makeContentType('content--post', [{ name: 'a' }])]),
+      currentVersion: 'v2',
+      live: ['v1', 'v2'],
+      history: EMPTY_HISTORY,
+      pending: EMPTY_PENDING,
+    })
+    expect(errors.map((e) => e.code)).toContain('VERSION_RETENTION_UNSUPPORTED')
+  })
+
+  it('does NOT fire for an unchanged paragraph type, or for a retained content column', () => {
+    const errors = validateVersionModel({
+      snapshots: [{
+        version: 'v1',
+        registry: makeRegistry([
+          makeContentType('content--post', [{ name: 'a' }, { name: 'gone' }]),
+          makeParagraphType('paragraph--card', [{ name: 'a' }]),
+        ]),
+      }],
+      current: makeRegistry([
+        makeContentType('content--post', [{ name: 'a' }]),
+        makeParagraphType('paragraph--card', [{ name: 'a' }]),
+      ]),
+      currentVersion: 'v2',
+      live: ['v1', 'v2'],
+      history: EMPTY_HISTORY,
+      pending: EMPTY_PENDING,
+    })
+    expect(errors).toEqual([])
+  })
+
+  it('does NOT fire when a paragraph type GAINS a column in current', () => {
+    const errors = validateVersionModel({
+      snapshots: [{
+        version: 'v1',
+        registry: makeRegistry([makeParagraphType('paragraph--card', [{ name: 'a' }])]),
+      }],
+      current: makeRegistry([makeParagraphType('paragraph--card', [{ name: 'a' }, { name: 'b' }])]),
+      currentVersion: 'v2',
+      live: ['v1', 'v2'],
+      history: EMPTY_HISTORY,
+      pending: EMPTY_PENDING,
+    })
+    expect(errors).toEqual([])
+  })
+})
+
+// Final-review C1.3. A structural invariant on the BUILT model, which nothing
+// checked before: it is how the pre-windowing shift bug shipped a union with
+// two fields on one column, and a projection serving one column under two
+// labels, while reporting ok: true.
+describe('VERSION_MODEL_INCONSISTENT', () => {
+  // A stale pending entry: current still carries BOTH labels, and the rename
+  // maps one onto the other, so both fold to the same column. Nothing about
+  // the entry is malformed — each endpoint is a real label, the window has no
+  // from/to overlap and no repeated `to` — so only the post-construction
+  // check can catch it.
+  function staleRenameInput() {
+    const current = makeRegistry([
+      makeContentType('content--post', [{ name: 'headline' }, { name: 'title' }]),
+    ])
+    return {
+      current,
+      currentVersion: 'v1',
+      snapshots: [],
+      live: ['v1'],
+      history: EMPTY_HISTORY,
+      pending: {
+        renames: [{ type: 'content--post', from: 'title', to: 'headline' }],
+        drops: [], fallbacks: {},
+      },
+    }
+  }
+
+  it('reports a union type with two fields on one column', () => {
+    const input = staleRenameInput()
+    const errors = validateModelStructure({
+      union: buildUnionRegistry(input),
+      projections: {},
+    })
+    expect(errors).toHaveLength(1)
+    expect(errors[0]!.code).toBe('VERSION_MODEL_INCONSISTENT')
+    expect(errors[0]!.message).toContain('two fields backed by column "title"')
+  })
+
+  it('reports a projection exposing one column under two labels', () => {
+    const input = staleRenameInput()
+    const errors = validateModelStructure({
+      union: makeRegistry([makeContentType('content--post', [{ name: 'title' }])]),
+      projections: buildProjections(input),
+    })
+    expect(errors).toHaveLength(1)
+    expect(errors[0]!.code).toBe('VERSION_MODEL_INCONSISTENT')
+    expect(errors[0]!.message).toContain('two labels')
+  })
+
+  it('passes a well-formed model', () => {
+    const input = {
+      current: makeRegistry([makeContentType('content--post', [{ name: 'a' }, { name: 'b' }])]),
+      currentVersion: 'v1',
+      snapshots: [],
+      live: ['v1'],
+      history: EMPTY_HISTORY,
+      pending: EMPTY_PENDING,
+    }
+    expect(
+      validateModelStructure({ union: buildUnionRegistry(input), projections: buildProjections(input) })
+    ).toEqual([])
+  })
+
+  it('passes a union whose retained column merely duplicates another type’s column name', () => {
+    // Same column name on two different types is ordinary — the invariant is
+    // per type, not global.
+    const input = {
+      current: makeRegistry([
+        makeContentType('content--post', [{ name: 'a' }]),
+        makeContentType('content--page', [{ name: 'a' }]),
+      ]),
+      currentVersion: 'v1',
+      snapshots: [],
+      live: ['v1'],
+      history: EMPTY_HISTORY,
+      pending: EMPTY_PENDING,
+    }
+    expect(
+      validateModelStructure({ union: buildUnionRegistry(input), projections: buildProjections(input) })
+    ).toEqual([])
   })
 })
 

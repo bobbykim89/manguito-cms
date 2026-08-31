@@ -1,7 +1,7 @@
 import type { ParseError } from '../parser/loader.js'
 import type { SchemaRegistry } from '../parser/validate.js'
 import type { ParsedField } from '../registry/types.js'
-import type { PendingChanges, VersionHistory, VersionSnapshot } from './types.js'
+import type { PendingChanges, VersionHistory, VersionProjection, VersionSnapshot } from './types.js'
 import { columnOf } from './fold.js'
 import { isColumnBacked } from './union.js'
 
@@ -243,6 +243,168 @@ function checkUnrenameableFieldKind(input: {
   return errors
 }
 
+// ─── VERSION_RETENTION_UNSUPPORTED ──────────────────────────────────────────
+//
+// Retention has a boundary, and this check is the boundary made loud.
+// `buildUnionRegistry` retains columns only within content and taxonomy types
+// that CURRENT still defines: unionTypeMap iterates current's map, and
+// paragraph_types is passed through untouched. So without this check:
+//
+//   - a type a live version exposes but current deleted vanishes from the
+//     union while `projections[thatVersion].types` still exposes it — the two
+//     halves of one model disagreeing about the same live version; and
+//   - a paragraph type's field removed from current takes its column out of
+//     the union although a live version still serves it.
+//
+// Whether paragraph tables participate in versioning at all is a design
+// question the spec never settled (it restricted RENAMES to column-backed
+// fields but said nothing about paragraph types' own columns), and it is
+// settled deliberately in 2b/2e rather than improvised here. Until then a
+// project in one of these shapes gets a refusal naming the recourse, never a
+// union that quietly omits live storage — which is what would drop a column
+// still being served the next time db codegen ran.
+//
+// The code is its own: nothing is malformed and no rename is involved, so the
+// rename codes would misdirect, and VERSION_SNAPSHOT_INVALID would blame a
+// snapshot that parsed perfectly. This says what is true — the model cannot
+// carry what this live version needs, in this release.
+function checkUnretainableLiveSurface(input: {
+  current: SchemaRegistry
+  snapshots: VersionSnapshot[]
+}): ParseError[] {
+  const { current, snapshots } = input
+  const errors: ParseError[] = []
+
+  const missingType = (version: string, typeName: string, kind: string): ParseError => ({
+    file: `schemas/versions/${version}`,
+    code: 'VERSION_RETENTION_UNSUPPORTED',
+    message:
+      `Live version ${version} exposes ${kind} "${typeName}", which the current schema no longer ` +
+      `defines. The union registry retains individual columns, not whole types, so ${version}'s ` +
+      `storage for "${typeName}" would not be carried. Restore the type to the current schema, or ` +
+      `retire ${version} first.`,
+  })
+
+  for (const snap of snapshots) {
+    for (const typeName of Object.keys(snap.registry.content_types)) {
+      if (!current.content_types[typeName]) errors.push(missingType(snap.version, typeName, 'content type'))
+    }
+    for (const typeName of Object.keys(snap.registry.taxonomy_types)) {
+      if (!current.taxonomy_types[typeName]) errors.push(missingType(snap.version, typeName, 'taxonomy type'))
+    }
+
+    // Paragraph types are compared by raw column name, with no fold: a rename
+    // of a paragraph type's own field is not honoured anywhere in this module,
+    // so folding here would invent a mapping the union does not implement.
+    for (const [typeName, snapType] of Object.entries(snap.registry.paragraph_types)) {
+      const currentType = current.paragraph_types[typeName]
+      if (!currentType) {
+        errors.push(missingType(snap.version, typeName, 'paragraph type'))
+        continue
+      }
+      const currentColumns = new Set(
+        currentType.fields.filter(isColumnBacked).map((f) => f.db_column!.column_name)
+      )
+      for (const f of snapType.fields) {
+        if (!isColumnBacked(f)) continue
+        const col = f.db_column!.column_name
+        if (currentColumns.has(col)) continue
+        errors.push({
+          file: `schemas/versions/${snap.version}`,
+          code: 'VERSION_RETENTION_UNSUPPORTED',
+          message:
+            `Live version ${snap.version} exposes column "${col}" on paragraph type "${typeName}", ` +
+            `which the current schema no longer defines. Paragraph types do not take part in column ` +
+            `retention, so that column would not be carried into the union registry. Restore the field ` +
+            `to the current schema, or retire ${snap.version} first.`,
+        })
+      }
+    }
+  }
+
+  return errors
+}
+
+// ─── VERSION_MODEL_INCONSISTENT ─────────────────────────────────────────────
+//
+// A structural invariant checked AFTER construction, on the built model rather
+// than on its inputs: within one type, one column is backed by exactly one
+// field, and one projection exposes one column under exactly one label.
+//
+// Nothing upstream guaranteed this. The rename fold could collapse two labels
+// onto one column — that is how the pre-windowing shift bug produced a union
+// with two fields carrying column `subtitle` and a projection serving it under
+// two labels, and it still returned `ok: true`. The inputs are now validated
+// well enough that no known path reaches here, which is exactly why the check
+// belongs: it converts the whole class of "two labels, one column" defect from
+// silent to loud, whatever future input shape or codegen consumer produces it.
+//
+// The code is deliberately NOT one of the rename codes: the cause may be a
+// rename chain, a snapshot, or a bug in this module, so a message telling the
+// author to fix a rename entry would frequently be wrong. VERSION_MODEL_INCONSISTENT
+// says what is known — the model this module built does not hold together.
+// Runs after construction, unlike validateVersionModel, which runs on the
+// inputs before anything is built.
+export function validateModelStructure(input: {
+  union: SchemaRegistry
+  projections: Record<string, VersionProjection>
+}): ParseError[] {
+  const { union, projections } = input
+  const errors: ParseError[] = []
+
+  const typeMaps = [union.content_types, union.taxonomy_types]
+  for (const map of typeMaps) {
+    for (const [typeName, type] of Object.entries(map)) {
+      const byColumn = new Map<string, string>()
+      for (const f of type.fields) {
+        if (!isColumnBacked(f)) continue
+        const col = f.db_column!.column_name
+        const owner = byColumn.get(col)
+        if (owner !== undefined) {
+          errors.push({
+            // Attributed to pending.json, the file an author edits — as
+            // AMBIGUOUS_RENAME is — though a hand-edited history.json can
+            // equally be the cause, which the message names.
+            file: 'schemas/versions/pending.json',
+            code: 'VERSION_MODEL_INCONSISTENT',
+            message:
+              `The union registry gives "${typeName}" two fields backed by column "${col}" ` +
+              `("${owner}" and "${f.name}"). One column backs exactly one field — a column cannot ` +
+              `store two fields' values. Check this type's renames in pending.json and history.json: two ` +
+              `labels folding to one column is what produces this.`,
+          })
+          continue
+        }
+        byColumn.set(col, f.name)
+      }
+    }
+  }
+
+  for (const [version, projection] of Object.entries(projections)) {
+    for (const [typeName, type] of Object.entries(projection.types)) {
+      const byColumn = new Map<string, string>()
+      for (const f of type.fields) {
+        const owner = byColumn.get(f.column_name)
+        if (owner !== undefined) {
+          errors.push({
+            file: 'schemas/versions/pending.json',
+            code: 'VERSION_MODEL_INCONSISTENT',
+            message:
+              `Version ${version}'s projection of "${typeName}" exposes column "${f.column_name}" under ` +
+              `two labels ("${owner}" and "${f.exposed_as}"). One column is exposed once per version — ` +
+              `serving it twice would give two API fields the same underlying value. Check this type's ` +
+              `renames in pending.json and history.json.`,
+          })
+          continue
+        }
+        byColumn.set(f.column_name, f.exposed_as)
+      }
+    }
+  }
+
+  return errors
+}
+
 // ─── validateVersionModel ────────────────────────────────────────────────────
 
 export function validateVersionModel(input: {
@@ -257,5 +419,6 @@ export function validateVersionModel(input: {
     ...checkAmbiguousRenames(input),
     ...checkFieldTypeChangedWhileLive(input),
     ...checkUnrenameableFieldKind(input),
+    ...checkUnretainableLiveSurface(input),
   ]
 }

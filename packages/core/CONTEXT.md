@@ -80,7 +80,9 @@ The value served in place of null for a retained column, declared in `pending.js
 _Avoid_: default value, null replacement
 
 **Union registry**:
-An ordinary `SchemaRegistry` — not a distinct type — holding every live version's fields merged and keyed by column. Feeds db codegen and drift detection. Differs from a plain merge in two ways: a column the current schema no longer exposes is retained and forced nullable, since rows created after the drop cannot populate it; and a field current still exposes has its `db_column.column_name` corrected to its real column whenever a live or historical rename touches it — current's own label is never assumed to already be the column.
+An ordinary `SchemaRegistry` — not a distinct type — holding every live version's fields merged and keyed by column. Feeds db codegen and drift detection. Differs from a plain merge in two ways: a column the current schema no longer exposes is retained and forced nullable, since rows created after the drop cannot populate it; and a field current still exposes has its `db_column.column_name` corrected to its real column whenever a live or historical rename touches it — current's own label is never assumed to already be the column. Every map on it agrees: `schemas` holds the same objects as `content_types` and `taxonomy_types`, so reading a type either way shows the same folded and retained columns.
+
+Retention has a boundary: it covers columns inside content and taxonomy types that the current schema **still defines**. A type a live version exposes but current deleted is not carried, and paragraph types are passed through untouched — a paragraph type's own column removed from current is not retained, and a declared rename of a paragraph type's own field is a no-op. Whether paragraph tables take part in versioning at all is left to 2b/2e; until then, a project in one of those shapes is refused with `VERSION_RETENTION_UNSUPPORTED` rather than handed a union that silently omits live storage.
 _Avoid_: merged registry, combined schema
 
 **Projection**:

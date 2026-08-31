@@ -48,7 +48,19 @@ export type VersionModel = {
   current: string
   /** Oldest first, including current. */
   live: string[]
-  /** Every live version's fields merged; feeds db codegen and drift detection. */
+  /**
+   * Every live version's fields merged; feeds db codegen and drift detection.
+   *
+   * LIMITATION: retention covers columns inside content and taxonomy types
+   * that the CURRENT schema still defines. A type a live version exposes but
+   * current deleted is not carried, and paragraph types are passed through
+   * untouched — so a paragraph type's own column removed from current is not
+   * retained either, and a declared rename of a paragraph type's own field is
+   * a no-op. Whether paragraph tables take part in versioning at all is a
+   * design question the spec left open, settled in 2b/2e. Until then a project
+   * in one of those shapes is REFUSED with `VERSION_RETENTION_UNSUPPORTED`
+   * rather than handed a union that quietly omits live storage.
+   */
   union: SchemaRegistry
   /** Keyed by version name; includes current (an identity projection). */
   projections: Record<string, VersionProjection>

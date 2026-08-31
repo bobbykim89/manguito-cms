@@ -195,6 +195,8 @@ Two consequences follow:
 | `RENAME_CHAIN_BROKEN` | A rename's `from` matches no label known at that point in the chain — a misfiled `pending.json` entry, or hand-edited history. |
 | `UNRENAMEABLE_FIELD_KIND` | A declared rename names a paragraph or many-to-many field, whose identity is persisted as data. |
 | `FIELD_TYPE_CHANGED_WHILE_LIVE` | A column a live version still exposes changed type. One column cannot hold two types. |
+| `VERSION_RETENTION_UNSUPPORTED` | A live version exposes storage the union registry cannot carry — a whole type current deleted, or a paragraph type's own column current removed. See [Known limitations](#known-limitations). |
+| `VERSION_MODEL_INCONSISTENT` | A structural invariant of the BUILT model failed: two fields of one type on one column, or one column exposed under two labels in one projection. Checked after construction, because nothing about the inputs guarantees it. |
 
 A fallback declared for a column no live version exposes is **not** an error — it is inert, and becoming inert is the normal end of a fallback's life.
 
@@ -243,6 +245,21 @@ Then one case each for `RENAME_CHAIN_BROKEN`, `UNRENAMEABLE_FIELD_KIND` (paragra
 - no `versions/` directory → one live version `v1`, `union` field-for-field equal to `current`, identity projection
 
 This is the path every existing project takes, so it gets an explicit test rather than being assumed.
+
+## Known limitations
+
+Recorded here because they are **prerequisites for 2b and 2e**, not open bugs. The retention boundary is refused loudly (`VERSION_RETENTION_UNSUPPORTED`) rather than silently mis-modelled.
+
+**Retention covers content and taxonomy types the current schema still defines.** `buildUnionRegistry` iterates current's type maps, so:
+
+- A type a live version exposes but current **deleted** is not carried into the union at all, while that version's projection still exposes it — the two halves of one model disagreeing about the same live version.
+- **Paragraph types are passed through untouched.** A paragraph type's own column removed from current is not retained though a live version still serves it, projections do not cover paragraph types, and a declared rename of a paragraph type's own field is a no-op that `UNRENAMEABLE_FIELD_KIND` does not flag (the field it names is a plain column-backed field on a paragraph type, not a paragraph field on a content type).
+
+Whether paragraph tables participate in versioning at all is a question this spec never settled — it restricted *renames* to column-backed fields but said nothing about paragraph types' own columns. **2b** must decide it before generating a union-derived schema for paragraph tables, and **2e** before retirement can prune paragraph columns. Extending retention silently, without deciding what a versioned paragraph table means, would be worse than the refusal.
+
+A related consequence closes with it: a retained **enum** column can only reach the union through the deleted-type path, so no retained enum can arrive with an empty `check_constraint` while that path is refused.
+
+**Snapshots are not cross-reference validated.** A snapshot's `ref` pointing at a type current no longer defines is not checked here — deliberately, since re-validating frozen history against current's `routes.json` would flag untouched history the moment a base path is removed. Recorded as a 2b prerequisite.
 
 ## Deliverables
 

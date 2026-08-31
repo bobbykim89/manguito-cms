@@ -88,6 +88,26 @@ export function makeTaxonomyType(name: string, fields: FieldSpec[]): ParsedSchem
   return result.schema
 }
 
+/**
+ * Same, as a paragraph type — flat fields, no tabs. Needed to exercise the
+ * retention boundary: paragraph types are the one kind the union registry
+ * passes through untouched.
+ */
+export function makeParagraphType(name: string, fields: FieldSpec[]): ParsedSchema {
+  const result = parseSchema(
+    {
+      name,
+      label: name,
+      type: 'paragraph-type',
+      fields: fields.map(toRawField),
+    },
+    'paragraph-type',
+    `schemas/paragraph-types/${name}.json`
+  )
+  if (!result.ok) throw new Error(`fixture failed to parse: ${JSON.stringify(result.errors)}`)
+  return result.schema
+}
+
 export function makeRegistry(schemas: ParsedSchema[]): SchemaRegistry {
   return buildSchemaRegistry(schemas, EMPTY_ROUTES, EMPTY_ROLES)
 }

@@ -39,6 +39,8 @@ export type ParseErrorCode =
   | 'RENAME_CHAIN_BROKEN'
   | 'UNRENAMEABLE_FIELD_KIND'
   | 'FIELD_TYPE_CHANGED_WHILE_LIVE'
+  | 'VERSION_RETENTION_UNSUPPORTED'
+  | 'VERSION_MODEL_INCONSISTENT'
 
 export type ParseError = {
   file: string

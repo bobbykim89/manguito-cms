@@ -2,7 +2,7 @@ import type { Result } from '../parser/loader.js'
 import type { SchemaRegistry } from '../parser/validate.js'
 import type { PendingChanges, VersionHistory, VersionModel, VersionSnapshot } from './types.js'
 import { validateRenameChain } from './fold.js'
-import { validateVersionModel } from './validate.js'
+import { validateVersionModel, validateModelStructure } from './validate.js'
 import { buildUnionRegistry } from './union.js'
 import { buildProjections } from './projections.js'
 
@@ -34,13 +34,18 @@ export function computeVersionModel(input: {
   if (errors.length > 0) return { ok: false, errors }
 
   const shared = { current, currentVersion, snapshots, live, history, pending }
+  const union = buildUnionRegistry(shared)
+  const projections = buildProjections(shared)
+
+  // Invariants of the BUILT model — one column per field within a type, one
+  // label per column within a projection. Nothing above guarantees them, and a
+  // model that violates them is worse than an error: it hands db codegen two
+  // fields fighting over one column, and the API two labels serving one value.
+  const structural = validateModelStructure({ union, projections })
+  if (structural.length > 0) return { ok: false, errors: structural }
+
   return {
     ok: true,
-    value: {
-      current: currentVersion,
-      live,
-      union: buildUnionRegistry(shared),
-      projections: buildProjections(shared),
-    },
+    value: { current: currentVersion, live, union, projections },
   }
 }

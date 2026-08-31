@@ -44,6 +44,29 @@ describe('computeVersionModel', () => {
     expect(r.value.live).toEqual(['v1', 'v3', 'v4'])
   })
 
+  // Final-review C1.3, wired end to end: a stale pending rename whose two
+  // endpoints BOTH still exist in current is malformed in no way the input
+  // checks can see — every label is real, the window has no from/to overlap —
+  // yet it folds two fields onto one column. Only the post-construction
+  // invariant catches it, and it must reach the caller as a failed Result.
+  it('refuses a model whose fields collide on one column', () => {
+    const current = makeRegistry([
+      makeContentType('content--post', [{ name: 'headline' }, { name: 'title' }]),
+    ])
+    const r = computeVersionModel({
+      current,
+      snapshots: [],
+      history: EMPTY_HISTORY,
+      pending: {
+        renames: [{ type: 'content--post', from: 'title', to: 'headline' }],
+        drops: [], fallbacks: {},
+      },
+    })
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.errors.map((e) => e.code)).toContain('VERSION_MODEL_INCONSISTENT')
+  })
+
   it('returns collected errors rather than a value when validation fails', () => {
     const snapshots = [{
       version: 'v1',
