@@ -1,7 +1,9 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import type { Result, ParseError, SchemaFile, SchemaType } from '../parser/loader.js'
+import type { Result, ParseError, SchemaFile } from '../parser/loader.js'
 import { loadSchemaFile } from '../parser/loader.js'
+import { FOLDER_KEY_TO_SCHEMA_TYPE, directoryExists, isSupportedExtension } from '../parser/schema-folders.js'
+import type { SchemaFolderKey } from '../parser/schema-folders.js'
 import { parseSchema } from '../parser/parseSchema.js'
 import type { ParsedSchema } from '../parser/parseSchema.js'
 import { buildSchemaRegistry } from '../parser/validate.js'
@@ -14,37 +16,6 @@ import type { PendingChanges, VersionHistory, VersionModel, VersionSnapshot } fr
 
 const EMPTY_PENDING: PendingChanges = { renames: [], drops: [], fallbacks: {} }
 const EMPTY_HISTORY: VersionHistory = { renames: [], drops: [], fallbacks: {} }
-
-// A version snapshot's own type-folder layout, matching the current schema's
-// naming so buildSchemaRegistry-compatible files can be found under it.
-const SNAPSHOT_FOLDERS: SchemaFolders = {
-  content_types: 'content-types',
-  paragraph_types: 'paragraph-types',
-  taxonomy_types: 'taxonomy-types',
-  enum_types: 'enum-types',
-}
-
-const FOLDER_KEY_TO_SCHEMA_TYPE: Record<keyof SchemaFolders, SchemaType> = {
-  content_types: 'content-type',
-  paragraph_types: 'paragraph-type',
-  taxonomy_types: 'taxonomy-type',
-  enum_types: 'enum-type',
-}
-
-// ─── Small fs helpers ─────────────────────────────────────────────────────────
-
-function directoryExists(dirPath: string): boolean {
-  try {
-    return fs.statSync(dirPath).isDirectory()
-  } catch {
-    return false
-  }
-}
-
-function isSupportedExtension(filename: string): boolean {
-  const ext = path.extname(filename).toLowerCase()
-  return ext === '.json' || ext === '.yaml' || ext === '.yml'
-}
 
 // ─── Snapshot discovery ───────────────────────────────────────────────────────
 
@@ -66,14 +37,19 @@ function discoverSnapshotDirs(versionsDir: string): Array<{ version: string; dir
 // walkSchemaDirectory: that function requires every configured folder to
 // exist (SCHEMA_FOLDER_NOT_FOUND otherwise), which is the right rule for a
 // live, hand-maintained schema tree and the wrong rule for a frozen snapshot.
-function walkSnapshotFolders(dir: string): Result<SchemaFile[]> {
+//
+// `folders` is CURRENT's resolved config.folders, not a hardcoded default —
+// a snapshot mirrors whatever folder names the live schema tree uses today,
+// including a renamed one. Hardcoding the four default names here would make
+// every snapshot read as silently empty the moment a project renames a folder.
+function walkSnapshotFolders(dir: string, folders: SchemaFolders): Result<SchemaFile[]> {
   const files: SchemaFile[] = []
   const errors: ParseError[] = []
 
   for (const [folderKey, schemaType] of Object.entries(FOLDER_KEY_TO_SCHEMA_TYPE) as Array<
-    [keyof SchemaFolders, SchemaType]
+    [SchemaFolderKey, SchemaFile['schema_type']]
   >) {
-    const folderPath = path.join(dir, SNAPSHOT_FOLDERS[folderKey])
+    const folderPath = path.join(dir, folders[folderKey])
     if (!directoryExists(folderPath)) continue
 
     let entries: string[]
@@ -116,8 +92,13 @@ function wrapAsSnapshotInvalid(version: string, errors: ParseError[]): ParseErro
  * already validated when it was cut, and re-validating it against current's
  * routes.json would flag untouched history the moment a base path is removed.
  */
-function loadSnapshot(version: string, dir: string, current: SchemaRegistry): Result<VersionSnapshot> {
-  const walked = walkSnapshotFolders(dir)
+function loadSnapshot(
+  version: string,
+  dir: string,
+  folders: SchemaFolders,
+  current: SchemaRegistry
+): Result<VersionSnapshot> {
+  const walked = walkSnapshotFolders(dir, folders)
   if (!walked.ok) return { ok: false, errors: wrapAsSnapshotInvalid(version, walked.errors) }
 
   const schemas: ParsedSchema[] = []
@@ -175,7 +156,7 @@ export function loadVersionModel(config: ResolvedSchemaConfig, current: SchemaRe
   const errors: ParseError[] = []
 
   for (const { version, dir } of discoverSnapshotDirs(versionsDir)) {
-    const result = loadSnapshot(version, dir, current)
+    const result = loadSnapshot(version, dir, config.folders, current)
     if (!result.ok) {
       errors.push(...result.errors)
       continue

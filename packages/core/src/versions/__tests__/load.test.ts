@@ -86,6 +86,53 @@ describe('loadVersionModel', () => {
     expect(r.value.live).toEqual(['v1', 'v2'])
   })
 
+  // Fix round 1, finding 1: config.folders is a real, supported override
+  // (config/types.ts's SchemaFolders, exercised by defineConfig.test.ts) — a
+  // snapshot must be read using THOSE folder names, not the four hardcoded
+  // defaults. Getting this wrong doesn't error: a missing folder is legal (a
+  // snapshot may lack a type), so a wrong implementation silently reads the
+  // renamed folder as empty. The discriminator is direct: assert the
+  // projection for v1 actually contains content--post's field, which is only
+  // possible if the snapshot file — sitting under the renamed folder — was
+  // found and parsed at all.
+  it('reads a snapshot using a non-default folder name from config.folders', () => {
+    const customConfig: ResolvedSchemaConfig = {
+      base_path: dir,
+      folders: {
+        content_types: 'items', // renamed from the default 'content-types'
+        paragraph_types: 'paragraph-types',
+        taxonomy_types: 'taxonomy-types',
+        enum_types: 'enum-types',
+      },
+    }
+    const v1 = path.join(dir, 'versions', 'v1', 'items')
+    fs.mkdirSync(v1, { recursive: true })
+    fs.writeFileSync(
+      path.join(v1, 'content--post.json'),
+      JSON.stringify({
+        name: 'content--post', label: 'Post', type: 'content-type',
+        default_base_path: 'x', only_one: false,
+        fields: [
+          {
+            tab: {
+              name: 'primary_tab',
+              label: 'Primary',
+              fields: [{ name: 'a', label: 'a', type: 'text/plain', required: false }],
+            },
+          },
+        ],
+      })
+    )
+    const current = makeRegistry([makeContentType('content--post', [{ name: 'a' }])])
+    const r = loadVersionModel(customConfig, current)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.value.current).toBe('v2')
+    expect(r.value.projections['v1']?.types['content--post']?.fields).toEqual([
+      { column_name: 'a', exposed_as: 'a' },
+    ])
+  })
+
   // Decision 5 calls this out explicitly: 'v10' sorts before 'v2' lexicographically,
   // so a discovery routine that sorts directory names as strings rather than by
   // their numeric part would order live as ['v10', 'v2', 'v11'] here — visibly wrong.
