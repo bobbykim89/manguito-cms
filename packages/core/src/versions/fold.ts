@@ -20,7 +20,13 @@ function versionNumber(version: string): number {
   return Number.isNaN(n) ? -1 : n
 }
 
-/** Renames that shaped `version`'s labels: those tagged after any OLDER version. */
+/**
+ * Renames that shaped `version`'s labels: those tagged after any OLDER version.
+ * Sorted oldest-tag-first — machine-appended history is already chronological,
+ * but a merge resolution can interleave two branches' appended blocks, and the
+ * fold must be order-independent across tags, not dependent on array position.
+ * `Array.prototype.sort` is stable, so within-tag insertion order is preserved.
+ */
 function renamesBefore(
   version: string,
   history: VersionHistory,
@@ -29,6 +35,7 @@ function renamesBefore(
   const target = versionNumber(version)
   return history.renames
     .filter((r) => r.type === type && versionNumber(r.after) < target)
+    .sort((a, b) => versionNumber(a.after) - versionNumber(b.after))
     .map((r) => ({ from: r.from, to: r.to }))
 }
 
@@ -66,9 +73,13 @@ function labelsOf(registry: SchemaRegistry, type: string): Set<string> | null {
   return new Set((schema.fields as Array<{ name: string }>).map((f) => f.name))
 }
 
+/** A history `after` tag must look like `v<digits>` — anything else corrupts the fold's ordering. */
+const AFTER_PATTERN = /^v\d+$/
+
 /**
- * A rename's `from` must name a label that actually existed. Checking it here
- * turns a misfiled pending entry — or a hand-edited history — into a loud
+ * A rename's `from` must name a label that actually existed, and its `type`
+ * must name a type that actually exists. Checking these here turns a misfiled
+ * pending entry — or a hand-edited/merge-resolved history — into a loud
  * failure rather than a column that silently resolves to the wrong name.
  */
 export function validateRenameChain(input: {
@@ -81,13 +92,22 @@ export function validateRenameChain(input: {
   const { history, pending, snapshots, current, currentVersion } = input
   const errors: ParseError[] = []
 
+  // Types that actually exist, from snapshots and current ONLY — never seeded
+  // from a rename's own `type`, or a bad type name would vouch for itself.
+  const knownTypes = new Set<string>()
+  for (const snap of snapshots) {
+    for (const type of Object.keys(snap.registry.schemas)) knownTypes.add(type)
+  }
+  for (const type of Object.keys(current.schemas)) knownTypes.add(type)
+
   // Every label any live version has ever exposed for a type, plus every `to`
   // a rename produced — a chain step may legitimately reference a label that
-  // only ever existed between two cuts.
-  const known = new Map<string, Set<string>>()
+  // only ever existed between two cuts. (This seeding is for the LABEL check
+  // only — a bad type must not be able to vouch for itself via its own `to`.)
+  const knownLabels = new Map<string, Set<string>>()
   const add = (type: string, label: string): void => {
-    if (!known.has(type)) known.set(type, new Set())
-    known.get(type)!.add(label)
+    if (!knownLabels.has(type)) knownLabels.set(type, new Set())
+    knownLabels.get(type)!.add(label)
   }
 
   for (const snap of snapshots) {
@@ -106,8 +126,7 @@ export function validateRenameChain(input: {
     file: string,
     after: string
   ): void => {
-    const labels = known.get(entry.type)
-    if (!labels) {
+    if (!knownTypes.has(entry.type)) {
       errors.push({
         file,
         code: 'RENAME_CHAIN_BROKEN',
@@ -117,7 +136,8 @@ export function validateRenameChain(input: {
       })
       return
     }
-    if (!labels.has(entry.from)) {
+    const labels = knownLabels.get(entry.type)
+    if (!labels || !labels.has(entry.from)) {
       errors.push({
         file,
         code: 'RENAME_CHAIN_BROKEN',
@@ -125,6 +145,22 @@ export function validateRenameChain(input: {
           `Rename after ${after} maps "${entry.from}" → "${entry.to}" on "${entry.type}", ` +
           `but no version ever exposed a field named "${entry.from}". ` +
           `Check for a typo, or remove the entry.`,
+      })
+    }
+  }
+
+  // A malformed `after` tag (e.g. "V1" from a hand-edit or merge resolution)
+  // corrupts version comparison silently: parsed as -1, it applies to EVERY
+  // version including the earliest, breaking the invariant that the earliest
+  // version's fold is always empty. Catch it here, before the fold consumes it.
+  for (const r of history.renames) {
+    if (!AFTER_PATTERN.test(r.after)) {
+      errors.push({
+        file: 'schemas/versions/history.json',
+        code: 'RENAME_CHAIN_BROKEN',
+        message:
+          `Rename entry has a malformed "after" tag "${r.after}" — expected a version like "v1". ` +
+          `Fix the tag, or remove the entry.`,
       })
     }
   }
