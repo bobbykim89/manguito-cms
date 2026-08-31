@@ -282,7 +282,6 @@ git commit -m "feat(core): add version model types and error codes"
 **Interfaces:**
 - Consumes: `VersionHistory`, `PendingChanges` (Task 1); `ParseError` from `../parser/loader.js`.
 - Produces:
-  - `function versionsOlderThan(version: string, live: string[]): string[]`
   - `function columnOf(input: { label: string; type: string; version: string; live: string[]; history: VersionHistory; pending: PendingChanges; current: string }): string`
   - `function validateRenameChain(input: { history: VersionHistory; pending: PendingChanges; snapshots: VersionSnapshot[]; current: SchemaRegistry; currentVersion: string }): ParseError[]`
 
@@ -474,7 +473,7 @@ export function columnOf(input: {
 }
 ```
 
-`versionsOlderThan` and `validateRenameChain` are added in Steps 5–7; leave them out for now so this step stays one action.
+`validateRenameChain` is added in Steps 5–7; leave it out for now so this step stays one action.
 
 - [ ] **Step 4: Run it to verify it passes**
 
