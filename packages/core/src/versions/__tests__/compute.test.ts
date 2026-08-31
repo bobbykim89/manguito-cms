@@ -56,6 +56,36 @@ describe('computeVersionModel', () => {
     expect(r.errors.map((e) => e.code)).toContain('AMBIGUOUS_RENAME')
   })
 
+  // Final-review C1, end to end. Before the fix this returned ok: true with a
+  // corrupt model in one declaration order — two fields carrying column
+  // `subtitle`, `title` gone as a live column, and v2's projection serving one
+  // column under two labels — and a correct model in the other. Now the fold
+  // is order-independent AND the ambiguous declaration is refused, so neither
+  // order can produce a plausible-looking wrong answer.
+  it('refuses a field-name shift declared in one window, in either order', () => {
+    const shift = [
+      { type: 'content--post', from: 'title', to: 'headline' },
+      { type: 'content--post', from: 'subtitle', to: 'title' },
+    ]
+    for (const renames of [shift, [...shift].reverse()]) {
+      const snapshots = [{
+        version: 'v1',
+        registry: makeRegistry([makeContentType('content--post', [{ name: 'title' }, { name: 'subtitle' }])]),
+      }]
+      const current = makeRegistry([
+        makeContentType('content--post', [{ name: 'headline' }, { name: 'title' }]),
+      ])
+      const r = computeVersionModel({
+        current, snapshots,
+        history: EMPTY_HISTORY,
+        pending: { renames: [...renames], drops: [], fallbacks: {} },
+      })
+      expect(r.ok).toBe(false)
+      if (r.ok) return
+      expect(r.errors.map((e) => e.code)).toContain('RENAME_CHAIN_BROKEN')
+    }
+  })
+
   it('collects errors from BOTH chain validation and model validation', () => {
     const snapshots = [{
       version: 'v1',

@@ -123,6 +123,91 @@ describe('columnOf', () => {
     expect(columnOf({ ...base, live: [] })).toBe(columnOf({ ...base, live: ['v1', 'v2', 'v3'] }))
   })
 
+  // Final-review C1. Renames sharing one window (one `after` tag, or both in
+  // pending.json) carry no order relative to one another, so the fold must
+  // apply at most ONE substitution per window. Applying every match made the
+  // result depend on array position: this field-name shift folded correctly in
+  // one typing order and, in the other, resolved BOTH labels to `subtitle` —
+  // two fields carrying one column, with `ok: true` and no error at all.
+  describe('a window applies at most one substitution (final-review C1)', () => {
+    const shift = [
+      { type: 'content--post', from: 'title', to: 'headline' },
+      { type: 'content--post', from: 'subtitle', to: 'title' },
+    ]
+
+    for (const [order, renames] of [
+      ['declared forwards', shift],
+      ['declared in the other order', [...shift].reverse()],
+    ] as const) {
+      it(`folds a field-name shift correctly, ${order}`, () => {
+        const pending = { renames: [...renames], drops: [], fallbacks: {} }
+        const base = { type: 'content--post', version: 'v2', live: ['v1', 'v2'], history: EMPTY_HISTORY, pending, current: 'v2' }
+        expect(columnOf({ ...base, label: 'headline' })).toBe('title')
+        expect(columnOf({ ...base, label: 'title' })).toBe('subtitle')
+      })
+    }
+
+    it('folds a swap without collapsing both labels onto one column', () => {
+      const pending = {
+        renames: [
+          { type: 'content--post', from: 'a', to: 'b' },
+          { type: 'content--post', from: 'b', to: 'a' },
+        ],
+        drops: [], fallbacks: {},
+      }
+      const base = { type: 'content--post', version: 'v2', live: ['v1', 'v2'], history: EMPTY_HISTORY, pending, current: 'v2' }
+      expect(columnOf({ ...base, label: 'a' })).toBe('b')
+      expect(columnOf({ ...base, label: 'b' })).toBe('a')
+    })
+
+    it('applies one substitution per window for two renames sharing one history tag', () => {
+      const history: VersionHistory = {
+        renames: [
+          { after: 'v1', type: 'content--post', from: 'title', to: 'headline' },
+          { after: 'v1', type: 'content--post', from: 'subtitle', to: 'title' },
+        ],
+        drops: [], fallbacks: {},
+      }
+      const base = { type: 'content--post', version: 'v2', live: LIVE, history, pending: EMPTY_PENDING, current: 'v3' }
+      expect(columnOf({ ...base, label: 'headline' })).toBe('title')
+      expect(columnOf({ ...base, label: 'title' })).toBe('subtitle')
+    })
+
+    it('still chains across two windows — the same two renames, one tag apart', () => {
+      const history: VersionHistory = {
+        renames: [
+          { after: 'v1', type: 'content--post', from: 'subtitle', to: 'title' },
+          { after: 'v2', type: 'content--post', from: 'title', to: 'headline' },
+        ],
+        drops: [], fallbacks: {},
+      }
+      expect(
+        columnOf({
+          label: 'headline', type: 'content--post', version: 'v3',
+          live: LIVE, history, pending: EMPTY_PENDING, current: 'v3',
+        })
+      ).toBe('subtitle')
+    })
+
+    it('does not let one window’s rename consume another type’s label', () => {
+      const pending = {
+        renames: [
+          { type: 'content--post', from: 'title', to: 'headline' },
+          { type: 'content--other', from: 'subtitle', to: 'title' },
+        ],
+        drops: [], fallbacks: {},
+      }
+      // The two entries are separate windows (different types), so folding
+      // content--post's 'headline' must stop at 'title'.
+      expect(
+        columnOf({
+          label: 'headline', type: 'content--post', version: 'v2',
+          live: ['v1', 'v2'], history: EMPTY_HISTORY, pending, current: 'v2',
+        })
+      ).toBe('title')
+    })
+  })
+
   // A merge resolution can interleave two branches' appended blocks, so the
   // array order of history.renames need not match tag order. The fold must
   // sort by the `after` tag itself, not rely on array position.
@@ -240,6 +325,190 @@ describe('validateRenameChain', () => {
     expect(errors).toHaveLength(1)
     expect(errors[0]!.code).toBe('RENAME_CHAIN_BROKEN')
     expect(errors[0]!.message).toContain('V1')
+  })
+
+  // Final-review M4: a well-formed but out-of-range tag. `version:cut` only
+  // ever writes a tag BELOW current, so "after": "v9" on a project at v2 names
+  // a window that cannot have happened. Unchecked it surfaces as
+  // AMBIGUOUS_RENAME only while the version holding the old label survives,
+  // and becomes a silently wrong column once that version retires.
+  it('reports RENAME_CHAIN_BROKEN for an "after" tag at or above the current version', () => {
+    const current = makeRegistry([makeContentType('content--post', [{ name: 'title' }])])
+    const errors = validateRenameChain({
+      history: {
+        renames: [{ after: 'v9', type: 'content--post', from: 'title', to: 'headline' }],
+        drops: [], fallbacks: {},
+      },
+      pending: EMPTY_PENDING,
+      snapshots: [],
+      current,
+      currentVersion: 'v2',
+    })
+    expect(errors).toHaveLength(1)
+    expect(errors[0]!.code).toBe('RENAME_CHAIN_BROKEN')
+    expect(errors[0]!.message).toContain('v9')
+  })
+
+  it('rejects a tag equal to the current version, which no cut can produce', () => {
+    const current = makeRegistry([makeContentType('content--post', [{ name: 'title' }])])
+    const errors = validateRenameChain({
+      history: {
+        renames: [{ after: 'v2', type: 'content--post', from: 'title', to: 'headline' }],
+        drops: [], fallbacks: {},
+      },
+      pending: EMPTY_PENDING,
+      snapshots: [],
+      current,
+      currentVersion: 'v2',
+    })
+    expect(errors.map((e) => e.code)).toEqual(['RENAME_CHAIN_BROKEN'])
+    expect(errors[0]!.message).toContain('current version is v2')
+  })
+
+  it('does not report a malformed tag twice as out-of-range', () => {
+    const current = makeRegistry([makeContentType('content--post', [{ name: 'blog_title' }])])
+    const errors = validateRenameChain({
+      history: {
+        renames: [{ after: 'V1', type: 'content--post', from: 'blog_title', to: 'title' }],
+        drops: [], fallbacks: {},
+      },
+      pending: EMPTY_PENDING,
+      snapshots: [],
+      current,
+      currentVersion: 'v2',
+    })
+    expect(errors).toHaveLength(1)
+  })
+
+  // Final-review C1.2. Windowing makes a within-window `from`/`to` overlap
+  // meaningless rather than merely order-dependent: read as a chain the author
+  // should have recorded the net rename, read as a shift it needs two cuts.
+  describe('within-window shape', () => {
+    it('rejects a label that is both a `from` and a `to` in one pending window', () => {
+      const current = makeRegistry([
+        makeContentType('content--post', [{ name: 'headline' }, { name: 'title' }]),
+      ])
+      const snapshots = [{
+        version: 'v1',
+        registry: makeRegistry([makeContentType('content--post', [{ name: 'title' }, { name: 'subtitle' }])]),
+      }]
+      const errors = validateRenameChain({
+        history: EMPTY_HISTORY,
+        pending: {
+          renames: [
+            { type: 'content--post', from: 'title', to: 'headline' },
+            { type: 'content--post', from: 'subtitle', to: 'title' },
+          ],
+          drops: [], fallbacks: {},
+        },
+        snapshots,
+        current,
+        currentVersion: 'v2',
+      })
+      expect(errors).toHaveLength(1)
+      expect(errors[0]!.code).toBe('RENAME_CHAIN_BROKEN')
+      expect(errors[0]!.file).toBe('schemas/versions/pending.json')
+      expect(errors[0]!.message).toContain('also renamed')
+    })
+
+    it('rejects a swap declared in one window', () => {
+      const current = makeRegistry([makeContentType('content--post', [{ name: 'a' }, { name: 'b' }])])
+      const errors = validateRenameChain({
+        history: EMPTY_HISTORY,
+        pending: {
+          renames: [
+            { type: 'content--post', from: 'a', to: 'b' },
+            { type: 'content--post', from: 'b', to: 'a' },
+          ],
+          drops: [], fallbacks: {},
+        },
+        snapshots: [],
+        current,
+        currentVersion: 'v2',
+      })
+      expect(errors.filter((e) => e.code === 'RENAME_CHAIN_BROKEN').length).toBeGreaterThan(0)
+    })
+
+    it('rejects two renames in one history window targeting the same label', () => {
+      const current = makeRegistry([makeContentType('content--post', [{ name: 'title' }])])
+      const snapshots = [{
+        version: 'v1',
+        registry: makeRegistry([makeContentType('content--post', [{ name: 'a' }, { name: 'b' }])]),
+      }]
+      const errors = validateRenameChain({
+        history: {
+          renames: [
+            { after: 'v1', type: 'content--post', from: 'a', to: 'title' },
+            { after: 'v1', type: 'content--post', from: 'b', to: 'title' },
+          ],
+          drops: [], fallbacks: {},
+        },
+        pending: EMPTY_PENDING,
+        snapshots,
+        current,
+        currentVersion: 'v2',
+      })
+      expect(errors).toHaveLength(1)
+      expect(errors[0]!.code).toBe('RENAME_CHAIN_BROKEN')
+      expect(errors[0]!.message).toContain('both rename a field to "title"')
+    })
+
+    it('accepts the same two renames split across two windows', () => {
+      const current = makeRegistry([
+        makeContentType('content--post', [{ name: 'headline' }, { name: 'title' }]),
+      ])
+      const snapshots = [
+        {
+          version: 'v1',
+          registry: makeRegistry([makeContentType('content--post', [{ name: 'title' }, { name: 'subtitle' }])]),
+        },
+        {
+          version: 'v2',
+          registry: makeRegistry([makeContentType('content--post', [{ name: 'title' }, { name: 'title2' }])]),
+        },
+      ]
+      const errors = validateRenameChain({
+        history: {
+          renames: [
+            { after: 'v1', type: 'content--post', from: 'subtitle', to: 'title2' },
+            { after: 'v2', type: 'content--post', from: 'title', to: 'headline' },
+          ],
+          drops: [], fallbacks: {},
+        },
+        pending: { renames: [{ type: 'content--post', from: 'title2', to: 'title' }], drops: [], fallbacks: {} },
+        snapshots,
+        current,
+        currentVersion: 'v3',
+      })
+      expect(errors).toEqual([])
+    })
+
+    it('does not confuse two types’ renames as one window', () => {
+      const current = makeRegistry([
+        makeContentType('content--post', [{ name: 'headline' }]),
+        makeContentType('content--other', [{ name: 'title' }]),
+      ])
+      const errors = validateRenameChain({
+        history: EMPTY_HISTORY,
+        pending: {
+          renames: [
+            { type: 'content--post', from: 'title', to: 'headline' },
+            { type: 'content--other', from: 'subtitle', to: 'title' },
+          ],
+          drops: [], fallbacks: {},
+        },
+        snapshots: [{
+          version: 'v1',
+          registry: makeRegistry([
+            makeContentType('content--post', [{ name: 'title' }]),
+            makeContentType('content--other', [{ name: 'subtitle' }]),
+          ]),
+        }],
+        current,
+        currentVersion: 'v2',
+      })
+      expect(errors).toEqual([])
+    })
   })
 
   // The pending path is the primary trigger the design names for this check
