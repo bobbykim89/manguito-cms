@@ -72,7 +72,7 @@ A frozen copy of one past version's schema files, stored under `versions/vN/` an
 _Avoid_: frozen version, archive
 
 **Tombstone**:
-A field marked `removed: true`. Its column is retained for older live versions and this version does not expose it. Included in db codegen, excluded from projections, the api and the admin panel.
+A field marked `removed: true`. Its column is retained for older live versions and this version does not expose it. Included in db codegen, excluded from core's own projections. Excluding it from the api and the admin panel is an obligation, not yet implemented — see the design doc's "Cross-package consequences" (docs/superpowers/specs/2026-09-02-declarative-version-model-design.md).
 _Avoid_: soft delete, retained field
 
 **Fallback**:

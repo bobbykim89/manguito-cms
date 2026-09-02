@@ -1,7 +1,7 @@
 # Version Model in Core — Design (Schema Versioning 2a)
 
 **Date:** 2026-08-30
-**Status:** Implemented and merged (PR #33), then **superseded** by [the declarative version model](2026-09-02-declarative-version-model-design.md), which replaces the derived rename history with three stated declarations on a field. This document still describes the code currently in `packages/core/src/versions/`; read it for that, not as the intended design.
+**Status:** Implemented and merged (PR #33), then **superseded** by [the declarative version model](2026-09-02-declarative-version-model-design.md), which replaces the derived rename history with three stated declarations on a field. This document describes the code as it stood when PR #33 merged; that code has since been replaced by the declarative model, so read this for history, not as a description of what is currently in `packages/core/src/versions/`.
 **Scope:** A new `packages/core/src/versions/` submodule that computes the schema-versioning model — live versions, a union registry, and per-version projections — from frozen snapshots and a rename history. Core only. No routes, no codegen, no CLI, no file writing. Merges inert.
 
 ## Problem

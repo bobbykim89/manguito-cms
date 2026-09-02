@@ -43,7 +43,11 @@ export type VersionModel = {
    *
    * Feeds db codegen and drift detection. A tombstone appears here as an
    * ordinary nullable column; consumers that render or expose fields must skip
-   * `removed` fields, which is why the api and admin filter on it.
+   * `removed` fields. Core's own projections already do this. The api and
+   * admin do not yet — that exclusion is a deferred obligation on whichever
+   * later sub-project first makes a tombstone reachable through them (see
+   * docs/superpowers/specs/2026-09-02-declarative-version-model-design.md,
+   * "Cross-package consequences"), not something this branch implements.
    */
   union: SchemaRegistry
   /** Keyed by version name; includes current (an identity projection). */

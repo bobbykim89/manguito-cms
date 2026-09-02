@@ -114,6 +114,7 @@ The api's current-version exposure is handled once 2d consumes core's projection
 | `TOMBSTONE_REQUIRED` | A tombstone also marked `required` — unsatisfiable, since new rows cannot populate it |
 | `VERSION_SNAPSHOT_INVALID` | A snapshot fails to parse. Wraps the underlying errors |
 | `ORPHANED_TOMBSTONE` | A tombstone retains a column no live version exposes — a retirement left half-done |
+| `FALLBACK_WITHOUT_TOMBSTONE` | A `fallback` declared on a field not marked `removed: true` — a fallback is only meaningful on a tombstone |
 
 Retained columns are forced nullable regardless of what the tombstone declares, because rows created after the removal cannot populate them.
 
@@ -121,7 +122,7 @@ Retained columns are forced nullable regardless of what the tombstone declares, 
 
 **Goes:** `fold.ts` in full; `union.ts`'s snapshot-merging (reduced to a read of current); `projections.ts`'s `columnOf` usage; `validate.ts`'s rename-chain, window-shape, ambiguity and drops checks; `types.ts`'s `PendingChanges` and `VersionHistory`; `load.ts`'s reading of the two declaration files.
 
-Four `ParseErrorCode` members added by 2a are retired with the checks that raised them: `AMBIGUOUS_RENAME`, `RENAME_CHAIN_BROKEN`, `VERSION_MODEL_INCONSISTENT` and `VERSION_RETENTION_UNSUPPORTED`. `VERSION_SNAPSHOT_INVALID`, `UNRENAMEABLE_FIELD_KIND` and `FIELD_TYPE_CHANGED_WHILE_LIVE` survive. Four are new: `VERSION_COLUMN_MISSING`, `DUPLICATE_COLUMN`, `TOMBSTONE_REQUIRED`, `ORPHANED_TOMBSTONE`. Removing a member of that union is a breaking change to core's published surface, which reinforces the note below about bumping core before anything imports it.
+Four `ParseErrorCode` members added by 2a are retired with the checks that raised them: `AMBIGUOUS_RENAME`, `RENAME_CHAIN_BROKEN`, `VERSION_MODEL_INCONSISTENT` and `VERSION_RETENTION_UNSUPPORTED`. `VERSION_SNAPSHOT_INVALID`, `UNRENAMEABLE_FIELD_KIND` and `FIELD_TYPE_CHANGED_WHILE_LIVE` survive. Five are new: `VERSION_COLUMN_MISSING`, `DUPLICATE_COLUMN`, `TOMBSTONE_REQUIRED`, `ORPHANED_TOMBSTONE`, `FALLBACK_WITHOUT_TOMBSTONE`. Removing a member of that union is a breaking change to core's published surface, which reinforces the note below about bumping core before anything imports it.
 
 **Survives:** snapshot discovery and parsing in `load.ts` (including the `config.folders` fix and its `schema-folders.ts` extraction); `VersionModel` and `VersionProjection`; the version-identity derivation; the `Result`-and-collect discipline; `isColumnBacked`; the structural duplicate-column invariant, which becomes a first-class check.
 
