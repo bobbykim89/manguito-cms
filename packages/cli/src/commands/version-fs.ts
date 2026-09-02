@@ -51,3 +51,35 @@ export function retireSnapshotDir(versionsDir: string, version: string): void {
   fs.renameSync(from, staging)
   fs.rmSync(staging, { recursive: true, force: true })
 }
+
+/**
+ * Writes a snapshot whole or not at all: clears any stale staging directory
+ * left by a previous crash, copies the schema folders into it, and renames it
+ * into place as `versionsDir/version`. On any throw, the staging directory is
+ * removed before rethrowing, so a failed copy leaves neither a `.version.tmp`
+ * nor a `versionsDir/version` behind.
+ *
+ * The staging name deliberately does not match /^v\d+$/, so a leftover from a
+ * crash is invisible to snapshot discovery instead of being read as a broken
+ * version — and a fresh call always clears it first, so a stale `.version.tmp`
+ * from an earlier crash never contributes files to the new snapshot.
+ */
+export function writeSnapshotAtomically(input: {
+  fromRoot: string
+  versionsDir: string
+  version: string
+  folders: SchemaFolders
+}): void {
+  const { fromRoot, versionsDir, version, folders } = input
+  const target = path.join(versionsDir, version)
+  const staging = path.join(versionsDir, `.${version}.tmp`)
+
+  fs.rmSync(staging, { recursive: true, force: true })
+  try {
+    copySnapshotFolders({ fromRoot, toDir: staging, folders })
+    fs.renameSync(staging, target)
+  } catch (err) {
+    fs.rmSync(staging, { recursive: true, force: true })
+    throw err
+  }
+}

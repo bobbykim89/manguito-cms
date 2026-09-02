@@ -19,7 +19,7 @@ import { resolveSchemaConfig } from '../utils/schema-config.js'
 import { printValidationErrors, printSuccess, printGuidedError } from '../utils/error.js'
 import { createPromptAdapter, type PromptAdapter } from '../utils/prompt.js'
 import { formatSchemaChange } from './version-report.js'
-import { copySnapshotFolders, retireSnapshotDir } from './version-fs.js'
+import { retireSnapshotDir, writeSnapshotAtomically } from './version-fs.js'
 
 /**
  * The snapshot the working schema is a successor to: the HIGHEST-numbered
@@ -204,16 +204,10 @@ export async function runVersionCut(
 
   // Written to a temp name and renamed, so the snapshot exists whole or not
   // at all: a PARTIAL snapshot parses as a valid but incomplete version,
-  // which silently drops columns from the union. The temp name deliberately
-  // does not match /^v\d+$/, so a leftover from a crash is invisible to
-  // snapshot discovery instead of being read as a broken version.
-  const staging = path.join(versionsDir, `.${version}.tmp`)
-  fs.rmSync(staging, { recursive: true, force: true })
+  // which silently drops columns from the union.
   try {
-    copySnapshotFolders({ fromRoot: ctx.schema.base_path, toDir: staging, folders: ctx.schema.folders })
-    fs.renameSync(staging, target)
+    writeSnapshotAtomically({ fromRoot: ctx.schema.base_path, versionsDir, version, folders: ctx.schema.folders })
   } catch (err) {
-    fs.rmSync(staging, { recursive: true, force: true })
     printGuidedError(
       `Failed to write ${target}: ${err instanceof Error ? err.message : String(err)}`,
       'Nothing was left behind — the snapshot is written to a temporary directory and renamed into place only once it is complete.'

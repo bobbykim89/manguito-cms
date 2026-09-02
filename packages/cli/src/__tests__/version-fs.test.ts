@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { copySnapshotFolders, retireSnapshotDir } from '../commands/version-fs.js'
+import { copySnapshotFolders, retireSnapshotDir, writeSnapshotAtomically } from '../commands/version-fs.js'
 
 let root: string
 const FOLDERS = {
@@ -92,5 +92,45 @@ describe('retireSnapshotDir', () => {
 
     const remaining = fs.readdirSync(versionsDir).filter((e) => /^v\d+$/.test(e))
     expect(remaining).toEqual([])
+  })
+})
+
+describe('writeSnapshotAtomically', () => {
+  it('leaves neither versions/vN nor a staging directory when the copy fails', () => {
+    // A genuine failure rather than an injected one: content-types is made
+    // unreadable, so `copySnapshotFolders`' own `fs.readdirSync` throws a
+    // real EACCES. Skipped when running as root (e.g. some CI containers),
+    // since root ignores directory permission bits and the copy would
+    // succeed instead of failing.
+    if (process.getuid?.() === 0) return
+
+    fs.chmodSync(path.join(root, 'content-types'), 0o000)
+    const versionsDir = path.join(root, 'versions')
+
+    try {
+      expect(() =>
+        writeSnapshotAtomically({ fromRoot: root, versionsDir, version: 'v1', folders: FOLDERS })
+      ).toThrow()
+    } finally {
+      // Restore permissions so afterEach's rmSync can clean up the temp dir.
+      fs.chmodSync(path.join(root, 'content-types'), 0o755)
+    }
+
+    expect(fs.existsSync(path.join(versionsDir, 'v1'))).toBe(false)
+    expect(fs.existsSync(path.join(versionsDir, '.v1.tmp'))).toBe(false)
+  })
+
+  it('discards a stale .vN.tmp from a previous crash instead of reusing it', () => {
+    const versionsDir = path.join(root, 'versions')
+    const staging = path.join(versionsDir, '.v1.tmp')
+    fs.mkdirSync(staging, { recursive: true })
+    fs.writeFileSync(path.join(staging, 'junk.txt'), 'leftover from a crashed cut')
+
+    writeSnapshotAtomically({ fromRoot: root, versionsDir, version: 'v1', folders: FOLDERS })
+
+    const target = path.join(versionsDir, 'v1')
+    expect(fs.existsSync(path.join(target, 'junk.txt'))).toBe(false)
+    expect(fs.existsSync(path.join(target, 'content-types', 'content--post.json'))).toBe(true)
+    expect(fs.existsSync(staging)).toBe(false)
   })
 })
