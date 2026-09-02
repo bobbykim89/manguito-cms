@@ -10,7 +10,20 @@ const EMPTY_ROLES: ParsedRoles = { roles: [], valid_permissions: [] }
 export const EMPTY_HISTORY: VersionHistory = { renames: [], drops: [], fallbacks: {} }
 export const EMPTY_PENDING: PendingChanges = { renames: [], drops: [], fallbacks: {} }
 
-export type FieldSpec = { name: string; type?: string; required?: boolean; ref?: string; rel?: string }
+export type FieldSpec = {
+  name: string
+  type?: string
+  required?: boolean
+  ref?: string
+  rel?: string
+  // ─── Version declarations, passed straight through to the raw field ───────
+  // Divergence between a field's name and its column is now DECLARED, so a
+  // fixture states it the same way a schema author would. Nothing is
+  // hand-forged onto a ParsedField: it still goes through parseSchema.
+  column?: string
+  removed?: boolean
+  fallback?: unknown
+}
 
 /**
  * Builds the raw field object parseSchema expects, from a FieldSpec.
@@ -19,6 +32,11 @@ export type FieldSpec = { name: string; type?: string; required?: boolean; ref?:
  */
 function toRawField(f: FieldSpec) {
   const required = f.required ?? false
+  const declarations = {
+    ...(f.column !== undefined && { column: f.column }),
+    ...(f.removed !== undefined && { removed: f.removed }),
+    ...(f.fallback !== undefined && { fallback: f.fallback }),
+  }
   if (f.type === 'paragraph') {
     return {
       name: f.name,
@@ -27,6 +45,7 @@ function toRawField(f: FieldSpec) {
       ref: f.ref,
       rel: f.rel ?? 'one-to-many',
       required,
+      ...declarations,
     }
   }
   return {
@@ -34,6 +53,7 @@ function toRawField(f: FieldSpec) {
     label: f.name,
     type: f.type ?? 'text/plain',
     required,
+    ...declarations,
   }
 }
 

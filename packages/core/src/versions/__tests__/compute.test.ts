@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { computeVersionModel } from '../compute'
-import { makeContentType, makeRegistry, EMPTY_HISTORY, EMPTY_PENDING } from './fixtures'
+import { makeContentType, makeTaxonomyType, makeRegistry, EMPTY_HISTORY, EMPTY_PENDING } from './fixtures'
 
 describe('computeVersionModel', () => {
   it('derives v1 and an identity model when there are no snapshots', () => {
@@ -159,5 +159,102 @@ describe('computeVersionModel', () => {
     const codes = r.errors.map((e) => e.code)
     expect(codes).toContain('RENAME_CHAIN_BROKEN')
     expect(codes).toContain('AMBIGUOUS_RENAME')
+  })
+})
+
+describe('computeVersionModel — the union is current', () => {
+  it('returns current itself as the union, by reference', () => {
+    const current = makeRegistry([makeContentType('content--blog_post', [{ name: 'title' }])])
+    const result = computeVersionModel({ current, snapshots: [] })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    // Not merely deep-equal: retention is stated, so there is no merge step
+    // that could produce a copy. 2b consumes this as an ordinary SchemaRegistry.
+    expect(result.value.union).toBe(current)
+  })
+
+  it('keeps a tombstone in the union as a nullable column', () => {
+    // The tombstone is what makes "the union is current" safe: the retained
+    // column is IN current, so db codegen still emits it.
+    const current = makeRegistry([
+      makeContentType('content--blog_post', [
+        { name: 'title' },
+        { name: 'blog_desc', type: 'text/rich', removed: true },
+      ]),
+    ])
+    const snap = {
+      version: 'v1',
+      registry: makeRegistry([
+        makeContentType('content--blog_post', [{ name: 'title' }, { name: 'blog_desc', type: 'text/rich' }]),
+      ]),
+    }
+    const result = computeVersionModel({ current, snapshots: [snap] })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const fields = result.value.union.content_types['content--blog_post']!.fields
+    const retained = fields.find((f) => f.db_column?.column_name === 'blog_desc')
+    expect(retained).toBeDefined()
+    expect(retained!.db_column!.nullable).toBe(true)
+    expect(retained!.removed).toBe(true)
+  })
+
+  it('leaves a non-tombstone field\'s own nullability alone', () => {
+    // The falsifiable half of the test above: forcing nullable must apply to
+    // tombstones only. A blanket `nullable: true` over the union would pass
+    // that test and make every required column optional.
+    const current = makeRegistry([
+      makeContentType('content--blog_post', [
+        { name: 'title', required: true },
+        { name: 'blog_desc', type: 'text/rich', removed: true },
+      ]),
+    ])
+    const snap = {
+      version: 'v1',
+      registry: makeRegistry([
+        makeContentType('content--blog_post', [
+          { name: 'title', required: true },
+          { name: 'blog_desc', type: 'text/rich' },
+        ]),
+      ]),
+    }
+    const result = computeVersionModel({ current, snapshots: [snap] })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const title = result.value.union.content_types['content--blog_post']!.fields
+      .find((f) => f.name === 'title')!
+    expect(title.db_column!.nullable).toBe(false)
+    expect(title.required).toBe(true)
+  })
+
+  // Triage of union.test.ts's "retains and relaxes a dropped taxonomy column
+  // too": that test exercised taxonomy_types specifically, which the tests
+  // above never touch (they only build content types). The parser is
+  // documented to treat both maps identically, but that is exactly the kind
+  // of claim a test earns rather than assumes — so taxonomy gets its own
+  // tombstone case rather than trusting content coverage to generalize.
+  it('keeps a tombstone in a taxonomy type as a nullable column too', () => {
+    const current = makeRegistry([
+      makeTaxonomyType('taxonomy--tag', [
+        { name: 'a' },
+        { name: 'gone', removed: true },
+      ]),
+    ])
+    const snap = {
+      version: 'v1',
+      registry: makeRegistry([
+        makeTaxonomyType('taxonomy--tag', [{ name: 'a' }, { name: 'gone' }]),
+      ]),
+    }
+    const result = computeVersionModel({ current, snapshots: [snap] })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const fields = result.value.union.taxonomy_types['taxonomy--tag']!.fields
+    const retained = fields.find((f) => f.db_column?.column_name === 'gone')
+    expect(retained).toBeDefined()
+    expect(retained!.db_column!.nullable).toBe(true)
+    expect(retained!.removed).toBe(true)
   })
 })
