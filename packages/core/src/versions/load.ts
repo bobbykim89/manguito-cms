@@ -114,32 +114,32 @@ function loadSnapshot(
   return { ok: true, value: { version, registry } }
 }
 
-// ─── loadVersionModel ─────────────────────────────────────────────────────────
+// ─── loadVersionSnapshots & loadVersionModel ──────────────────────────────────
 
 /**
- * Reads the snapshot directories under `versions/` and hands them to
- * computeVersionModel. Absent `versions/` means nothing has been cut yet: an
- * identity model at v1, computed with no snapshots.
+ * Every snapshot under `versions/`, oldest first by NUMERIC version.
  *
- * There are no declaration files to read. Under the derived model this also
- * loaded `pending.json` and `history.json`; retention and renames are now
- * stated on the fields themselves, so the snapshot directories are the whole
- * of what `versions/` holds.
+ * Split out of loadVersionModel so a caller can reach a snapshot's registry.
+ * `VersionModel` deliberately does not carry them — it holds `current`,
+ * `live`, `union` and `projections`, and is passed around and consumed by db
+ * codegen, so bolting N full registries onto it would make every consumer
+ * pay for data only the CLI's diff needs.
+ *
+ * Absent `versions/` is not an error: it means nothing has been cut yet.
  */
-export function loadVersionModel(
+export function loadVersionSnapshots(
   config: ResolvedSchemaConfig,
   current: SchemaRegistry
-): Result<VersionModel> {
+): Result<VersionSnapshot[]> {
   const versionsDir = path.join(config.base_path, 'versions')
-
-  if (!directoryExists(versionsDir)) {
-    return computeVersionModel({ current, snapshots: [] })
-  }
+  if (!directoryExists(versionsDir)) return { ok: true, value: [] }
 
   const snapshots: VersionSnapshot[] = []
   const errors: ParseError[] = []
 
   for (const { version, dir } of discoverSnapshotDirs(versionsDir)) {
+    // config.folders, never hardcoded names — a snapshot mirrors whatever
+    // folder names the live schema tree uses today, including a renamed one.
     const result = loadSnapshot(version, dir, config.folders, current)
     if (!result.ok) {
       errors.push(...result.errors)
@@ -149,6 +149,19 @@ export function loadVersionModel(
   }
 
   if (errors.length > 0) return { ok: false, errors }
+  return { ok: true, value: snapshots }
+}
 
-  return computeVersionModel({ current, snapshots })
+/**
+ * Reads the snapshot directories under `versions/` and hands them to
+ * computeVersionModel. Absent `versions/` means nothing has been cut yet: an
+ * identity model at v1.
+ */
+export function loadVersionModel(
+  config: ResolvedSchemaConfig,
+  current: SchemaRegistry
+): Result<VersionModel> {
+  const snapshots = loadVersionSnapshots(config, current)
+  if (!snapshots.ok) return snapshots
+  return computeVersionModel({ current, snapshots: snapshots.value })
 }
