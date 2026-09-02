@@ -14,6 +14,15 @@ import { isColumnBacked } from '../registry/columns.js'
 // already VERSION_COLUMN_MISSING, and a column whose type changed is already
 // FIELD_TYPE_CHANGED_WHILE_LIVE. So if the model loads, cutting is always
 // safe, and this function never has to report a blocker.
+//
+// This classification covers only COLUMN-BACKED fields in content, taxonomy
+// and paragraph types. A field with no storage column (`paragraph`,
+// `programmatic`, or a many-to-many reference) and an enum type definition are
+// both outside it — not because they are unimportant, but because neither is
+// present in `VersionProjection` at all, so neither can differ between two
+// versions' actual served contracts. `identical: true` therefore means "no
+// column changed", not "nothing in the schema changed" — a real distinction a
+// caller's messaging must preserve.
 
 export type FieldChange =
   | { kind: 'added'; column: string; name: string; field_type: FieldType }
