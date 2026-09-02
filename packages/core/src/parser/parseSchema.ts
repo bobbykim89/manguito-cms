@@ -14,6 +14,7 @@ import {
   machineNameToTableName,
   type AnyFieldBuilder,
 } from '../registry/fieldTypeRegistry'
+import { isColumnBacked } from '../registry/columns'
 
 // ─── Output types ─────────────────────────────────────────────────────────────
 
@@ -237,12 +238,36 @@ function buildParsedField(
   }
 
   const { name, label } = rawField
-  const { validation, db_column, ui_component } = build(rawField, { ownerTableName })
+  const built = build(rawField, { ownerTableName })
+  const { validation, ui_component } = built
   // Source of truth for `required` is the builder's validation output, not the raw
   // field: every builder mirrors raw.required here except `programmatic`, which
   // hardcodes `false` — an authored `required: true` on a programmatic field must
   // still resolve to false (no write path exists for a computed value).
   const required = validation.required
+
+  // ─── Version declarations ───────────────────────────────────────────────────
+  //
+  // Applied once here rather than in each of the nine builders that set a
+  // column: the rule is the same for every field type, and a builder that
+  // forgot it would put the field on the wrong column silently.
+  //
+  // Only column-backed fields are touched. A declaration on any other kind is
+  // rejected by checkFieldDeclarations, not quietly ignored here — ignoring a
+  // `column` override would produce a wrong contract rather than a smaller one.
+  const tombstone = rawField.removed === true
+  let db_column = built.db_column
+
+  if (isColumnBacked(built)) {
+    db_column = {
+      ...db_column!,
+      column_name: rawField.column ?? db_column!.column_name,
+      // A tombstone is always nullable, overriding the builder — including
+      // `boolean`, the one type whose column is otherwise always NOT NULL.
+      // Rows written after the removal cannot populate the column.
+      ...(tombstone && { nullable: true }),
+    }
+  }
 
   return {
     ok: true,
@@ -250,12 +275,17 @@ function buildParsedField(
       name,
       label,
       field_type: rawField.type,
-      required,
-      nullable: !required,
+      // Nothing writes a tombstone, so it can be neither required nor NOT NULL.
+      required: tombstone ? false : required,
+      nullable: tombstone ? true : !required,
       order,
-      validation,
+      validation: tombstone ? { ...validation, required: false } : validation,
       db_column,
       ui_component,
+      // Omitted entirely when absent, never set to `false`/`undefined`: an
+      // ordinary field must be byte-identical to its pre-versioning shape.
+      ...(tombstone && { removed: true as const }),
+      ...(rawField.fallback !== undefined && { fallback: rawField.fallback }),
     },
   }
 }

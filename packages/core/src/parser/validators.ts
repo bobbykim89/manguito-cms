@@ -61,6 +61,20 @@ const RawFieldBase = z.object({
   name: snakeCaseName,
   label: z.string().min(1),
   required: z.boolean(),
+
+  // ─── Version declarations ───────────────────────────────────────────────────
+  //
+  // A field's storage column is STATED here, never derived from a rename
+  // history. All three are optional and default to the pre-versioning
+  // behaviour, so every schema authored before versioning existed keeps its
+  // exact meaning.
+
+  /** Storage column. Defaults to `name`. Stating it is how a rename works: the name changes, the column does not. */
+  column: snakeCaseName.optional(),
+  /** Tombstone — the column is retained for older live versions, and this version does not expose it. */
+  removed: z.boolean().optional(),
+  /** Value served for rows created after the removal. Meaningful only on a tombstone. */
+  fallback: z.unknown().optional(),
 })
 
 // ─── Primitive field schemas ──────────────────────────────────────────────────
