@@ -117,3 +117,14 @@ export type {
   ProgrammaticFieldOptions,
   ProgrammaticFieldDefinition,
 } from './programmatic/defineProgrammaticField.js'
+
+export type {
+  PendingChanges,
+  VersionHistory,
+  VersionSnapshot,
+  VersionProjection,
+  VersionModel,
+} from './versions/types.js'
+
+export { loadVersionModel } from './versions/load.js'
+export { computeVersionModel } from './versions/compute.js'

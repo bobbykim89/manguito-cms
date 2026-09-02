@@ -2,6 +2,8 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { parse as parseYaml } from 'yaml'
 import type { ResolvedSchemaConfig } from '../config/types'
+import { FOLDER_KEY_TO_SCHEMA_TYPE, directoryExists, isSupportedExtension } from './schema-folders'
+import type { SchemaFolderKey } from './schema-folders'
 
 // ─── Result type ──────────────────────────────────────────────────────────────
 
@@ -32,6 +34,13 @@ export type ParseErrorCode =
   | 'DUPLICATE_HIERARCHY_LEVEL'
   | 'UNKNOWN_PERMISSION'
   | 'INVALID_PERMISSION'
+  | 'VERSION_SNAPSHOT_INVALID'
+  | 'AMBIGUOUS_RENAME'
+  | 'RENAME_CHAIN_BROKEN'
+  | 'UNRENAMEABLE_FIELD_KIND'
+  | 'FIELD_TYPE_CHANGED_WHILE_LIVE'
+  | 'VERSION_RETENTION_UNSUPPORTED'
+  | 'VERSION_MODEL_INCONSISTENT'
 
 export type ParseError = {
   file: string
@@ -55,17 +64,10 @@ export type SchemaFile = {
 }
 
 // ─── Folder → SchemaType mapping ──────────────────────────────────────────────
-
-// The four schema folder keys — excludes 'roles' which is handled separately.
-type SchemaFolderKey = 'content_types' | 'paragraph_types' | 'taxonomy_types' | 'enum_types'
-
-// Maps each schema folder key to the expected schema type.
-const FOLDER_KEY_TO_SCHEMA_TYPE: Record<SchemaFolderKey, SchemaType> = {
-  content_types: 'content-type',
-  paragraph_types: 'paragraph-type',
-  taxonomy_types: 'taxonomy-type',
-  enum_types: 'enum-type',
-}
+//
+// SchemaFolderKey and FOLDER_KEY_TO_SCHEMA_TYPE live in ./schema-folders —
+// shared with versions/load.ts's snapshot walker, which needs the identical
+// mapping but tolerates a missing folder instead of erroring on one.
 
 // The filename prefix (before '--') that identifies each schema type.
 const SCHEMA_TYPE_TO_PREFIX: Record<SchemaType, string> = {
@@ -260,14 +262,9 @@ export function walkSchemaDirectory(
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
-
-function directoryExists(dirPath: string): boolean {
-  try {
-    return fs.statSync(dirPath).isDirectory()
-  } catch {
-    return false
-  }
-}
+//
+// directoryExists and isSupportedExtension moved to ./schema-folders (imported
+// above) — shared with versions/load.ts.
 
 function readDirEntries(dirPath: string): string[] {
   try {
@@ -275,11 +272,6 @@ function readDirEntries(dirPath: string): string[] {
   } catch {
     return []
   }
-}
-
-function isSupportedExtension(filename: string): boolean {
-  const ext = path.extname(filename).toLowerCase()
-  return ext === '.json' || ext === '.yaml' || ext === '.yml'
 }
 
 /**
