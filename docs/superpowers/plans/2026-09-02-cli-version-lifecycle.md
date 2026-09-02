@@ -25,7 +25,7 @@
 - **Test commands.** Never bare `vitest`; each package's script wraps it in `dotenv -e .env.test`, and skipping that aborts with a misleading "DB_URL not set in .env.test". Use `pnpm --filter @bobbykim/manguito-cms-core test`, `pnpm --filter @bobbykim/manguito-cms-cli test`. Narrow to one file by appending a path relative to that package.
 - **Also run lint** before each commit: `pnpm --filter <pkg> lint`. An unused import is an eslint error here and has slipped past review before.
 - **The test database runs on port 5435.** If an integration test cannot connect, run `pnpm db:test:up`.
-- **Baseline at the start of this plan:** core 225 passed / 2 todo; cli 72 passed; monorepo `pnpm test` 11/11 and `pnpm build` 7/7; lint 7/7. Never finish a task below the baseline minus tests the task deliberately deletes.
+- **Baseline at the start of this plan:** core 226 passed / 2 todo; cli 72 passed; monorepo `pnpm test` 11/11 and `pnpm build` 7/7; lint 7/7. Never finish a task below the baseline minus tests the task deliberately deletes.
 - **Commit style:** conventional commits, `type(scope): subject`, scope `core` or `cli`.
 - **Never commit to `master`.** All work lands on the branch `docs/cli-version-lifecycle` (already checked out, already holds the spec commit).
 
@@ -210,7 +210,7 @@ export { loadVersionModel, loadVersionSnapshots } from './versions/load.js'
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `pnpm --filter @bobbykim/manguito-cms-core test`
-Expected: at least 229 passed, 2 todo (225 baseline + 4 new) — treat the total as indicative. Every pre-existing `loadVersionModel` test must still pass — this is a pure extraction and the composition is behaviour-identical.
+Expected: at least 230 passed, 2 todo (226 baseline + 4 new) — treat the total as indicative. Every pre-existing `loadVersionModel` test must still pass — this is a pure extraction and the composition is behaviour-identical.
 
 Run: `pnpm --filter @bobbykim/manguito-cms-core lint` — clean.
 Run: `pnpm --filter @bobbykim/manguito-cms-core build` — succeeds (tsup runs a DTS type-check that vitest does not, and this task changes the public surface).
@@ -589,7 +589,7 @@ export { describeSchemaChange } from './versions/describe.js'
 Run: `pnpm --filter @bobbykim/manguito-cms-core test src/versions/__tests__/describe.test.ts`
 Expected: PASS — 15 tests.
 
-Run: `pnpm --filter @bobbykim/manguito-cms-core test` — expect at least 244 passed, 2 todo (229 + 15 new).
+Run: `pnpm --filter @bobbykim/manguito-cms-core test` — expect at least 245 passed, 2 todo (230 + 15 new).
 Run: `pnpm --filter @bobbykim/manguito-cms-core lint` — clean.
 Run: `pnpm --filter @bobbykim/manguito-cms-core build` — succeeds.
 
