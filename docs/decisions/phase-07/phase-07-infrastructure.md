@@ -25,7 +25,7 @@ If the connection fails, the process exits immediately with a guided error:
 ```
 ✖ Integration tests require a running Postgres instance.
 
-  Could not connect to: postgres://localhost:5432/manguito_test
+  Could not connect to: postgres://localhost:5435/manguito_test
 
   Start the test database with:
     docker compose up -d
@@ -87,10 +87,10 @@ Write tests (any test that creates, updates, or deletes records) are responsible
 Test DB connection uses `.env.test` loaded via `dotenv-cli`:
 
 ```
-DB_URL=postgres://localhost:5432/manguito_test
+DB_URL=postgres://localhost:5435/manguito_test
 ```
 
-`.env.test` is committed to the repo — it contains no real credentials, only safe local test values. The `pnpm test` script in each package passes this file via `dotenv -e .env.test -- vitest run`.
+`.env.test` is **not** committed — `.gitignore` excludes `.env.*` (only `.env.example*` is negated), so each developer creates their own. It holds no real credentials, only safe local test values, so copy the line above verbatim. The port must match `docker-compose.yml`'s host-side mapping for `manguito-test-db` (**5435** — deliberately not 5432, which a natively installed Postgres commonly occupies). The `pnpm test` script in each package passes this file via `dotenv -e .env.test -- vitest run`.
 
 ---
 
