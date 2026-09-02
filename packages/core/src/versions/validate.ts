@@ -107,8 +107,9 @@ function checkUnionCompleteness(input: {
             `Live version ${version} exposes column "${f.column_name}" on "${typeName}" (as ` +
             `"${f.exposed_as}"), which the current schema neither exposes nor retains. Either add ` +
             `"column": "${f.column_name}" to the field that replaced it, or add a field ` +
-            `{ "name": "${f.exposed_as}", "removed": true } to retain the column while ${version} ` +
-            `is live.`,
+            `{ "name": "${f.exposed_as}", "column": "${f.column_name}", "removed": true } to retain ` +
+            `the column while ${version} is live — use a different "name" if "${f.exposed_as}" is ` +
+            `still a live field.`,
         })
       }
     }
@@ -165,7 +166,9 @@ function checkUnionCompleteness(input: {
             `Live version ${snap.version} exposes column "${column}" on paragraph type "${typeName}" ` +
             `(as "${f.name}"), which the current schema neither exposes nor retains. Either add ` +
             `"column": "${column}" to the field that replaced it, or add a field ` +
-            `{ "name": "${f.name}", "removed": true } to retain the column while ${snap.version} is live.`,
+            `{ "name": "${f.name}", "column": "${column}", "removed": true } to retain the column ` +
+            `while ${snap.version} is live — use a different "name" if "${f.name}" is still a live ` +
+            `field.`,
         })
       }
     }

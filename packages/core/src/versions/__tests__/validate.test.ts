@@ -52,6 +52,28 @@ describe('VERSION_COLUMN_MISSING', () => {
     expect(errors).toEqual([])
   })
 
+  it('is suppressed by a differently-named tombstone when the exposed name is still live', () => {
+    // The shape the plain fixes both fail on: current keeps a LIVE field
+    // named "title" (retyped, on a new column), so pasting either suggested
+    // fix verbatim breaks something else — fix 1 (give the replacing field
+    // the old column back) collides its type with v1's, raising
+    // FIELD_TYPE_CHANGED_WHILE_LIVE; fix 2 (add a field named "title",
+    // "removed": true) collides its NAME with the live field, raising
+    // DUPLICATE_FIELD_NAME. The amended message's actual advice — a
+    // differently-named tombstone with an explicit "column" — has neither
+    // problem.
+    const errors = errorsOf(
+      makeRegistry([
+        makeContentType('content--blog_post', [
+          { name: 'title', column: 'title_v2', type: 'integer' },
+          { name: 'title_legacy', column: 'title', removed: true },
+        ]),
+      ]),
+      [snapshot('v1', [makeContentType('content--blog_post', [{ name: 'title' }])])]
+    )
+    expect(errors).toEqual([])
+  })
+
   it('fires when current deleted a type a live version still exposes, naming the type', () => {
     // The derived model refused this with VERSION_RETENTION_UNSUPPORTED
     // because it could not reconstruct a deleted type. Stating retention turns
