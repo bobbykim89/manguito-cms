@@ -422,12 +422,12 @@ Then replace the body of `buildParsedField` from `const { name, label } = rawFie
 - [ ] **Step 6: Run the new tests to verify they pass**
 
 Run: `pnpm --filter @bobbykim/manguito-cms-core test src/parser/__tests__/field-declarations.test.ts`
-Expected: PASS, all 10.
+Expected: PASS — 11 tests (4 `column`, 3 `removed`, 2 `fallback`, 2 absence).
 
 - [ ] **Step 7: Run the whole suite and lint**
 
 Run: `pnpm --filter @bobbykim/manguito-cms-core test`
-Expected: 259 passed, 2 todo (249 baseline + 10 new).
+Expected: at least 260 passed, 2 todo (249 baseline + 11 new). Treat the total as indicative, not a requirement — what matters is that nothing that passed before now fails.
 
 If an existing test fails, read it before changing it. The likely cause is a `toEqual` on a whole `ParsedField` — which should still pass, because both new keys are omitted when absent. A failure there means Step 5 set a key it should have omitted.
 
@@ -740,12 +740,12 @@ The paragraph and taxonomy sites use `v.fields` rather than `flatRawFields` — 
 - [ ] **Step 8: Run the tests to verify they pass**
 
 Run: `pnpm --filter @bobbykim/manguito-cms-core test src/parser/__tests__/field-declarations.test.ts`
-Expected: PASS, all 18.
+Expected: PASS — 19 tests in the file (11 from Task 2 + 8 added here).
 
 - [ ] **Step 9: Run the whole suite and lint**
 
 Run: `pnpm --filter @bobbykim/manguito-cms-core test`
-Expected: 267 passed, 2 todo.
+Expected: at least 268 passed, 2 todo (260 + 8 new). Indicative again: the note below about `parseSchema.errors.test.ts` may legitimately change the total.
 
 `parseSchema.errors.test.ts` is the file most likely to break — check whether any test there asserts an exact `errors.length` on a schema that now also trips a new check. If one does, the fix is to assert the code is *present* rather than to assert a total; a count assertion that a new check breaks was over-specified.
 
@@ -1849,7 +1849,7 @@ Then add this test in their place — it covers end to end, through the filesyst
 Run: `pnpm --filter @bobbykim/manguito-cms-core test`
 Expected: PASS. Everything compiles again for the first time since Task 4.
 
-Expect the total to be **below** the 267 of Task 3: `fold.test.ts` and `union.test.ts` are gone along with the derived-model tests in `validate.test.ts` and `load.test.ts`. That is the point of the redesign. Note the new total in the commit body.
+Expect the total to be **below** Task 3's total: `fold.test.ts` and `union.test.ts` are gone along with the derived-model tests in `validate.test.ts` and `load.test.ts`. That is the point of the redesign. Note the new total in the commit body.
 
 Run: `pnpm --filter @bobbykim/manguito-cms-core lint`
 Expected: clean. This is where an unused import left over from five files' worth of deletion will surface.
@@ -1990,7 +1990,7 @@ describe('the zero-config case', () => {
 - [ ] **Step 2: Run them**
 
 Run: `pnpm --filter @bobbykim/manguito-cms-core test src/versions/__tests__/rename-shapes.test.ts`
-Expected: PASS, all 5.
+Expected: PASS — 5 tests (2 shift, 1 swap, 1 chain, 1 zero-config).
 
 These should pass with **no production change** — they assert a property the design already has. If one fails, do not adjust the test to match: a failure here means the implementation did not actually achieve the redesign's purpose, and the bug is upstream in Tasks 5 or 6.
 
