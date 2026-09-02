@@ -248,9 +248,10 @@ export async function runVersionRetire(
   // contract. A version number has to mean one contract forever.
   const highest = highestSnapshot(ctx.snapshots)
   if (highest !== null && highest.version === version) {
+    const target = path.join(ctx.schema.base_path, 'versions', version)
     printGuidedError(
       `${version} is the newest cut version and cannot be retired.`,
-      `The working schema is ${ctx.model.current} because ${version} is the highest snapshot — retiring it would renumber the working schema back onto ${version}, and anyone pinned to ${version} would get a different contract. Run \`manguito version:cut\` first; that makes ${version} retirable.`
+      `The working schema is ${ctx.model.current} because ${version} is the highest snapshot — retiring it would renumber the working schema back onto ${version}, and anyone pinned to ${version} would get a different contract. Cutting a version with a real contract change makes ${version} retirable. If ${version} was cut in error, delete ${target} by hand — safe only while nothing yet consumes ${version}, since deleting the newest snapshot renumbers the working schema back onto it.`
     )
     process.exit(1)
   }
