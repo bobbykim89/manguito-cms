@@ -124,5 +124,8 @@ export type {
   VersionModel,
 } from './versions/types.js'
 
+export type { FieldChange, TypeChange, SchemaChange } from './versions/describe.js'
+
 export { loadVersionModel, loadVersionSnapshots } from './versions/load.js'
 export { computeVersionModel } from './versions/compute.js'
+export { describeSchemaChange } from './versions/describe.js'
