@@ -117,7 +117,11 @@ function renderField(field: ParsedField, indent: string): string {
 export function generateFormComponent(
   schema: ParsedContentType | ParsedParagraphType | ParsedTaxonomyType
 ): string {
-  const { fields } = schema
+  // A tombstone (`removed: true`) keeps its column alive for older live
+  // versions but has no live input to render for the CURRENT version. This
+  // codegen runs from the CLI directly off parsed schemas, not through the
+  // api, so it needs its own filter rather than relying on the api's.
+  const fields = schema.fields.filter((f) => f.removed !== true)
 
   // Collect needed field component imports (deduplicated).
   const neededComponents = new Set<string>()
@@ -181,7 +185,13 @@ export function generateFormComponent(
     for (const tab of schema.ui.tabs) {
       templateLines.push(`    <Tab name="${escAttr(tab.name)}" label="${escAttr(tab.label)}">`)
       for (const fieldName of tab.fields) {
-        templateLines.push(renderField(fieldByName.get(fieldName)!, '      '))
+        // ui.tabs is built from the raw schema before tombstones are
+        // stripped (core keeps a tombstone's tab placement in the source
+        // schema), so a name here may not be in `fieldByName` — skip it
+        // rather than rendering a dead input.
+        const field = fieldByName.get(fieldName)
+        if (!field) continue
+        templateLines.push(renderField(field, '      '))
       }
       templateLines.push('    </Tab>')
     }

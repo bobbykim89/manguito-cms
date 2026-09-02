@@ -81,6 +81,53 @@ export const divergentReferenceField: ParsedField = {
   ui_component: { component: 'typeahead-select', ref: 'taxonomy--category', rel: 'one-to-one' },
 }
 
+// A tombstone that was renamed before being removed — it carries BOTH `column`
+// (the original, still-live storage column) and `removed`. Name and column are
+// deliberately distinct so a test can tell whether a consumer is keying off
+// the column or the field's current name (a fixture where they coincide can't
+// distinguish the two — see field-keys.test.ts).
+export const renamedTombstoneField: ParsedField = {
+  name: 'legacy_desc',
+  label: 'Legacy Description',
+  field_type: 'text/plain',
+  required: false,
+  nullable: true,
+  order: 6,
+  validation: { required: false },
+  db_column: { column_name: 'blog_desc', column_type: 'varchar', nullable: true },
+  ui_component: { component: 'text-input' },
+  removed: true,
+}
+
+// The collision-check trap from the brief: a LIVE field's label equals a
+// TOMBSTONE's column. `createFieldKeyMap` must still throw for this pair —
+// excluding tombstoned columns from the collision check before it runs would
+// silently drop the live field's column from every response instead.
+export const collisionLiveField: ParsedField = {
+  name: 'description',
+  label: 'Description',
+  field_type: 'text/plain',
+  required: false,
+  nullable: true,
+  order: 7,
+  validation: { required: false },
+  db_column: { column_name: 'd2', column_type: 'varchar', nullable: true },
+  ui_component: { component: 'text-input' },
+}
+
+export const collisionTombstoneField: ParsedField = {
+  name: 'x',
+  label: 'X',
+  field_type: 'text/plain',
+  required: false,
+  nullable: true,
+  order: 8,
+  validation: { required: false },
+  db_column: { column_name: 'description', column_type: 'varchar', nullable: true },
+  ui_component: { component: 'text-input' },
+  removed: true,
+}
+
 export const manyToManyField: ParsedField = {
   name: 'tags',
   label: 'Tags',
