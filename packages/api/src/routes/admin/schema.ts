@@ -1,7 +1,17 @@
 import { sql } from 'drizzle-orm'
 import type { Hono } from 'hono'
-import type { SchemaRegistry } from '@bobbykim/manguito-cms-core'
+import type { ParsedField, SchemaRegistry } from '@bobbykim/manguito-cms-core'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
+
+// A tombstone (`removed: true`) keeps its column alive for older live
+// versions but must not be exposed by the CURRENT version — which is all
+// this endpoint ever serves. The admin panel has no other path to schema
+// data (packages/admin/src/stores/schema.ts's setFromApiSchema is the only
+// consumer), so filtering here is what keeps a dead column out of every
+// admin form and list view.
+function liveFields(fields: ParsedField[]): ParsedField[] {
+  return fields.filter((f) => f.removed !== true)
+}
 
 // ─── Register ─────────────────────────────────────────────────────────────────
 
@@ -20,21 +30,21 @@ export function registerSchemaRoute(
       only_one: ct.only_one,
       ui: ct.ui,
       system_fields: ct.system_fields,
-      fields: ct.fields,
+      fields: liveFields(ct.fields),
     }))
 
     const taxonomy_types = Object.values(registry.taxonomy_types).map((tt) => ({
       name: tt.name,
       label: tt.label,
       system_fields: tt.system_fields,
-      fields: tt.fields,
+      fields: liveFields(tt.fields),
     }))
 
     const paragraph_types = Object.values(registry.paragraph_types).map((pt) => ({
       name: pt.name,
       label: pt.label,
       system_fields: pt.system_fields,
-      fields: pt.fields,
+      fields: liveFields(pt.fields),
     }))
 
     const enum_types = Object.values(registry.enum_types).map((et) => ({
