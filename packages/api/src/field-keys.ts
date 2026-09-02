@@ -43,15 +43,35 @@ export type FieldKeyMap = {
  * Built ONCE per content type at startup, not per request. Throws on a key
  * collision, matching how createCmsApp refuses to boot on a broken roles
  * registry: an ambiguous mapping would silently corrupt responses.
+ *
+ * Tombstones (`field.removed === true`) are column-backed — the parser keeps
+ * their column alive for older live versions — but the CURRENT version must
+ * never serve or accept them. They are excluded from `labelToColumn` and the
+ * public `columnToLabel` below, and additionally dropped by key in `remap`:
+ * without that second step, an unmapped retained column would pass through
+ * `remap` unchanged (see the comment on `remap`) and reach the response under
+ * its raw column name.
  */
 export function createFieldKeyMap(fields: ParsedField[]): FieldKeyMap {
   const labelToColumn = new Map<string, string>()
+  // Includes tombstoned columns until the collision check below has run —
+  // see the trap note there before touching this map.
   const columnToLabel = new Map<string, string>()
+  // Both the name and the column of every tombstone, so remap can drop a
+  // tombstone under either key. They differ when a field was renamed and
+  // THEN removed: it carries both `column` (the original, still-live column)
+  // and `removed`.
+  const droppedKeys = new Set<string>()
 
   for (const f of fields) {
     if (!isColumnBacked(f)) continue
-    labelToColumn.set(f.name, f.db_column.column_name)
     columnToLabel.set(f.db_column.column_name, f.name)
+    if (f.removed === true) {
+      droppedKeys.add(f.name)
+      droppedKeys.add(f.db_column.column_name)
+      continue
+    }
+    labelToColumn.set(f.name, f.db_column.column_name)
   }
 
   // A label that is also some OTHER field's column name would make toLabels
@@ -65,8 +85,17 @@ export function createFieldKeyMap(fields: ParsedField[]): FieldKeyMap {
   // column would overwrite that column's value on the row and then be renamed
   // onto the other field's label — serving the wrong value under the wrong key.
   //
-  // Not detected: two fields declaring the SAME column name. That is
-  // unreachable from the parser, which derives every column from its own field.
+  // Deliberately run against `columnToLabel` BEFORE tombstoned columns are
+  // stripped from it below: a live field's label may collide with a
+  // TOMBSTONE's column (the column still physically exists on the row), and
+  // that must keep throwing. Stripping tombstones first would silently pass
+  // this configuration, and the exclusion step afterward would then delete
+  // the live field's column from every response instead of the tombstone's.
+  //
+  // Not detected: two fields declaring the SAME column name. A field can now
+  // declare its own `column`, so this is no longer structurally impossible —
+  // but core rejects it with `DUPLICATE_COLUMN` at parse time, so it is still
+  // unreachable here.
   for (const f of fields) {
     const columnOwner = columnToLabel.get(f.name)
     if (columnOwner !== undefined && columnOwner !== f.name) {
@@ -75,6 +104,14 @@ export function createFieldKeyMap(fields: ParsedField[]): FieldKeyMap {
           `storage column of field "${columnOwner}". A field label may not reuse another ` +
           `field's column name. Rename the field, then run \`manguito validate\` to check your schema.`
       )
+    }
+  }
+
+  // Only now strip tombstoned columns — the collision check above has already
+  // run against the full map.
+  for (const f of fields) {
+    if (isColumnBacked(f) && f.removed === true) {
+      columnToLabel.delete(f.db_column.column_name)
     }
   }
 
@@ -88,8 +125,14 @@ export function createFieldKeyMap(fields: ParsedField[]): FieldKeyMap {
     // unchanged would make aliasing depend on the schema, so a bug where a
     // caller mutates a row after mapping would reproduce only on renamed
     // fields. A shallow copy per row is not worth that class of bug.
+    //
+    // Unknown keys pass through unchanged — which is exactly why a tombstone
+    // key must be checked and skipped explicitly here, rather than relying on
+    // its absence from `lookup`: absence alone would let it pass through under
+    // its raw key instead of being dropped.
     const out: Record<string, unknown> = {}
     for (const key of Object.keys(input)) {
+      if (droppedKeys.has(key)) continue
       out[lookup.get(key) ?? key] = input[key]
     }
     return out
