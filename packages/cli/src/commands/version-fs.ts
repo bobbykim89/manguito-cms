@@ -34,3 +34,20 @@ export function copySnapshotFolders(input: {
     }
   }
 }
+
+/**
+ * Retires a snapshot by renaming it out of discovery's way first, then
+ * deleting the renamed directory.
+ *
+ * The rename is atomic and the new name cannot match /^v\d+$/, so the version
+ * is gone as far as snapshot discovery is concerned the instant it succeeds.
+ * If the delete then fails, what is left behind is inert junk rather than a
+ * half-deleted version that would parse as valid but incomplete.
+ */
+export function retireSnapshotDir(versionsDir: string, version: string): void {
+  const from = path.join(versionsDir, version)
+  const staging = path.join(versionsDir, `.${version}.removing`)
+  fs.rmSync(staging, { recursive: true, force: true })
+  fs.renameSync(from, staging)
+  fs.rmSync(staging, { recursive: true, force: true })
+}

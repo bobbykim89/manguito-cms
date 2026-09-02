@@ -10,6 +10,7 @@ import {
   type VersionModel,
   type VersionSnapshot,
   type ResolvedSchemaConfig,
+  type ParseError,
 } from '@bobbykim/manguito-cms-core'
 import { loadEnvFile } from '../utils/env.js'
 import { resolveConfig } from '../utils/config.js'
@@ -18,7 +19,7 @@ import { resolveSchemaConfig } from '../utils/schema-config.js'
 import { printValidationErrors, printSuccess, printGuidedError } from '../utils/error.js'
 import { createPromptAdapter, type PromptAdapter } from '../utils/prompt.js'
 import { formatSchemaChange } from './version-report.js'
-import { copySnapshotFolders } from './version-fs.js'
+import { copySnapshotFolders, retireSnapshotDir } from './version-fs.js'
 
 /**
  * The snapshot the working schema is a successor to: the HIGHEST-numbered
@@ -79,6 +80,28 @@ async function loadVersionContext(
   return { schema, registry, snapshots: snapshots.value, model: model.value }
 }
 
+/**
+ * The tombstones that retiring `retiring` would orphan — computed BEFORE
+ * anything is deleted, by recomputing the model without that snapshot and
+ * reading its ORPHANED_TOMBSTONE errors.
+ *
+ * Removing a snapshot can only ever introduce that one error class: fewer
+ * live versions means fewer columns to satisfy and fewer types to compare,
+ * so VERSION_COLUMN_MISSING and FIELD_TYPE_CHANGED_WHILE_LIVE cannot newly
+ * appear. Every other error is filtered out rather than reported, so a
+ * pre-existing problem elsewhere is not blamed on the retirement.
+ */
+export function orphanedTombstoneErrors(input: {
+  registry: SchemaRegistry
+  snapshots: VersionSnapshot[]
+  retiring: string
+}): ParseError[] {
+  const remaining = input.snapshots.filter((s) => s.version !== input.retiring)
+  const model = computeVersionModel({ current: input.registry, snapshots: remaining })
+  if (model.ok) return []
+  return model.errors.filter((e) => e.code === 'ORPHANED_TOMBSTONE')
+}
+
 export function registerVersion(program: Command): void {
   program
     .command('version:diff')
@@ -95,6 +118,15 @@ export function registerVersion(program: Command): void {
     .option('--yes', 'skip the confirmation prompt')
     .action(async (options: { env?: string; yes?: boolean }) => {
       await runVersionCut(options, { cwd: process.cwd(), prompt: createPromptAdapter() })
+    })
+
+  program
+    .command('version:retire <version>')
+    .description('Stop serving a cut version and delete its snapshot')
+    .option('--env <path>', 'path to .env file to load')
+    .option('--yes', 'skip the confirmation prompt')
+    .action(async (version: string, options: { env?: string; yes?: boolean }) => {
+      await runVersionRetire(version, options, { cwd: process.cwd(), prompt: createPromptAdapter() })
     })
 }
 
@@ -191,4 +223,86 @@ export async function runVersionCut(
 
   printSuccess(`Froze the working schema as ${version} at ${target}`)
   process.stdout.write(`Live: ${live}.  Working schema is now v${Number.parseInt(version.slice(1), 10) + 1}.\n`)
+}
+
+export async function runVersionRetire(
+  version: string,
+  options: { env?: string; yes?: boolean },
+  deps: { cwd: string; prompt: PromptAdapter }
+): Promise<void> {
+  if (!/^v\d+$/.test(version)) {
+    printGuidedError(`"${version}" is not a version name.`, 'Expected v<number>, for example v1.')
+    process.exit(1)
+  }
+
+  const ctx = await loadVersionContext(options, deps, 'manguito version:retire')
+
+  if (!ctx.snapshots.some((s) => s.version === version)) {
+    const existing = ctx.snapshots.map((s) => s.version).join(', ')
+    printGuidedError(
+      `${version} is not a cut version.`,
+      existing === ''
+        ? 'No versions have been cut yet — run `manguito version:cut` first.'
+        : `Cut versions: ${existing}.`
+    )
+    process.exit(1)
+  }
+
+  // `current` is derived as highest + 1, so retiring the HIGHEST snapshot
+  // renumbers the working schema backwards onto a number that was already
+  // published — a consumer pinned to it would silently receive a different
+  // contract. A version number has to mean one contract forever.
+  const highest = highestSnapshot(ctx.snapshots)
+  if (highest !== null && highest.version === version) {
+    printGuidedError(
+      `${version} is the newest cut version and cannot be retired.`,
+      `The working schema is ${ctx.model.current} because ${version} is the highest snapshot — retiring it would renumber the working schema back onto ${version}, and anyone pinned to ${version} would get a different contract. Run \`manguito version:cut\` first; that makes ${version} retirable.`
+    )
+    process.exit(1)
+  }
+
+  const orphans = orphanedTombstoneErrors({
+    registry: ctx.registry,
+    snapshots: ctx.snapshots,
+    retiring: version,
+  })
+
+  process.stdout.write(`Retiring ${version} will delete ${path.join(ctx.schema.base_path, 'versions', version)}\n\n`)
+  if (orphans.length > 0) {
+    process.stdout.write(
+      `${orphans.length} tombstone${orphans.length === 1 ? '' : 's'} will be orphaned — their columns are no\n` +
+        `longer exposed by any live version. You must then delete these fields:\n\n`
+    )
+    for (const o of orphans) {
+      process.stdout.write(`  ${o.file}\n    ${o.message}\n\n`)
+    }
+    process.stdout.write(
+      'Until you do, `manguito validate` will report ORPHANED_TOMBSTONE. Deleting them\n' +
+        'shrinks the union and lets the next migration DROP those columns.\n\n'
+    )
+  }
+
+  if (options.yes !== true) {
+    const ok = await deps.prompt.confirm(`Retire ${version}?`)
+    if (!ok) {
+      process.stdout.write('Cancelled. Nothing was deleted.\n')
+      return
+    }
+  }
+
+  const versionsDir = path.join(ctx.schema.base_path, 'versions')
+  try {
+    retireSnapshotDir(versionsDir, version)
+  } catch (err) {
+    printGuidedError(
+      `Failed to retire ${version}: ${err instanceof Error ? err.message : String(err)}`,
+      'The snapshot is renamed out of the way before it is deleted, so the version is either fully retired or untouched.'
+    )
+    process.exit(1)
+  }
+
+  printSuccess(`Retired ${version}`)
+  if (orphans.length > 0) {
+    process.stdout.write(`\nDelete the ${orphans.length} orphaned tombstone field(s) listed above.\n`)
+  }
 }

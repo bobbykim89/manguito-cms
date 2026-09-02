@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { copySnapshotFolders } from '../commands/version-fs.js'
+import { copySnapshotFolders, retireSnapshotDir } from '../commands/version-fs.js'
 
 let root: string
 const FOLDERS = {
@@ -68,5 +68,29 @@ describe('copySnapshotFolders', () => {
     copySnapshotFolders({ fromRoot: root, toDir, folders: FOLDERS })
 
     expect(fs.existsSync(path.join(toDir, 'content-types', 'notes.txt'))).toBe(false)
+  })
+})
+
+describe('retireSnapshotDir', () => {
+  it('removes the snapshot directory', () => {
+    const versionsDir = path.join(root, 'versions')
+    fs.mkdirSync(path.join(versionsDir, 'v1', 'content-types'), { recursive: true })
+    fs.writeFileSync(path.join(versionsDir, 'v1', 'content-types', 'a.json'), '{}')
+
+    retireSnapshotDir(versionsDir, 'v1')
+
+    expect(fs.existsSync(path.join(versionsDir, 'v1'))).toBe(false)
+  })
+
+  it('leaves nothing that snapshot discovery would read', () => {
+    // The rename step uses a name that cannot match /^v\d+$/, so even if the
+    // delete failed the leftover is inert rather than a half-deleted version.
+    const versionsDir = path.join(root, 'versions')
+    fs.mkdirSync(path.join(versionsDir, 'v1'), { recursive: true })
+
+    retireSnapshotDir(versionsDir, 'v1')
+
+    const remaining = fs.readdirSync(versionsDir).filter((e) => /^v\d+$/.test(e))
+    expect(remaining).toEqual([])
   })
 })
