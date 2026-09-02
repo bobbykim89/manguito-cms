@@ -53,6 +53,8 @@ _Avoid_: catalog, manifest, index
 
 ### Versioning
 
+> **This glossary describes the version model as currently implemented** in `packages/core/src/versions/`, which derives a field's column by folding a rename history. That mechanism is superseded by the [declarative version model](../../docs/superpowers/specs/2026-09-02-declarative-version-model-design.md), where a field *states* its column. Until that lands, the terms below are accurate; afterwards *pending.json / history.json* and *declared drop* are retired and *tombstone* and *declared column* replace them.
+
 A content field has a public **label** (`ParsedField.name`) and a storage **column** (`db_column.column_name`). They are identical for every schema the parser produces on its own; schema versioning is what lets them diverge, by renaming a label while leaving the column untouched.
 
 **Live version**:
@@ -60,7 +62,7 @@ A version currently served — every cut snapshot under `schemas/versions/vN/` p
 _Avoid_: active version, supported version
 
 **Cut**:
-Freezing the current schema as a named version. `version:cut` snapshots the schema files into `versions/vN/`, appends `pending.json`'s declarations to `history.json` tagged with `vN`, and clears `pending.json`. The workflow is cut first, then break things.
+Freezing the current schema as a named version. `version:cut` snapshots the schema files into `versions/vN/`, appends `pending.json`'s declarations to `history.json` tagged with the **highest snapshot that existed before this cut** (`v(N-1)`, or `v0` when cutting the first version), and clears `pending.json`. The tag means *"in effect after that version was frozen"*, which is what `renameWindowsBefore` reads: a rename that shaped `vN`'s labels must apply when folding `vN`'s labels back to columns, so its tag has to be **below** `N`. Tagging it `vN` would make the fold skip it and resolve `vN`'s column to the new label — wrong. The workflow is cut first, then break things. The workflow is cut first, then break things.
 _Avoid_: tag, release, freeze
 
 **Snapshot**:
