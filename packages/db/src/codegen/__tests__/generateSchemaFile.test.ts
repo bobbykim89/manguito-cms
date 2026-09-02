@@ -330,6 +330,27 @@ describe('generateFieldColumn — DbColumnType mapping', () => {
     expect(result).toContain("s.varchar('status')")
     expect(result).not.toContain('length')
   })
+
+  // A tombstone (`removed: true`) retains its column so OLDER live versions
+  // can still read it — db codegen must go on emitting it. `generateFieldColumn`
+  // keys only off `field_type`, `db_column` and `junction`, never `removed`,
+  // so this is already correct; the test pins that so a future "skip removed
+  // fields" change in db codegen gets caught. Name and column are deliberately
+  // distinct — a tombstone that was renamed before removal carries both — so
+  // this can't pass by accident from name/column happening to coincide.
+  it('tombstone (removed: true) still emits its retained column, nullable', () => {
+    const field: ParsedField = {
+      ...makeField('legacy_desc', {
+        column_name: 'blog_desc',
+        column_type: 'varchar',
+        nullable: true,
+      }),
+      removed: true,
+    }
+    const result = generateFieldColumn(field)
+    expect(result).toContain("s.varchar('blog_desc'")
+    expect(result).not.toContain('.notNull()')
+  })
 })
 
 describe('generateSystemFieldColumn', () => {
