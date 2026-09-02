@@ -87,6 +87,10 @@ _Avoid_: merged registry, combined schema
 A read of one live version's own schema files: per type, each column and the label that version exposes it under, plus any fallback. The current version's projection is the identity over the union whenever no field declares a `column` — the zero-config case, which is what lets the API layer skip a special case for an unversioned project.
 _Avoid_: view, mapping
 
+**Change classification**:
+What `describeSchemaChange` produces: per type, the fields that differ between an older version and a newer one, keyed by **column** so a rename reads as a rename rather than as a delete plus an add. A valid model admits exactly four kinds — `added`, `renamed`, `tombstoned`, `restored`. Two more are unreachable: a column the older version exposes that is missing from the newer one is already `VERSION_COLUMN_MISSING`, and a retype is already `FIELD_TYPE_CHANGED_WHILE_LIVE`. So if the model loads, cutting is always safe.
+_Avoid_: diff, delta
+
 ### Routing and identity
 
 **Base path**:
