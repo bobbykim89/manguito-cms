@@ -188,6 +188,12 @@ export async function runVersionCut(
   }
 
   process.stdout.write(`${formatSchemaChange(change)}\n\n`)
+  // `model.live` already contains `version` — it is derived as highest + 1,
+  // so `version` is the working schema's own current version and always
+  // live. The filter is defensive against that invariant changing underfoot,
+  // not dead code: without it, a future model that stopped listing `current`
+  // in `live` would silently duplicate `version` in this list instead of
+  // failing loudly.
   const live = [...ctx.model.live.filter((v) => v !== version), version].join(' ')
   process.stdout.write(
     `After cutting, ${live} are live. Every column those versions expose must stay in the\n` +

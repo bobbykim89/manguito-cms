@@ -67,12 +67,15 @@ describe('highestSnapshot', () => {
 
 describe('orphanedTombstoneErrors', () => {
   it('names the tombstone that retiring a version would orphan', () => {
+    // The tombstone's own name, "legacy_desc", differs from the column it
+    // retains, "blog_desc" — so matching it against what v1 exposes (a field
+    // named "blog_desc") only works if it happens by COLUMN, not by name.
     // v1 exposes column blog_desc; current retains it as a tombstone. Retire
     // v1 and nothing exposes that column any more.
     const registry = makeRegistry([
       makeContentType('content--blog_post', [
         { name: 'title' },
-        { name: 'blog_desc', type: 'text/rich', removed: true },
+        { name: 'legacy_desc', column: 'blog_desc', type: 'text/rich', removed: true },
       ]),
     ])
     const snapshots = [
@@ -89,7 +92,7 @@ describe('orphanedTombstoneErrors', () => {
 
     const errors = orphanedTombstoneErrors({ registry, snapshots, retiring: 'v1' })
     expect(errors.map((e) => e.code)).toEqual(['ORPHANED_TOMBSTONE'])
-    expect(errors[0]!.message).toContain('blog_desc')
+    expect(errors[0]!.message).toContain('legacy_desc')
   })
 
   it('returns nothing when another live version still exposes the column', () => {
@@ -97,7 +100,7 @@ describe('orphanedTombstoneErrors', () => {
     const registry = makeRegistry([
       makeContentType('content--blog_post', [
         { name: 'title' },
-        { name: 'blog_desc', type: 'text/rich', removed: true },
+        { name: 'legacy_desc', column: 'blog_desc', type: 'text/rich', removed: true },
       ]),
     ])
     const snapshots = [
