@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import type { ParsedContentType, ParsedParagraphType, ParsedTaxonomyType } from '@bobbykim/manguito-cms-core'
+import type {
+  ParsedContentType,
+  ParsedField,
+  ParsedParagraphType,
+  ParsedTaxonomyType,
+} from '@bobbykim/manguito-cms-core'
 import { generateFormComponent } from '../form-generator'
 
 const contentTypeFixture: ParsedContentType = {
@@ -153,6 +158,75 @@ const taxonomyTypeFixture: ParsedTaxonomyType = {
     item_path: '/api/taxonomy/tag/:id',
   },
 }
+
+// A tombstone with a name and column that are deliberately distinct from
+// each other and from every live field, so a test asserting it produces no
+// input can't be satisfied by accident (e.g. by name-based deduplication).
+// Core keeps a tombstone's original tab placement in the raw schema (tabs
+// are built before tombstones are stripped), so it is listed in a tab here
+// exactly as it would be by the real parser.
+const contentTombstoneField: ParsedField = {
+  name: 'legacy_summary',
+  label: 'Legacy Summary',
+  field_type: 'text/plain',
+  required: false,
+  nullable: true,
+  order: 5,
+  validation: { required: false },
+  db_column: { column_name: 'blog_summary', column_type: 'varchar', nullable: true },
+  ui_component: { component: 'text-input' },
+  removed: true,
+}
+
+const contentTypeWithTombstoneFixture: ParsedContentType = {
+  ...contentTypeFixture,
+  fields: [...contentTypeFixture.fields, contentTombstoneField],
+  ui: {
+    tabs: [
+      { name: 'content', label: 'Content', fields: ['title', 'body', 'status', 'cards', 'legacy_summary'] },
+      { name: 'media', label: 'Media', fields: ['cover'] },
+    ],
+  },
+}
+
+const taxonomyTombstoneField: ParsedField = {
+  name: 'legacy_slug',
+  label: 'Legacy Slug',
+  field_type: 'text/plain',
+  required: false,
+  nullable: true,
+  order: 1,
+  validation: { required: false },
+  db_column: { column_name: 'slug_old', column_type: 'varchar', nullable: true },
+  ui_component: { component: 'text-input' },
+  removed: true,
+}
+
+const taxonomyTypeWithTombstoneFixture: ParsedTaxonomyType = {
+  ...taxonomyTypeFixture,
+  fields: [...taxonomyTypeFixture.fields, taxonomyTombstoneField],
+}
+
+describe('generateFormComponent — tombstones', () => {
+  it('generates no input for a tombstone field, even when still listed in a tab', () => {
+    const output = generateFormComponent(contentTypeWithTombstoneFixture)
+    expect(output).not.toContain('legacy_summary')
+    expect(output).not.toContain('blog_summary')
+  })
+
+  it('leaves the rest of a content-type form byte-for-byte unchanged when a tombstone is present', () => {
+    expect(generateFormComponent(contentTypeWithTombstoneFixture)).toBe(
+      generateFormComponent(contentTypeFixture)
+    )
+  })
+
+  it('flat layout (taxonomy): generates no input for a tombstone and leaves the rest unchanged', () => {
+    const output = generateFormComponent(taxonomyTypeWithTombstoneFixture)
+    expect(output).not.toContain('legacy_slug')
+    expect(output).not.toContain('slug_old')
+    expect(output).toBe(generateFormComponent(taxonomyTypeFixture))
+  })
+})
 
 describe('generateFormComponent', () => {
   it('generates correct SFC for content type', () => {
