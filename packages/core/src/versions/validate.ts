@@ -188,8 +188,9 @@ function checkOrphanedTombstones(input: {
   current: SchemaRegistry
   projections: Record<string, VersionProjection>
   currentVersion: string
+  snapshots: VersionSnapshot[]
 }): ParseError[] {
-  const { current, projections, currentVersion } = input
+  const { current, projections, currentVersion, snapshots } = input
   const errors: ParseError[] = []
 
   // Every (type, column) some version OTHER than current exposes.
@@ -217,6 +218,40 @@ function checkOrphanedTombstones(input: {
     }
   }
 
+  // ─── Paragraph arm ─────────────────────────────────────────────────────
+  //
+  // `exposed` above comes from `projections`, and paragraph types never
+  // appear there (same boundary the completeness check's paragraph arm
+  // documents) — so checking a paragraph tombstone against it would call
+  // EVERY paragraph tombstone orphaned, live or not. Exposure has to come
+  // from each snapshot's own `paragraph_types` REGISTRY instead, the same
+  // source the completeness arm reads.
+  const paragraphExposed = new Set<string>()
+  for (const snap of snapshots) {
+    for (const [typeName, fields] of typeEntries(snap.registry, ['paragraph_types'])) {
+      for (const f of fields) {
+        if (!isColumnBacked(f) || f.removed === true) continue
+        paragraphExposed.add(`${typeName}.${f.db_column!.column_name}`)
+      }
+    }
+  }
+
+  for (const [typeName, fields] of typeEntries(current, ['paragraph_types'])) {
+    for (const f of fields) {
+      if (f.removed !== true || !isColumnBacked(f)) continue
+      if (paragraphExposed.has(`${typeName}.${f.db_column!.column_name}`)) continue
+      errors.push({
+        file: current.schemas[typeName]?.source_file ?? '',
+        code: 'ORPHANED_TOMBSTONE',
+        message:
+          `Field "${f.name}" on paragraph type "${typeName}" is marked "removed": true, retaining ` +
+          `column "${f.db_column!.column_name}", but no live version exposes that column any more. ` +
+          `It is a column nothing can read. Delete the field — that shrinks the union and lets db ` +
+          `codegen drop the column.`,
+      })
+    }
+  }
+
   return errors
 }
 
@@ -232,31 +267,43 @@ function checkFieldTypeChangedWhileLive(input: {
 }): ParseError[] {
   const { current, snapshots } = input
   const errors: ParseError[] = []
-  const currentByType = fieldsByColumn(current)
 
-  for (const snap of snapshots) {
-    for (const [typeName, snapColumns] of fieldsByColumn(snap.registry)) {
-      const currentColumns = currentByType.get(typeName)
-      if (!currentColumns) continue // the whole type is gone — VERSION_COLUMN_MISSING's concern
+  // Shared by the structural pass below and the paragraph arm that follows
+  // it — only which `kinds` (and how the type is named in the message)
+  // differs. Paragraph types hold column-backed fields exactly like content
+  // and taxonomy types do, and the same "one column, one type" rule applies
+  // to them; there is no projection involved either way, so `kinds` is all
+  // that has to change to reach them.
+  function compare(kinds: TypeKind[], typeLabel: string): void {
+    const currentByType = fieldsByColumn(current, kinds)
 
-      for (const [col, oldField] of snapColumns) {
-        const currentField = currentColumns.get(col)
-        if (!currentField) continue // absent — VERSION_COLUMN_MISSING's concern, not this one's
-        if (currentField.field_type === oldField.field_type) continue
+    for (const snap of snapshots) {
+      for (const [typeName, snapColumns] of fieldsByColumn(snap.registry, kinds)) {
+        const currentColumns = currentByType.get(typeName)
+        if (!currentColumns) continue // the whole type is gone — VERSION_COLUMN_MISSING's concern
 
-        errors.push({
-          file: `schemas/versions/${snap.version}`,
-          code: 'FIELD_TYPE_CHANGED_WHILE_LIVE',
-          message:
-            `Column "${col}" on "${typeName}" is exposed by live version ${snap.version} as ` +
-            `${oldField.field_type}, but the current schema now types it ${currentField.field_type}. ` +
-            `A live version's contract cannot change type under its consumers — retire ` +
-            `${snap.version} first, or keep the field's type stable and introduce the change as a ` +
-            `new column instead.`,
-        })
+        for (const [col, oldField] of snapColumns) {
+          const currentField = currentColumns.get(col)
+          if (!currentField) continue // absent — VERSION_COLUMN_MISSING's concern, not this one's
+          if (currentField.field_type === oldField.field_type) continue
+
+          errors.push({
+            file: `schemas/versions/${snap.version}`,
+            code: 'FIELD_TYPE_CHANGED_WHILE_LIVE',
+            message:
+              `Column "${col}" on ${typeLabel}"${typeName}" is exposed by live version ${snap.version} ` +
+              `as ${oldField.field_type}, but the current schema now types it ${currentField.field_type}. ` +
+              `A live version's contract cannot change type under its consumers — retire ` +
+              `${snap.version} first, or keep the field's type stable and introduce the change as a ` +
+              `new column instead.`,
+          })
+        }
       }
     }
   }
+
+  compare(STRUCTURAL_KINDS, '')
+  compare(['paragraph_types'], 'paragraph type ')
 
   return errors
 }

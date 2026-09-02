@@ -208,6 +208,50 @@ describe('ORPHANED_TOMBSTONE', () => {
   })
 })
 
+describe('ORPHANED_TOMBSTONE — paragraph types', () => {
+  // Paragraph types never appear in a projection, so the "is it still
+  // exposed?" question has to be answered from each snapshot's
+  // paragraph_types REGISTRY — the same source the completeness arm reads —
+  // rather than from `projections`, which would make every paragraph
+  // tombstone look orphaned regardless of whether a live version exposes it.
+
+  it('fires for a paragraph tombstone no live version exposes', () => {
+    const errors = errorsOf(
+      makeRegistry([
+        makeParagraphType('paragraph--photo_card', [
+          { name: 'caption' },
+          { name: 'old_caption', type: 'text/rich', removed: true },
+        ]),
+      ]),
+      []
+    )
+    const err = errors.find((e) => e.code === 'ORPHANED_TOMBSTONE')
+    expect(err).toBeDefined()
+    expect(err!.message).toContain('old_caption')
+  })
+
+  it('does not fire while a snapshot paragraph type still exposes that column', () => {
+    // The important direction: if this arm answered "exposed?" from
+    // `projections` (which never contain paragraph types), it would
+    // false-positive here even though v1 plainly still reads the column.
+    const errors = errorsOf(
+      makeRegistry([
+        makeParagraphType('paragraph--photo_card', [
+          { name: 'caption' },
+          { name: 'old_caption', type: 'text/rich', removed: true },
+        ]),
+      ]),
+      [snapshot('v1', [
+        makeParagraphType('paragraph--photo_card', [
+          { name: 'caption' },
+          { name: 'old_caption', type: 'text/rich' },
+        ]),
+      ])]
+    )
+    expect(errors).toEqual([])
+  })
+})
+
 describe('FIELD_TYPE_CHANGED_WHILE_LIVE', () => {
   it('fires when a live version exposes a column current now types differently', () => {
     const errors = errorsOf(
@@ -234,6 +278,42 @@ describe('FIELD_TYPE_CHANGED_WHILE_LIVE', () => {
     const errors = errorsOf(
       makeRegistry([makeContentType('content--blog_post', [{ name: 'title', column: 'blog_title' }])]),
       [snapshot('v1', [makeContentType('content--blog_post', [{ name: 'blog_title' }])])]
+    )
+    expect(errors).toEqual([])
+  })
+})
+
+describe('FIELD_TYPE_CHANGED_WHILE_LIVE — paragraph types', () => {
+  it('fires when a live version exposes a paragraph column current now types differently', () => {
+    const errors = errorsOf(
+      makeRegistry([makeParagraphType('paragraph--photo_card', [{ name: 'caption', type: 'integer' }])]),
+      [snapshot('v1', [makeParagraphType('paragraph--photo_card', [{ name: 'caption', type: 'text/plain' }])])]
+    )
+    const err = errors.find((e) => e.code === 'FIELD_TYPE_CHANGED_WHILE_LIVE')
+    expect(err).toBeDefined()
+    expect(err!.message).toContain('caption')
+  })
+
+  it('matches by column, not by name, so a renamed paragraph field is still checked', () => {
+    // v1 exposes column `blog_caption` as text/plain under that same name.
+    // Current exposes the same column as `caption`, typed integer. Matching
+    // by NAME would miss it entirely — `blog_caption` no longer exists as a
+    // name.
+    const errors = errorsOf(
+      makeRegistry([
+        makeParagraphType('paragraph--photo_card', [{ name: 'caption', type: 'integer', column: 'blog_caption' }]),
+      ]),
+      [snapshot('v1', [makeParagraphType('paragraph--photo_card', [{ name: 'blog_caption', type: 'text/plain' }])])]
+    )
+    expect(errors.map((e) => e.code)).toContain('FIELD_TYPE_CHANGED_WHILE_LIVE')
+  })
+
+  it('does not fire when the type is unchanged', () => {
+    const errors = errorsOf(
+      makeRegistry([
+        makeParagraphType('paragraph--photo_card', [{ name: 'caption', column: 'blog_caption' }]),
+      ]),
+      [snapshot('v1', [makeParagraphType('paragraph--photo_card', [{ name: 'blog_caption' }])])]
     )
     expect(errors).toEqual([])
   })
