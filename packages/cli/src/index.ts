@@ -8,6 +8,7 @@ import { registerMigrate } from './commands/migrate.js'
 import { registerValidate } from './commands/validate.js'
 import { registerCreateSuperuser } from './commands/createsuperuser.js'
 import { registerUsers } from './commands/users.js'
+import { registerVersion } from './commands/version.js'
 
 const require = createRequire(import.meta.url)
 const { version } = require('../package.json') as { version: string }
@@ -24,5 +25,6 @@ registerMigrate(program)
 registerValidate(program)
 registerCreateSuperuser(program)
 registerUsers(program)
+registerVersion(program)
 
 program.parse()
