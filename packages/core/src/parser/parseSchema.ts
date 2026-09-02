@@ -270,7 +270,11 @@ function checkFieldDeclarations(
   const tombstone = rawField.removed === true
 
   if (!isColumnBacked(built) && (rawField.column !== undefined || tombstone)) {
-    const declared = rawField.column !== undefined ? '"column"' : '"removed"'
+    const declaredKeys = [
+      ...(rawField.column !== undefined ? ['"column"'] : []),
+      ...(tombstone ? ['"removed"'] : []),
+    ]
+    const declared = declaredKeys.join(' and ')
     errors.push({
       file: sourceFile,
       code: 'UNRENAMEABLE_FIELD_KIND',

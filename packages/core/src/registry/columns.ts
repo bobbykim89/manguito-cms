@@ -1,4 +1,4 @@
-import type { DbColumn } from './types.js'
+import type { DbColumn } from './types'
 
 /**
  * Whether a field has a storage column of its own.
