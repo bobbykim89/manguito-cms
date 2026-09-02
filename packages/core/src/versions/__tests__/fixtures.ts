@@ -2,13 +2,9 @@ import { parseSchema } from '../../parser/parseSchema'
 import { buildSchemaRegistry } from '../../parser/validate'
 import type { ParsedSchema } from '../../parser/parseSchema'
 import type { ParsedRoutes, ParsedRoles, SchemaRegistry } from '../../parser/validate'
-import type { PendingChanges, VersionHistory } from '../types'
 
 const EMPTY_ROUTES: ParsedRoutes = { base_paths: [] }
 const EMPTY_ROLES: ParsedRoles = { roles: [], valid_permissions: [] }
-
-export const EMPTY_HISTORY: VersionHistory = { renames: [], drops: [], fallbacks: {} }
-export const EMPTY_PENDING: PendingChanges = { renames: [], drops: [], fallbacks: {} }
 
 export type FieldSpec = {
   name: string
@@ -60,9 +56,9 @@ function toRawField(f: FieldSpec) {
 /**
  * A content type whose fields are plain text unless `type` says otherwise.
  * Goes through parseSchema, so every field gets a real db_column with
- * column_name === name — the pre-divergence state. Divergence is never
- * hand-written: a snapshot uses the OLD label, a rename is declared, and the
- * fold derives the column.
+ * column_name === name — the pre-divergence state. Divergence is stated, not
+ * derived: a snapshot uses the OLD name, and current declares `column` to
+ * keep the storage put.
  *
  * ContentTypeRawSchema requires fields wrapped in tabs (>=1 tab) — the parser
  * flattens them back out, but the raw input must go through a tab wrapper.

@@ -6,28 +6,10 @@ import type { SchemaRegistry } from '../parser/validate.js'
 // content item, with each live version applied as a projection at the API edge.
 // This module computes what each live version exposes and which column backs it.
 //
-// A field has a public LABEL (`ParsedField.name`) and a storage KEY
-// (`db_column.column_name`). They are identical for every schema the parser
-// currently produces; a rename makes them diverge, and the fold in fold.ts is
-// what recovers the column from a label.
-
-/** `schemas/versions/pending.json` — HAND-WRITTEN. Declarations since the last cut. */
-export type PendingChanges = {
-  /** `from`/`to` are LABELS as they appear in the schema files, never columns. */
-  renames: Array<{ type: string; from: string; to: string }>
-  /** `"<type>.<label>"` — confirms a removal is intentional, not an undeclared rename. */
-  drops: string[]
-  /** `"<type>.<column_name>"` → the value served when a retained column is null. */
-  fallbacks: Record<string, unknown>
-}
-
-/** `schemas/versions/history.json` — MACHINE-WRITTEN by `version:cut`. Append-only, never pruned. */
-export type VersionHistory = {
-  /** `after` names the version this rename followed, e.g. 'v1'. */
-  renames: Array<{ after: string; type: string; from: string; to: string }>
-  drops: Array<{ after: string; field: string }>
-  fallbacks: Record<string, unknown>
-}
+// A field has a public name (`ParsedField.name`) and a storage column
+// (`db_column.column_name`). They are identical unless the schema SAYS
+// otherwise: a field declares `column` to keep its storage put while its name
+// changes. Nothing is derived, so nothing needs recovering.
 
 /** A frozen snapshot, parsed. */
 export type VersionSnapshot = {

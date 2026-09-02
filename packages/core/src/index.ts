@@ -119,8 +119,6 @@ export type {
 } from './programmatic/defineProgrammaticField.js'
 
 export type {
-  PendingChanges,
-  VersionHistory,
   VersionSnapshot,
   VersionProjection,
   VersionModel,
