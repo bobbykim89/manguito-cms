@@ -7,18 +7,39 @@ import { isColumnBacked } from '../registry/columns.js'
 
 // ─── Shared helpers ─────────────────────────────────────────────────────────
 
-/** Every content and taxonomy type in a registry, as [name, fields] pairs. */
-function typeEntries(registry: SchemaRegistry): Array<[string, ParsedField[]]> {
-  return [
-    ...Object.entries(registry.content_types),
-    ...Object.entries(registry.taxonomy_types),
-  ].map(([name, type]) => [name, type.fields])
+/**
+ * Which of a registry's type maps to read. Defaults to the two that back
+ * `VersionProjection` — content and taxonomy. Paragraph types are read
+ * separately, and only by the completeness check's paragraph arm below: they
+ * are deliberately excluded from projections (see that arm's comment), so
+ * every OTHER check in this file must keep reading only the structural two —
+ * passing kinds explicitly, rather than silently widening every caller, is
+ * what keeps that boundary from eroding by accident.
+ */
+type TypeKind = 'content_types' | 'taxonomy_types' | 'paragraph_types'
+const STRUCTURAL_KINDS: TypeKind[] = ['content_types', 'taxonomy_types']
+
+/** Every type in the given map(s) of a registry, as [name, fields] pairs. */
+function typeEntries(
+  registry: SchemaRegistry,
+  kinds: TypeKind[] = STRUCTURAL_KINDS
+): Array<[string, ParsedField[]]> {
+  const out: Array<[string, ParsedField[]]> = []
+  for (const kind of kinds) {
+    for (const [name, type] of Object.entries(registry[kind])) {
+      out.push([name, type.fields])
+    }
+  }
+  return out
 }
 
 /** Per type, its column-backed fields keyed by column. Tombstones included — they hold a real column. */
-function fieldsByColumn(registry: SchemaRegistry): Map<string, Map<string, ParsedField>> {
+function fieldsByColumn(
+  registry: SchemaRegistry,
+  kinds: TypeKind[] = STRUCTURAL_KINDS
+): Map<string, Map<string, ParsedField>> {
   const out = new Map<string, Map<string, ParsedField>>()
-  for (const [typeName, fields] of typeEntries(registry)) {
+  for (const [typeName, fields] of typeEntries(registry, kinds)) {
     const byColumn = new Map<string, ParsedField>()
     for (const f of fields) {
       if (!isColumnBacked(f)) continue
@@ -48,8 +69,9 @@ function checkUnionCompleteness(input: {
   union: SchemaRegistry
   projections: Record<string, VersionProjection>
   currentVersion: string
+  snapshots: VersionSnapshot[]
 }): ParseError[] {
-  const { union, projections, currentVersion } = input
+  const { union, projections, currentVersion, snapshots } = input
   const errors: ParseError[] = []
   const unionColumns = fieldsByColumn(union)
 
@@ -87,6 +109,63 @@ function checkUnionCompleteness(input: {
             `"column": "${f.column_name}" to the field that replaced it, or add a field ` +
             `{ "name": "${f.exposed_as}", "removed": true } to retain the column while ${version} ` +
             `is live.`,
+        })
+      }
+    }
+  }
+
+  // ─── Paragraph arm ─────────────────────────────────────────────────────
+  //
+  // Paragraph types stay out of `VersionProjection` on purpose — a paragraph
+  // row is a polymorphic child, and whether it belongs in the versioned API
+  // contract is a genuinely undesigned question for a later sub-project. That
+  // is why this arm cannot walk `projections` the way the loop above does:
+  // there is nothing there to walk. So it compares each snapshot's
+  // `paragraph_types` directly against the union's (`=== current`'s) —
+  // registry to registry — the way the retired `checkUnretainableLiveSurface`
+  // did, bypassing projections entirely.
+  //
+  // Column retention is not undesigned, though: a live snapshot's paragraph
+  // type still has column-backed fields, and if current drops one without a
+  // tombstone, db codegen drops a column that snapshot's paragraph rows still
+  // read. That is exactly the completeness gap this arm closes.
+  const paragraphColumns = fieldsByColumn(union, ['paragraph_types'])
+
+  for (const snap of snapshots) {
+    for (const [typeName, fields] of typeEntries(snap.registry, ['paragraph_types'])) {
+      const columns = paragraphColumns.get(typeName)
+
+      if (columns === undefined) {
+        // Whole type gone, reported once — same shape as the structural arm.
+        errors.push({
+          file: `schemas/versions/${snap.version}`,
+          code: 'VERSION_COLUMN_MISSING',
+          message:
+            `Live version ${snap.version} exposes paragraph type "${typeName}", which the current ` +
+            `schema no longer defines. Every column a live version serves must still exist. Keep ` +
+            `"${typeName}" in the current schema with its fields marked "removed": true, or retire ` +
+            `${snap.version} by deleting schemas/versions/${snap.version}.`,
+        })
+        continue
+      }
+
+      for (const f of fields) {
+        // Only column-backed fields can be retained at all — a paragraph
+        // type's own `paragraph` or many-to-many field has no column, and a
+        // field the snapshot itself already tombstoned exposes nothing to
+        // retain.
+        if (!isColumnBacked(f) || f.removed === true) continue
+        const column = f.db_column!.column_name
+        if (columns.has(column)) continue
+
+        errors.push({
+          file: `schemas/versions/${snap.version}`,
+          code: 'VERSION_COLUMN_MISSING',
+          message:
+            `Live version ${snap.version} exposes column "${column}" on paragraph type "${typeName}" ` +
+            `(as "${f.name}"), which the current schema neither exposes nor retains. Either add ` +
+            `"column": "${column}" to the field that replaced it, or add a field ` +
+            `{ "name": "${f.name}", "removed": true } to retain the column while ${snap.version} is live.`,
         })
       }
     }
