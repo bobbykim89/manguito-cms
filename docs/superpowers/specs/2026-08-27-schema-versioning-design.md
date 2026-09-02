@@ -1,7 +1,7 @@
 # Schema Versioning with Multi-Version API Routes — Design
 
 **Date:** 2026-08-27
-**Status:** Approved, ready for implementation planning
+**Status:** Approved. Stages 1 and 1.5 shipped. Its **rename mechanism** (`pending.json`, `history.json`, the fold over rename declarations) is **superseded** by [the declarative version model](2026-09-02-declarative-version-model-design.md); everything else — versioning the contract not the data, snapshot-presence as the truth, resolve-to-latest with deprecation headers — stands.
 **Scope:** Add versioned public REST routes (`/api/v1/*`) driven by frozen schema snapshots, so consumers pinned to an older contract keep working after a breaking schema change. Public read surface only; the admin surface and admin panel are unchanged.
 
 ## Problem

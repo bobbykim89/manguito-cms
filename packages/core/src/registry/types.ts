@@ -89,6 +89,18 @@ export type ParsedField = {
   // DB codegen checks field_type === 'paragraph' and skips column creation.
   db_column: DbColumn | null
   ui_component: UiComponent
+  /**
+   * Tombstone: this version retains the column but does not expose it.
+   * `true` or ABSENT — never `false`. An ordinary field must parse to exactly
+   * the object it parsed to before versioning existed.
+   */
+  removed?: true
+  /**
+   * Value served in place of null for a retained column. Declared on the
+   * tombstone in the current schema, but consumed by the OLDER versions'
+   * projections — they are the ones still exposing the column.
+   */
+  fallback?: unknown
 }
 
 // ─── System Field ─────────────────────────────────────────────────────────────

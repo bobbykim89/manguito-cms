@@ -2,15 +2,24 @@ import { parseSchema } from '../../parser/parseSchema'
 import { buildSchemaRegistry } from '../../parser/validate'
 import type { ParsedSchema } from '../../parser/parseSchema'
 import type { ParsedRoutes, ParsedRoles, SchemaRegistry } from '../../parser/validate'
-import type { PendingChanges, VersionHistory } from '../types'
 
 const EMPTY_ROUTES: ParsedRoutes = { base_paths: [] }
 const EMPTY_ROLES: ParsedRoles = { roles: [], valid_permissions: [] }
 
-export const EMPTY_HISTORY: VersionHistory = { renames: [], drops: [], fallbacks: {} }
-export const EMPTY_PENDING: PendingChanges = { renames: [], drops: [], fallbacks: {} }
-
-export type FieldSpec = { name: string; type?: string; required?: boolean; ref?: string; rel?: string }
+export type FieldSpec = {
+  name: string
+  type?: string
+  required?: boolean
+  ref?: string
+  rel?: string
+  // ─── Version declarations, passed straight through to the raw field ───────
+  // Divergence between a field's name and its column is now DECLARED, so a
+  // fixture states it the same way a schema author would. Nothing is
+  // hand-forged onto a ParsedField: it still goes through parseSchema.
+  column?: string
+  removed?: boolean
+  fallback?: unknown
+}
 
 /**
  * Builds the raw field object parseSchema expects, from a FieldSpec.
@@ -19,6 +28,11 @@ export type FieldSpec = { name: string; type?: string; required?: boolean; ref?:
  */
 function toRawField(f: FieldSpec) {
   const required = f.required ?? false
+  const declarations = {
+    ...(f.column !== undefined && { column: f.column }),
+    ...(f.removed !== undefined && { removed: f.removed }),
+    ...(f.fallback !== undefined && { fallback: f.fallback }),
+  }
   if (f.type === 'paragraph') {
     return {
       name: f.name,
@@ -27,6 +41,7 @@ function toRawField(f: FieldSpec) {
       ref: f.ref,
       rel: f.rel ?? 'one-to-many',
       required,
+      ...declarations,
     }
   }
   return {
@@ -34,15 +49,16 @@ function toRawField(f: FieldSpec) {
     label: f.name,
     type: f.type ?? 'text/plain',
     required,
+    ...declarations,
   }
 }
 
 /**
  * A content type whose fields are plain text unless `type` says otherwise.
  * Goes through parseSchema, so every field gets a real db_column with
- * column_name === name — the pre-divergence state. Divergence is never
- * hand-written: a snapshot uses the OLD label, a rename is declared, and the
- * fold derives the column.
+ * column_name === name — the pre-divergence state. Divergence is stated, not
+ * derived: a snapshot uses the OLD name, and current declares `column` to
+ * keep the storage put.
  *
  * ContentTypeRawSchema requires fields wrapped in tabs (>=1 tab) — the parser
  * flattens them back out, but the raw input must go through a tab wrapper.

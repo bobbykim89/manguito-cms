@@ -6,28 +6,10 @@ import type { SchemaRegistry } from '../parser/validate.js'
 // content item, with each live version applied as a projection at the API edge.
 // This module computes what each live version exposes and which column backs it.
 //
-// A field has a public LABEL (`ParsedField.name`) and a storage KEY
-// (`db_column.column_name`). They are identical for every schema the parser
-// currently produces; a rename makes them diverge, and the fold in fold.ts is
-// what recovers the column from a label.
-
-/** `schemas/versions/pending.json` — HAND-WRITTEN. Declarations since the last cut. */
-export type PendingChanges = {
-  /** `from`/`to` are LABELS as they appear in the schema files, never columns. */
-  renames: Array<{ type: string; from: string; to: string }>
-  /** `"<type>.<label>"` — confirms a removal is intentional, not an undeclared rename. */
-  drops: string[]
-  /** `"<type>.<column_name>"` → the value served when a retained column is null. */
-  fallbacks: Record<string, unknown>
-}
-
-/** `schemas/versions/history.json` — MACHINE-WRITTEN by `version:cut`. Append-only, never pruned. */
-export type VersionHistory = {
-  /** `after` names the version this rename followed, e.g. 'v1'. */
-  renames: Array<{ after: string; type: string; from: string; to: string }>
-  drops: Array<{ after: string; field: string }>
-  fallbacks: Record<string, unknown>
-}
+// A field has a public name (`ParsedField.name`) and a storage column
+// (`db_column.column_name`). They are identical unless the schema SAYS
+// otherwise: a field declares `column` to keep its storage put while its name
+// changes. Nothing is derived, so nothing needs recovering.
 
 /** A frozen snapshot, parsed. */
 export type VersionSnapshot = {
@@ -49,17 +31,23 @@ export type VersionModel = {
   /** Oldest first, including current. */
   live: string[]
   /**
-   * Every live version's fields merged; feeds db codegen and drift detection.
+   * Every column any live version needs, keyed by column — which is the
+   * CURRENT registry itself, `=== current` by reference.
    *
-   * LIMITATION: retention covers columns inside content and taxonomy types
-   * that the CURRENT schema still defines. A type a live version exposes but
-   * current deleted is not carried, and paragraph types are passed through
-   * untouched — so a paragraph type's own column removed from current is not
-   * retained either, and a declared rename of a paragraph type's own field is
-   * a no-op. Whether paragraph tables take part in versioning at all is a
-   * design question the spec left open, settled in 2b/2e. Until then a project
-   * in one of those shapes is REFUSED with `VERSION_RETENTION_UNSUPPORTED`
-   * rather than handed a union that quietly omits live storage.
+   * Retention is stated (a tombstone), not derived by merging snapshots, so
+   * there is nothing to merge: a column an older live version still serves is
+   * in current as a tombstone, or `VERSION_COLUMN_MISSING` rejects the model.
+   * That also removes the derived model's retention gaps — a type current
+   * deleted, and a paragraph type's own column — because the author is now
+   * *required* to keep them rather than the model trying to reconstruct them.
+   *
+   * Feeds db codegen and drift detection. A tombstone appears here as an
+   * ordinary nullable column; consumers that render or expose fields must skip
+   * `removed` fields. Core's own projections already do this. The api and
+   * admin do not yet — that exclusion is a deferred obligation on whichever
+   * later sub-project first makes a tombstone reachable through them (see
+   * docs/superpowers/specs/2026-09-02-declarative-version-model-design.md,
+   * "Cross-package consequences"), not something this branch implements.
    */
   union: SchemaRegistry
   /** Keyed by version name; includes current (an identity projection). */
