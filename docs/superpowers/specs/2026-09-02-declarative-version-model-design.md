@@ -65,7 +65,7 @@ One column, two labels, no data movement. A **shift** is two independent facts â
 
 **Union registry** = the current schema's fields, tombstones included. No snapshot merging. It stays an ordinary `SchemaRegistry`, feeding db codegen and drift detection.
 
-Because retention is now stated rather than derived, 2a's paragraph-type and deleted-type retention gaps **disappear** rather than needing to be made loud.
+Because retention is now stated rather than derived, the deleted-type retention gap closes outright â€” `VERSION_COLUMN_MISSING` names the missing type and tells the author to keep it with tombstones. The paragraph-type gap does not close on its own: paragraph types stay outside `VersionProjection` by design, so stating retention only makes that case *checkable*, not closed, and each check that covers it reaches into `paragraph_types` directly instead of reading a projection.
 
 **Projections** = for each live version, read that version's own schema files and map each field's declared column to its label. A tombstone is excluded from the version that declares it. No computation spans versions.
 

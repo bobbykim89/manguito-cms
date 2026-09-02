@@ -53,47 +53,39 @@ _Avoid_: catalog, manifest, index
 
 ### Versioning
 
-> **This glossary describes the version model as currently implemented** in `packages/core/src/versions/`, which derives a field's column by folding a rename history. That mechanism is superseded by the [declarative version model](../../docs/superpowers/specs/2026-09-02-declarative-version-model-design.md), where a field *states* its column. Until that lands, the terms below are accurate; afterwards *pending.json / history.json* and *declared drop* are retired and *tombstone* and *declared column* replace them.
-
 A content field has a public **label** (`ParsedField.name`) and a storage **column** (`db_column.column_name`). They are identical for every schema the parser produces on its own; schema versioning is what lets them diverge, by renaming a label while leaving the column untouched.
 
+**Declared column**:
+`column` on a field: its storage column, defaulting to `name`. Renaming a field means changing `name` and pinning `column`; the data never moves.
+_Avoid_: storage key, db name
+
 **Live version**:
-A version currently served — every cut snapshot under `schemas/versions/vN/` plus the current working schema. The current version is always live; its projection is the identity only when no rename applies to it — a `pending.json` rename still in effect between cuts means even the current version's columns diverge from its labels.
+A version currently served — every cut snapshot under `schemas/versions/vN/` plus the current working schema. The current version is always live; its projection is the identity over the union whenever no field declares a `column`.
 _Avoid_: active version, supported version
 
 **Cut**:
-Freezing the current schema as a named version. `version:cut` snapshots the schema files into `versions/vN/`, appends `pending.json`'s declarations to `history.json` tagged with the **highest snapshot that existed before this cut** (`v(N-1)`, or `v0` when cutting the first version), and clears `pending.json`. The tag means *"in effect after that version was frozen"*, which is what `renameWindowsBefore` reads: a rename that shaped `vN`'s labels must apply when folding `vN`'s labels back to columns, so its tag has to be **below** `N`. Tagging it `vN` would make the fold skip it and resolve `vN`'s column to the new label — wrong. The workflow is cut first, then break things. The workflow is cut first, then break things.
+Freezing the current schema as a named version. `version:cut` copies the schema folders into `versions/vN/` and bumps the current version. There is **no sealing step**: nothing is appended anywhere, because renames and retention live on the fields themselves, not on a record of the cut.
 _Avoid_: tag, release, freeze
 
 **Snapshot**:
-A frozen copy of one past version's schema files, stored under `versions/vN/` and never edited after being cut. Read using the current schema's `config.folders`, never hardcoded folder names, so a snapshot cut before a folder rename still loads correctly. Retirement deletes the directory outright — the version's renames still stand in `history.json`, which is never pruned.
+A frozen copy of one past version's schema files, stored under `versions/vN/` and never edited after being cut. Read using the current schema's `config.folders`, never hardcoded folder names, so a snapshot cut before a folder rename still loads correctly. Retirement deletes the directory outright, and the author deletes the matching tombstones — which `ORPHANED_TOMBSTONE` requires. Nothing is "never pruned" any more.
 _Avoid_: frozen version, archive
 
-**pending.json / history.json**:
-The two declaration files — plus one snapshot directory per version for the frozen schema files themselves (see **Snapshot**) — distinguished by who writes them. `pending.json` is hand-written and carries three keys covering changes since the last cut: `renames`, `drops` (see **Declared drop**), and `fallbacks` (see **Fallback**). `history.json` is machine-written by `version:cut`, append-only, and **never pruned** — a field's column is recovered by folding over its renames, so retiring a version must not remove the ones it recorded. A field renamed during a since-retired version's life still needs that entry to resolve its column.
-_Avoid_: changes file, changelog
-
-**Declared drop**:
-Confirmation, keyed `"<type>.<label>"`, that a field's disappearance was an intentional removal rather than an undeclared rename — the label is the one the `AMBIGUOUS_RENAME` error names. Lives in `pending.json`'s `drops` array before a cut; `version:cut` carries it into `history.json`'s `drops`, each entry there tagged with the version it was cut in.
-_Avoid_: deletion, removal flag
+**Tombstone**:
+A field marked `removed: true`. Its column is retained for older live versions and this version does not expose it. Included in db codegen, excluded from projections, the api and the admin panel.
+_Avoid_: soft delete, retained field
 
 **Fallback**:
-The value served in place of null for a retained column, declared in `pending.json`'s or `history.json`'s `fallbacks` map and keyed `"<type>.<column_name>"` — by column, not label, because a field that was renamed and later dropped has no single unambiguous label to key by.
+The value served in place of the real one for a tombstoned column, for versions that no longer write it. Declared on current's tombstone and consumed by the older live versions' projections that still read that column, keyed by column rather than label.
 _Avoid_: default value, null replacement
 
 **Union registry**:
-An ordinary `SchemaRegistry` — not a distinct type — holding every live version's fields merged and keyed by column. Feeds db codegen and drift detection. Differs from a plain merge in two ways: a column the current schema no longer exposes is retained and forced nullable, since rows created after the drop cannot populate it; and a field current still exposes has its `db_column.column_name` corrected to its real column whenever a live or historical rename touches it — current's own label is never assumed to already be the column. Every map on it agrees: `schemas` holds the same objects as `content_types` and `taxonomy_types`, so reading a type either way shows the same folded and retained columns.
-
-Retention has a boundary: it covers columns inside content and taxonomy types that the current schema **still defines**. A type a live version exposes but current deleted is not carried, and paragraph types are passed through untouched — a paragraph type's own column removed from current is not retained, and a declared rename of a paragraph type's own field is a no-op. Whether paragraph tables take part in versioning at all is left to 2b/2e; until then, a project in one of those shapes is refused with `VERSION_RETENTION_UNSUPPORTED` rather than handed a union that silently omits live storage.
+The current registry itself — `=== current` by reference, tombstones included. No merging, no column correction, no retention boundary: a field's `db_column.column_name` is exactly what it declares. Feeds db codegen and drift detection.
 _Avoid_: merged registry, combined schema
 
 **Projection**:
-What one live version exposes: per type, each column and the label that version exposes it under, plus any fallback. The current version's projection is the identity only when no rename applies — the zero-config case, which is what lets the API layer skip a special case for an unversioned project. A `pending.json` rename still in effect between cuts makes even the current version's projection diverge from identity.
+A read of one live version's own schema files: per type, each column and the label that version exposes it under, plus any fallback. The current version's projection is the identity over the union whenever no field declares a `column` — the zero-config case, which is what lets the API layer skip a special case for an unversioned project.
 _Avoid_: view, mapping
-
-**Retained column**:
-A column present in the union registry but absent from the current schema, kept because an older live version still exposes it under some label. Dropped from the union only when the last version referencing it retires.
-_Avoid_: legacy column, orphan column
 
 ### Routing and identity
 
