@@ -13,7 +13,7 @@ describe('formatSchemaChange', () => {
 
   it('says plainly when nothing changed', () => {
     const out = formatSchemaChange({ ...BASE, identical: true })
-    expect(out.toLowerCase()).toContain('no changes')
+    expect(out.toLowerCase()).toContain('no column added, renamed, tombstoned or restored')
   })
 
   it('renders each of the four kinds with its own marker', () => {

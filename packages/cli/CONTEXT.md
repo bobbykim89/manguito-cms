@@ -35,7 +35,7 @@ Compares the highest-numbered snapshot against the working schema and prints wha
 _Avoid_: compare, changelog
 
 **version:cut**:
-Freezes the working schema as a new version: copies the four schema type folders into `schemas/versions/vN/`. `roles.json` and `routes.json` are excluded, since they live at the schema root rather than in a type folder — core assembles every snapshot with *current's* roles and routes because neither is versioned. Refuses when nothing has changed since the last cut; otherwise prints the change report and what the new live set commits you to, then confirms before writing to a `.vN.tmp` staging directory and doing one atomic rename into place, so a partial snapshot is impossible.
+Freezes the working schema as a new version: copies the four schema type folders into `schemas/versions/vN/`. `roles.json` and `routes.json` are excluded, since they live at the schema root rather than in a type folder — core assembles every snapshot with *current's* roles and routes because neither is versioned. Refuses when no column was added, renamed, tombstoned or restored since the last cut — a change confined to paragraph, programmatic, many-to-many or enum definitions needs no new version, since none of them appear in a version's served contract; otherwise prints the change report and what the new live set commits you to, then confirms before writing to a `.vN.tmp` staging directory and doing one atomic rename into place, so a partial snapshot is impossible.
 _Avoid_: freeze (as command name), tag, release
 
 **version:retire**:

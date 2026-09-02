@@ -30,7 +30,7 @@ export function formatSchemaChange(change: SchemaChange): string {
       : `Working schema vs ${change.from} (highest snapshot) — would become ${change.to}`
 
   if (change.identical) {
-    return `${header}\n\nNo changes.`
+    return `${header}\n\nNo column added, renamed, tombstoned or restored.`
   }
 
   const blocks = change.types.map((type) => {

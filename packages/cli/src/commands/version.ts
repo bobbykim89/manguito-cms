@@ -145,7 +145,9 @@ export async function runVersionDiff(
   process.stdout.write(`${formatSchemaChange(change)}\n`)
 
   if (change.identical) {
-    process.stdout.write(`\nNothing to cut — ${ctx.model.current} would expose the same contract.\n`)
+    process.stdout.write(
+      `\nNothing to cut — no column was added, renamed, tombstoned or restored, so ${ctx.model.current} would expose the same contract.\n`
+    )
     return
   }
   printSuccess(`Cutting now would create ${ctx.schema.base_path}/versions/${ctx.model.current}/`)
@@ -166,8 +168,8 @@ export async function runVersionCut(
 
   if (change.identical) {
     printGuidedError(
-      `Nothing has changed since ${from?.version ?? 'the last cut'} — cutting ${version} would freeze an identical contract.`,
-      'A live version commits you to retaining every column it exposes. Change the schema first, or run `manguito version:retire <version>` if you meant to shrink the live set.'
+      `No column was added, renamed, tombstoned or restored since ${from?.version ?? 'the last cut'} — cutting ${version} would freeze an identical contract.`,
+      'Changes to paragraph, programmatic, many-to-many and enum definitions are not versioned and need no new version. A live version commits you to retaining every column it exposes, so cut only when a column actually changed — or run `manguito version:retire <version>` if you meant to shrink the live set.'
     )
     process.exit(1)
   }
