@@ -3,15 +3,7 @@ import type { ParsedField } from '../registry/types.js'
 import type { ParsedSchema } from '../parser/parseSchema.js'
 import type { PendingChanges, VersionHistory, VersionSnapshot } from './types.js'
 import { columnOf } from './fold.js'
-
-// Only column-backed fields participate. Paragraph fields have no column, and
-// many-to-many references have none either (the junction table owns the
-// association) — both keep the label as their identity.
-// Exported: Task 4's projections use the same predicate and must not redeclare it.
-export function isColumnBacked(field: ParsedField): boolean {
-  const col = field.db_column
-  return col !== null && col.column_name !== '' && !col.junction
-}
+import { isColumnBacked } from '../registry/columns.js'
 
 /**
  * Unions one type map (content_types or taxonomy_types) in place of a plain

@@ -3,7 +3,7 @@ import type { SchemaRegistry } from '../parser/validate.js'
 import type { ParsedField } from '../registry/types.js'
 import type { PendingChanges, VersionHistory, VersionProjection, VersionSnapshot } from './types.js'
 import { columnOf } from './fold.js'
-import { isColumnBacked } from './union.js'
+import { isColumnBacked } from '../registry/columns.js'
 
 // ─── Shared lookups ─────────────────────────────────────────────────────────
 

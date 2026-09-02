@@ -1,7 +1,7 @@
 import type { SchemaRegistry } from '../parser/validate.js'
 import type { PendingChanges, VersionHistory, VersionProjection, VersionSnapshot } from './types.js'
 import { columnOf } from './fold.js'
-import { isColumnBacked } from './union.js'
+import { isColumnBacked } from '../registry/columns.js'
 
 // What each live version exposes: per type, each column and the label THAT
 // version exposes it under. The current version's projection is the identity
