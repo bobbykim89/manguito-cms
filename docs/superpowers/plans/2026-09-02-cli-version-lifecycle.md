@@ -1119,7 +1119,12 @@ The sandbox app is a real project with real schemas, and this is the first end-t
 
 ```bash
 pnpm --filter @bobbykim/manguito-cms-core build && pnpm --filter @bobbykim/manguito-cms-cli build
-cd apps/sandbox && node ../../packages/cli/dist/index.js version:diff
+cd apps/sandbox && node ../../packages/cli/dist/index.js version:diff --env .env
+```
+
+`--env .env` is required, not optional: the sandbox's `manguito.config.ts` calls `createPostgresAdapter()` at module scope, so `resolveConfig` cannot import it without `DB_URL`. Every CLI command carries the same `--env` option for this reason — `validate` included.
+
+```bash
 ```
 
 Expected: the sandbox has no `schemas/versions/`, so `from` is null — the report says nothing has been cut yet, `v1` would be the first version, every type is `(new type)`, and the final line names `schemas/versions/v1/`. Paste the output into your report.
@@ -1381,10 +1386,10 @@ Run: `pnpm --filter @bobbykim/manguito-cms-cli lint` and `build` — clean.
 ```bash
 pnpm --filter @bobbykim/manguito-cms-cli build
 cd apps/sandbox
-node ../../packages/cli/dist/index.js version:cut --yes
+node ../../packages/cli/dist/index.js version:cut --env .env --yes
 ls schemas/versions/v1
-node ../../packages/cli/dist/index.js version:diff
-node ../../packages/cli/dist/index.js version:cut --yes   # must now refuse: identical
+node ../../packages/cli/dist/index.js version:diff --env .env
+node ../../packages/cli/dist/index.js version:cut --env .env --yes   # must now refuse: identical
 rm -rf schemas/versions                                    # leave the sandbox as you found it
 ```
 
@@ -1733,8 +1738,8 @@ Run: `pnpm --filter @bobbykim/manguito-cms-cli lint` and `build` — clean.
 ```bash
 pnpm --filter @bobbykim/manguito-cms-cli build
 cd apps/sandbox
-node ../../packages/cli/dist/index.js version:cut --yes    # creates v1, working schema becomes v2
-node ../../packages/cli/dist/index.js version:retire v1     # must REFUSE — v1 is the highest
+node ../../packages/cli/dist/index.js version:cut --env .env --yes    # creates v1, working schema becomes v2
+node ../../packages/cli/dist/index.js version:retire v1 --env .env     # must REFUSE — v1 is the highest
 rm -rf schemas/versions
 ```
 
