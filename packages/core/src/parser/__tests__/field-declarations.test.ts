@@ -74,7 +74,7 @@ describe('field declarations — removed (tombstone)', () => {
     expect(tombstone.db_column!.column_name).toBe('blog_desc')
   })
 
-  it('forces a tombstone nullable even when the field was authored required', () => {
+  it('forces a tombstone nullable even on boolean, whose column is otherwise NOT NULL', () => {
     // Rows created after the removal cannot populate the column, so NOT NULL
     // would be unsatisfiable. `required: true` here is rejected by Task 3; this
     // test pins the nullability rule independently of that check, using a
@@ -136,5 +136,108 @@ describe('field declarations — absence is invisible', () => {
       'schemas/content-types/blog.json'
     )
     expect(result.ok).toBe(false)
+  })
+})
+
+// Reuses contentType() from the top of this file.
+function parseErrors(fields: unknown[]): Array<{ code: string; message: string }> {
+  const result = parseSchema(contentType(fields), 'content-type', 'schemas/content-types/blog.json')
+  if (result.ok) throw new Error('expected parse to fail')
+  return result.errors.map((e) => ({ code: e.code, message: e.message }))
+}
+
+describe('field declarations — misuse is rejected', () => {
+  it('rejects "column" on a paragraph field, which has no column at all', () => {
+    const errors = parseErrors([
+      {
+        name: 'cards', label: 'Cards', type: 'paragraph',
+        ref: 'paragraph--photo_card', rel: 'one-to-many', required: false,
+        column: 'old_cards',
+      },
+    ])
+    expect(errors.map((e) => e.code)).toContain('UNRENAMEABLE_FIELD_KIND')
+  })
+
+  it('rejects "removed" on a many-to-many reference, whose junction table owns the association', () => {
+    const errors = parseErrors([
+      {
+        name: 'tags', label: 'Tags', type: 'reference',
+        target: 'taxonomy--tag', rel: 'many-to-many', required: false,
+        removed: true,
+      },
+    ])
+    expect(errors.map((e) => e.code)).toContain('UNRENAMEABLE_FIELD_KIND')
+  })
+
+  it('accepts "column" on a one-to-one reference, which does have an FK column', () => {
+    // The rejection above must be about having no column, not about being a
+    // reference. Without this test the check could reject all references and
+    // still look correct.
+    const type = parseOk([
+      {
+        name: 'author', label: 'Author', type: 'reference',
+        target: 'content--person', rel: 'one-to-one', required: false,
+        column: 'writer',
+      },
+    ])
+    expect(type.fields[0]!.db_column!.column_name).toBe('writer')
+  })
+
+  it('rejects a tombstone that is also required', () => {
+    const errors = parseErrors([
+      { name: 'blog_desc', label: 'Desc', type: 'text/rich', required: true, removed: true },
+    ])
+    const err = errors.find((e) => e.code === 'TOMBSTONE_REQUIRED')
+    expect(err).toBeDefined()
+    expect(err!.message).toContain('blog_desc')
+  })
+
+  it('rejects a fallback on a live field', () => {
+    const errors = parseErrors([
+      { name: 'title', label: 'Title', type: 'text/plain', required: false, fallback: 'x' },
+    ])
+    expect(errors.map((e) => e.code)).toContain('FALLBACK_WITHOUT_TOMBSTONE')
+  })
+
+  it('rejects two fields resolving to one column', () => {
+    const errors = parseErrors([
+      { name: 'title', label: 'Title', type: 'text/plain', required: false, column: 'blog_title' },
+      { name: 'blog_title', label: 'Old', type: 'text/plain', required: false },
+    ])
+    const err = errors.find((e) => e.code === 'DUPLICATE_COLUMN')
+    expect(err).toBeDefined()
+    // The message must name both fields and the column, or the author cannot
+    // tell which two of thirty fields collided.
+    expect(err!.message).toContain('title')
+    expect(err!.message).toContain('blog_title')
+  })
+
+  it('does not report a duplicate column for two fields with no storage column', () => {
+    // A paragraph field's `name` is not a column, so two of them cannot collide
+    // on one. Without the hasStorageColumn filter, a text field with
+    // column: 'b' and a paragraph field named 'b' would be a false positive.
+    const type = parseOk([
+      { name: 'a', label: 'A', type: 'text/plain', required: false, column: 'b' },
+      { name: 'b', label: 'B', type: 'paragraph', ref: 'paragraph--photo_card', rel: 'one-to-many', required: false },
+    ])
+    expect(type.fields).toHaveLength(2)
+  })
+
+  it('reports a duplicate column in a taxonomy type too', () => {
+    // Task 6 deletes validateModelStructure on the strength of this check
+    // covering every registry the parser can produce — content AND taxonomy.
+    const result = parseSchema(
+      {
+        name: 'taxonomy--tag', label: 'Tag', type: 'taxonomy-type',
+        fields: [
+          { name: 'title', label: 'Title', type: 'text/plain', required: false, column: 'tag_title' },
+          { name: 'tag_title', label: 'Old', type: 'text/plain', required: false },
+        ],
+      },
+      'taxonomy-type',
+      'schemas/taxonomy-types/tag.json'
+    )
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.errors.map((e) => e.code)).toContain('DUPLICATE_COLUMN')
   })
 })

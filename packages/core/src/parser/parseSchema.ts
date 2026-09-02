@@ -13,6 +13,7 @@ import {
   fieldTypeRegistry,
   machineNameToTableName,
   type AnyFieldBuilder,
+  type BuiltField,
 } from '../registry/fieldTypeRegistry'
 import { isColumnBacked } from '../registry/columns'
 
@@ -208,6 +209,103 @@ function checkDuplicateFieldNames(
   return errors
 }
 
+// Whether a raw field will end up with a storage column, decided from the raw
+// shape because this check runs before the builders do. Mirrors
+// isColumnBacked's rule at the raw level: paragraph and programmatic fields
+// have no column, and a many-to-many reference's association lives in a
+// junction table.
+function hasStorageColumn(f: RawField): boolean {
+  if (f.type === 'paragraph' || f.type === 'programmatic') return false
+  if (f.type === 'reference' && f.rel === 'many-to-many') return false
+  return true
+}
+
+// Two fields resolving to one column would have db codegen emit a single
+// column for both and the API serve one stored value under two names. The
+// duplicate-NAME check above does not catch it: the names differ, only the
+// columns collide — which is exactly what a half-finished rename looks like.
+function checkDuplicateColumns(
+  fields: RawField[],
+  sourceFile: string,
+  schemaName: string
+): ParseError[] {
+  const owner = new Map<string, string>()
+  const errors: ParseError[] = []
+
+  for (const f of fields) {
+    if (!hasStorageColumn(f)) continue
+    const column = f.column ?? f.name
+    const first = owner.get(column)
+    if (first !== undefined) {
+      errors.push({
+        file: sourceFile,
+        code: 'DUPLICATE_COLUMN',
+        message:
+          `Fields "${first}" and "${f.name}" in schema "${schemaName}" both resolve to column ` +
+          `"${column}". One column backs exactly one field. If "${f.name}" replaced "${first}", ` +
+          `delete the old field instead of keeping both; if they are genuinely different fields, ` +
+          `give one an explicit "column".`,
+      })
+      continue
+    }
+    owner.set(column, f.name)
+  }
+
+  return errors
+}
+
+// ─── Version declaration validation ─────────────────────────────────────────
+//
+// Each of these is a case where ignoring the declaration would produce a WRONG
+// contract, not merely a smaller one: a dropped `column` override puts the
+// field on the wrong column, and an unsatisfiable tombstone would emit a NOT
+// NULL column nothing can ever populate.
+function checkFieldDeclarations(
+  rawField: RawField,
+  built: BuiltField,
+  sourceFile: string,
+  schemaName: string
+): ParseError[] {
+  const errors: ParseError[] = []
+  const tombstone = rawField.removed === true
+
+  if (!isColumnBacked(built) && (rawField.column !== undefined || tombstone)) {
+    const declared = rawField.column !== undefined ? '"column"' : '"removed"'
+    errors.push({
+      file: sourceFile,
+      code: 'UNRENAMEABLE_FIELD_KIND',
+      message:
+        `Field "${rawField.name}" in "${schemaName}" declares ${declared}, but a ${rawField.type} ` +
+        `field has no storage column of its own — its name already is its identity, so there is ` +
+        `nothing to rename or retain. Remove the declaration.`,
+    })
+  }
+
+  if (tombstone && rawField.required) {
+    errors.push({
+      file: sourceFile,
+      code: 'TOMBSTONE_REQUIRED',
+      message:
+        `Field "${rawField.name}" in "${schemaName}" is marked both "removed" and "required". ` +
+        `A tombstone retains a column nothing writes any more, so a required tombstone can never ` +
+        `be satisfied. Set "required": false, or remove "removed" to bring the field back.`,
+    })
+  }
+
+  if (rawField.fallback !== undefined && !tombstone) {
+    errors.push({
+      file: sourceFile,
+      code: 'FALLBACK_WITHOUT_TOMBSTONE',
+      message:
+        `Field "${rawField.name}" in "${schemaName}" declares a "fallback" but is not marked ` +
+        `"removed": true. A fallback is the value served for rows created after a removal, so it ` +
+        `is meaningful only on a tombstone. Add "removed": true, or remove the fallback.`,
+    })
+  }
+
+  return errors
+}
+
 // ─── ParsedField construction ─────────────────────────────────────────────────
 
 type FieldResult =
@@ -239,6 +337,9 @@ function buildParsedField(
 
   const { name, label } = rawField
   const built = build(rawField, { ownerTableName })
+  const declErrors = checkFieldDeclarations(rawField, built, sourceFile, ownerTableName)
+  if (declErrors.length > 0) return { ok: false, errors: declErrors }
+
   const { validation, ui_component } = built
   // Source of truth for `required` is the builder's validation output, not the raw
   // field: every builder mirrors raw.required here except `programmatic`, which
@@ -339,7 +440,10 @@ function parseContentType(raw: unknown, sourceFile: string): ParseResult {
 
   // ── Duplicate field name check ─────────────────────────────────────────────
 
-  const dupErrors = checkDuplicateFieldNames(flatRawFields, sourceFile, v.name)
+  const dupErrors = [
+    ...checkDuplicateFieldNames(flatRawFields, sourceFile, v.name),
+    ...checkDuplicateColumns(flatRawFields, sourceFile, v.name),
+  ]
   if (dupErrors.length > 0) return { ok: false, errors: dupErrors }
 
   // ── Build parsed fields ────────────────────────────────────────────────────
@@ -405,7 +509,10 @@ function parseParagraphType(raw: unknown, sourceFile: string): ParseResult {
   }
   const v = result.data
 
-  const dupErrors = checkDuplicateFieldNames(v.fields, sourceFile, v.name)
+  const dupErrors = [
+    ...checkDuplicateFieldNames(v.fields, sourceFile, v.name),
+    ...checkDuplicateColumns(v.fields, sourceFile, v.name),
+  ]
   if (dupErrors.length > 0) return { ok: false, errors: dupErrors }
 
   const tableName = machineNameToTableName(v.name)
@@ -432,7 +539,10 @@ function parseTaxonomyType(raw: unknown, sourceFile: string): ParseResult {
   }
   const v = result.data
 
-  const dupErrors = checkDuplicateFieldNames(v.fields, sourceFile, v.name)
+  const dupErrors = [
+    ...checkDuplicateFieldNames(v.fields, sourceFile, v.name),
+    ...checkDuplicateColumns(v.fields, sourceFile, v.name),
+  ]
   if (dupErrors.length > 0) return { ok: false, errors: dupErrors }
 
   const tableName = machineNameToTableName(v.name)
