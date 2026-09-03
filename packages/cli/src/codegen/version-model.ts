@@ -20,7 +20,8 @@ export function reduceVersionModel(model: VersionModel): BakedVersionModel {
 }
 
 /**
- * Writes .manguito/version-model.ts.
+ * Writes version-model.ts into `targetDir`, beside the other generated
+ * artifacts — `build.ts` passes `dist/generated`.
  *
  * The api has no filesystem access to the schema at runtime — in Lambda the
  * schemas/ tree is not deployed — so the model is computed here and baked,
