@@ -187,6 +187,10 @@ describe('runDev', () => {
     expect(generateForms).toHaveBeenCalled()
     expect(generateNav).toHaveBeenCalled()
     expect(createCmsApp).toHaveBeenCalled()
+    // The only automated link between the version-model work and a running
+    // server: without this, createCmsApp could silently stop receiving
+    // `versions` and every test above would still pass green.
+    expect(vi.mocked(createCmsApp).mock.calls[0]![0]).toHaveProperty('versions')
     expect(createViteServer).toHaveBeenCalled()
     // fs.allow must include the project cwd so Vite can serve sibling deps
     // (e.g. @fontsource fonts) that live outside the admin package root.

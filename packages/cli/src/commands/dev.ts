@@ -40,7 +40,7 @@ import { shouldBridgeToHono } from './dev-routing.js'
 import { resolveConfig } from '../utils/config.js'
 import { resolveSchemaConfig } from '../utils/schema-config.js'
 import { connectDb } from '../utils/db.js'
-import { printGuidedError, printSuccess } from '../utils/error.js'
+import { printGuidedError, printSuccess, printValidationErrors } from '../utils/error.js'
 import { createPromptAdapter } from '../utils/prompt.js'
 import { loadProgrammaticResolvers } from '../utils/programmatic-loader.js'
 
@@ -170,12 +170,16 @@ export async function runDev(
   const schemaConfig = resolveSchemaConfig(cwd, config)
   const snapshotsResult = loadVersionSnapshots(schemaConfig, registry)
   if (!snapshotsResult.ok) {
-    printGuidedError('Version snapshot errors — run `manguito validate` for details.')
+    // `manguito validate` never loads version snapshots — it has no version
+    // function at all — so it would report success while this exits 1 with
+    // no explanation. `version:diff` is the command that actually loads
+    // snapshots and computes the model, so it is what can show these errors.
+    printValidationErrors(snapshotsResult.errors, 'Version snapshot errors', 'manguito version:diff')
     process.exit(1)
   }
   const versionModelResult = computeVersionModel({ current: registry, snapshots: snapshotsResult.value })
   if (!versionModelResult.ok) {
-    printGuidedError('Version model errors — run `manguito validate` for details.')
+    printValidationErrors(versionModelResult.errors, 'Version model errors', 'manguito version:diff')
     process.exit(1)
   }
   const versionModel = reduceVersionModel(versionModelResult.value)
@@ -374,12 +378,14 @@ async function onSchemaFileChange(args: OnSchemaFileChangeArgs): Promise<void> {
   const schemaConfig = resolveSchemaConfig(cwd, config)
   const snapshotsResult = loadVersionSnapshots(schemaConfig, registry)
   if (!snapshotsResult.ok) {
-    process.stderr.write('⚠ Version snapshot errors — changes not applied.\n')
+    printValidationErrors(snapshotsResult.errors, 'Version snapshot errors', 'manguito version:diff')
+    process.stderr.write('⚠ Changes not applied.\n')
     return
   }
   const versionModelResult = computeVersionModel({ current: registry, snapshots: snapshotsResult.value })
   if (!versionModelResult.ok) {
-    process.stderr.write('⚠ Version model errors — changes not applied.\n')
+    printValidationErrors(versionModelResult.errors, 'Version model errors', 'manguito version:diff')
+    process.stderr.write('⚠ Changes not applied.\n')
     return
   }
   const versionModel = reduceVersionModel(versionModelResult.value)
