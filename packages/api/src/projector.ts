@@ -56,6 +56,13 @@ function nestedTargets(fields: ParsedField[]): Array<{ label: string; target: st
  * Built ONCE at startup, not per request. Covers content, taxonomy and
  * paragraph types, keyed by machine name — the same key space `fieldKeyMaps`
  * uses and the same one a field's `ui_component.ref` points into.
+ *
+ * `fallbacks`, keyed the same way (type name → label → value), supplies what
+ * a retained-but-unexposed column serves in place of null on THIS version's
+ * responses — see `fallbacksFor` in versions.ts, the only caller that
+ * actually populates it. Every other caller (the unversioned/current pass,
+ * and every non-versioned use of this function) omits it, since a tombstone
+ * is never retained-and-exposed outside an older live version's projection.
  */
 export function buildProjectors(
   registry: SchemaRegistry,

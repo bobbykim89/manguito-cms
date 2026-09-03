@@ -18,6 +18,7 @@
     "test": "turbo run test --concurrency=1",
     "smoke": "pnpm --filter sandbox smoke",
     "lint": "turbo run lint",
+    "typecheck": "pnpm --filter @bobbykim/manguito-cms-api run typecheck && pnpm --filter @bobbykim/manguito-cms-cli run typecheck",
     "changeset": "changeset",
     "version": "changeset version",
     "release": "changeset publish",

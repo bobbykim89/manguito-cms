@@ -26,7 +26,8 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "dotenv -e .env.test -- vitest run",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@bobbykim/manguito-cms-admin": "workspace:*",
