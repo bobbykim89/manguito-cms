@@ -73,7 +73,14 @@ export function buildProjectors(
     for (const [typeName, type] of Object.entries(source)) {
       const map = fieldKeyMaps[typeName]
       if (!map) continue
-      projectors[typeName] = { map, nested: nestedTargets(type.fields), fallbacks: fallbacks?.[typeName] }
+      const typeFallbacks = fallbacks?.[typeName]
+      projectors[typeName] = {
+        map,
+        nested: nestedTargets(type.fields),
+        // Spread rather than assign: with exactOptionalPropertyTypes, an optional
+        // property may be ABSENT but not present-and-undefined.
+        ...(typeFallbacks !== undefined && { fallbacks: typeFallbacks }),
+      }
     }
   }
 
