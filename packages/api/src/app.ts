@@ -201,12 +201,31 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
 
   // Maps SORTABLE_FIELDS' labels to this type's storage columns, so the
   // repository can validate sort_by against columns once the route has mapped
-  // it. Identity today for every schema the parser produces — diverges only
-  // once schema versioning lands and a label's column_name differs from it.
-  const sortableColumnsFor = (typeName: string): Set<string> =>
-    new Set(
-      [...SORTABLE_FIELDS].map((label) => fieldKeyMaps[typeName]!.columnFor(label) ?? label)
-    )
+  // it. Identity for a schema where no field declares its own `column:` — but
+  // a field can already declare one (this branch's own fixtures rely on it),
+  // so this map can diverge even without schema versioning being involved.
+  //
+  // A label absent from this map is EXCLUDED, not passed through as a bogus
+  // literal: `columnFor` only returns undefined for a label this type has no
+  // field for at all (SORTABLE_FIELDS is shared across every type), or a
+  // system field (id/slug/created_at/...), which is not part of the
+  // field-key map but is still legitimately sortable — its column IS its own
+  // name. Anything else unresolved has no business in the repository's
+  // sortable-columns allow-set. Mirrors versions.ts's per-version copy of
+  // this same function exactly — kept duplicated rather than shared, since
+  // this one always reads the top-level (current-only) `fieldKeyMaps`.
+  const sortableColumnsFor = (typeName: string): Set<string> => {
+    const map = fieldKeyMaps[typeName]!
+    const type = registry.content_types[typeName] ?? registry.taxonomy_types[typeName]
+    const systemFieldNames = new Set((type?.system_fields ?? []).map((f) => f.name))
+    const out = new Set<string>()
+    for (const label of SORTABLE_FIELDS) {
+      const column = map.columnFor(label)
+      if (column !== undefined) out.add(column)
+      else if (systemFieldNames.has(label)) out.add(label)
+    }
+    return out
+  }
 
   // ── Repositories ──────────────────────────────────────────────────────────────
 
@@ -392,6 +411,16 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
   // version's routes. `not-a-version` falls through, which is what protects
   // /api/media/:id — order-independent rather than dependent on registration
   // sequence.
+  //
+  // That order-independence is specifically about a SEGMENT that merely
+  // isn't version-shaped, like 'media'. A content type whose own
+  // `default_base_path` happens to LOOK version-shaped (e.g. a base path of
+  // 'v2') is protected by registration order instead: every pass above
+  // (every live version's, plus the unversioned one) registers that type's
+  // concrete routes before this catch-all is ever added, and Hono matches in
+  // registration order — so a request for that path is already answered
+  // long before `classifyVersion` would get a chance to misread its first
+  // segment as a version number.
   if (options.versions !== undefined) {
     app.all(`${prefix}/:version/*`, async (c, next) => {
       const kind = classifyVersion(c.req.param('version'), model)

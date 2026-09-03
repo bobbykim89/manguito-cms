@@ -265,6 +265,83 @@ describe('versioned routes — integration', () => {
     expect(res.headers.get('Warning')).toBeNull()
   })
 
+  it("accepts current's own label 'title' for sort_by and rejects v1's retired label with a 400, not a 500", async () => {
+    // TWO_LIVE: v1's own label for this column is 'blog_title'; current (v3)
+    // renamed it to 'title'. 'title' is one of the 3 fixed SORTABLE_FIELDS
+    // strings, so it passes that gate on every version equally — the bug
+    // lived one step further in, where the mapped value used to fall
+    // through to the literal 'title' instead of being rejected.
+    const ownLabel = await makeApp(TWO_LIVE).request(`/api/v3/${BASE_PATH}?sort_by=title`)
+    expect(ownLabel.status).toBe(200)
+
+    // Before the fix this reached `ORDER BY "title"` against a table with no
+    // such column (v1's column is blog_title) and 500'd. It must now be
+    // rejected at the route boundary instead — never handed to SQL.
+    const retiredLabel = await makeApp(TWO_LIVE).request(`/api/v1/${BASE_PATH}?sort_by=title`)
+    expect(retiredLabel.status).toBe(400)
+    const body = await retiredLabel.json()
+    expect(body.error.code).toBe('INVALID_SORT_FIELD')
+  })
+
+  it("accepts an OLDER version's own label 'title' for sort_by and rejects current's renamed-away label", async () => {
+    // The mirror image of the test above: here v1 is the one still calling
+    // this field 'title' (its original name), and CURRENT is the one that
+    // renamed it away (to 'headline') — proving the fix works in either
+    // direction, not just for the specific column/label pairing TWO_LIVE
+    // happens to use elsewhere in this file.
+    const RENAMED_AWAY_FROM_TITLE: BakedVersionModel = {
+      current: 'v3',
+      live: ['v1', 'v3'],
+      projections: {
+        v1: {
+          version: 'v1',
+          types: { [TEST_TYPE_NAME]: { fields: [{ column_name: 'blog_title', exposed_as: 'title' }] } },
+        },
+        v3: {
+          version: 'v3',
+          types: { [TEST_TYPE_NAME]: { fields: [{ column_name: 'blog_title', exposed_as: 'headline' }] } },
+        },
+      },
+    }
+
+    const ownLabel = await makeApp(RENAMED_AWAY_FROM_TITLE).request(`/api/v1/${BASE_PATH}?sort_by=title`)
+    expect(ownLabel.status).toBe(200)
+
+    // Before the fix this reached `ORDER BY "title"` against a table whose
+    // only relevant column is blog_title and 500'd — current no longer
+    // calls this field 'title', so it must 400, not reach SQL.
+    const currentLabel = await makeApp(RENAMED_AWAY_FROM_TITLE).request(`/api/v3/${BASE_PATH}?sort_by=title`)
+    expect(currentLabel.status).toBe(400)
+    const body = await currentLabel.json()
+    expect(body.error.code).toBe('INVALID_SORT_FIELD')
+  })
+
+  it("accepts v1's own label for filter[] and rejects current's label", async () => {
+    const ownLabel = await makeApp(TWO_LIVE).request(`/api/v1/${BASE_PATH}?filter[blog_title]=Hello`)
+    expect(ownLabel.status).toBe(200)
+    const ownBody = await ownLabel.json()
+    expect(ownBody.data).toHaveLength(1)
+
+    // 'title' is not a label v1's map can resolve — must be rejected at the
+    // boundary, never passed through to the repository as a raw column name.
+    const currentLabel = await makeApp(TWO_LIVE).request(`/api/v1/${BASE_PATH}?filter[title]=Hello`)
+    expect(currentLabel.status).toBe(400)
+    const body = await currentLabel.json()
+    expect(body.error.code).toBe('INVALID_FILTER_FIELD')
+  })
+
+  it("accepts current's own label for filter[] and rejects v1's retired label", async () => {
+    const ownLabel = await makeApp(TWO_LIVE).request(`/api/v3/${BASE_PATH}?filter[title]=Hello`)
+    expect(ownLabel.status).toBe(200)
+    const ownBody = await ownLabel.json()
+    expect(ownBody.data).toHaveLength(1)
+
+    const oldLabel = await makeApp(TWO_LIVE).request(`/api/v3/${BASE_PATH}?filter[blog_title]=Hello`)
+    expect(oldLabel.status).toBe(400)
+    const body = await oldLabel.json()
+    expect(body.error.code).toBe('INVALID_FILTER_FIELD')
+  })
+
   it('behaves exactly as before when no versions option is passed', async () => {
     // The compatibility guarantee. No version routes, no headers, and the
     // unversioned path serving current's shape — byte-identical to today.

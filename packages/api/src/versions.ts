@@ -128,8 +128,26 @@ export function buildVersionSurface<Row>(input: {
   // Maps SORTABLE_FIELDS' labels to THIS version's storage columns. A rename
   // moves the column a version sorts by, so this must read the per-version
   // map above, never current's.
-  const sortableColumnsFor = (typeName: string): Set<string> =>
-    new Set([...SORTABLE_FIELDS].map((label) => fieldKeyMaps[typeName]!.columnFor(label) ?? label))
+  //
+  // A label absent from this version's map is EXCLUDED, not passed through
+  // as a bogus literal: `columnFor` only returns undefined for a label this
+  // type has no field for at all (SORTABLE_FIELDS is shared across every
+  // type), or a system field (id/slug/created_at/...), which is not part of
+  // the field-key map but is still legitimately sortable — its column IS its
+  // own name. Anything else unresolved has no business in the repository's
+  // sortable-columns allow-set.
+  const sortableColumnsFor = (typeName: string): Set<string> => {
+    const map = fieldKeyMaps[typeName]!
+    const type = registry.content_types[typeName] ?? registry.taxonomy_types[typeName]
+    const systemFieldNames = new Set((type?.system_fields ?? []).map((f) => f.name))
+    const out = new Set<string>()
+    for (const label of SORTABLE_FIELDS) {
+      const column = map.columnFor(label)
+      if (column !== undefined) out.add(column)
+      else if (systemFieldNames.has(label)) out.add(label)
+    }
+    return out
+  }
 
   const repos: Record<string, ContentRepository<Row>> = {}
   for (const [typeName, ct] of Object.entries(registry.content_types)) {

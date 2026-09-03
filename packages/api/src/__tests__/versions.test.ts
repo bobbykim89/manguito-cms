@@ -156,8 +156,10 @@ describe('buildVersionSurface', () => {
       [...calls.find((c) => c.typeName === 'content--post')!.sortableColumns].sort()
 
     expect(setFor(a.calls)).not.toEqual(setFor(b.calls))
-    // v2 sorts 'title' by the real column; v1 has no such label so it falls
-    // through to the literal, which the repository will then reject.
+    // v2 sorts 'title' by the real column; v1 has no such label (and 'title'
+    // is not a system field either), so it is simply excluded from v1's
+    // sortable set rather than admitted as a bogus literal — the public route
+    // rejects sort_by=title for v1 before it would ever reach the repository.
     expect(setFor(b.calls)).toContain('blog_title')
   })
 

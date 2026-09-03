@@ -6,6 +6,7 @@ import type {
 import type { ProgrammaticResolver } from '../programmatic/resolve.js'
 import type { Projectors } from '../projector.js'
 import { projectRow } from '../projector.js'
+import { isColumnBacked } from '../field-keys.js'
 import type { VersionedPaths } from '../paths.js'
 import {
   SORTABLE_FIELDS,
@@ -78,18 +79,48 @@ export function registerPublicContentRoutes(
     const repo = repos[typeName]
     if (!repo) continue
 
-    const relationFieldNames = new Set<string>(
-      contentType.fields
-        .filter((f) => RELATION_FIELD_TYPES.has(f.field_type))
-        .map((f) => f.name)
-    )
+    // This version's own field-key map. `projectors` is built per version by
+    // the caller (versions.ts/app.ts), so this is what lets the boundary
+    // below speak THIS version's labels rather than current's.
+    const fieldKeys = projectors[typeName]!.map
 
-    // Programmatic fields have no db column — filtering one would be a SQL
-    // error, so they're excluded from the filterable set.
+    // Relation fields worth allowing in `?include=`: a column-backed relation
+    // (single reference, image, video, file) diverges the same way an
+    // ordinary field can, so it is validated under THIS version's own label
+    // via `fieldKeys`. Paragraph and many-to-many reference fields have no
+    // column at all — they are outside the label↔column map entirely and
+    // always follow the current schema's field name, by design (see
+    // versions.ts's "nested/related content follows current's shape" note) —
+    // so their name is taken straight from the registry.
+    const relationFieldNames = new Set<string>()
+    for (const f of contentType.fields) {
+      if (!RELATION_FIELD_TYPES.has(f.field_type)) continue
+      if (isColumnBacked(f)) {
+        const label = fieldKeys.labelFor(f.db_column.column_name)
+        if (label !== undefined) relationFieldNames.add(label)
+      } else {
+        relationFieldNames.add(f.name)
+      }
+    }
+
+    // This version's own filter/sort surface: the labels THIS version
+    // exposes (`fieldKeys.labels` — column-backed fields only, so
+    // programmatic/paragraph/many-to-many fields are already excluded) plus
+    // system fields, which are identical on every version. Sourcing this from
+    // `contentType.fields` (always CURRENT) instead would reject a pinned
+    // version's own label and accept current's — a name this version's map
+    // cannot resolve, which would otherwise reach SQL unresolved.
     const filterableFieldNames = new Set<string>([
-      ...contentType.fields.filter((f) => f.field_type !== 'programmatic').map((f) => f.name),
+      ...fieldKeys.labels,
       ...contentType.system_fields.map((f) => f.name),
     ])
+    // SORTABLE_FIELDS is the same across every version; only the subset THIS
+    // version can actually resolve (its own labels, plus system fields) is
+    // safe to accept from a request. A label absent from this version's map
+    // must be rejected here, not discovered as a 500 once it reaches SQL.
+    const sortableFieldNames = new Set(
+      [...SORTABLE_FIELDS].filter((f) => filterableFieldNames.has(f))
+    )
 
     if (contentType.only_one) {
       app.get(paths.collection(basePath), async (c) => {
@@ -108,8 +139,6 @@ export function registerPublicContentRoutes(
     } else {
       registerListRoute(paths.collection(basePath), async (c) => {
         // Inbound boundary: query params speak labels; filters query storage keys.
-        const projector = projectors[typeName]!
-        const fieldKeys = projector.map
         const pagination = parsePagination(c.req.query('page'), c.req.query('per_page'))
         if (!pagination.ok) {
           return c.json(
@@ -125,13 +154,13 @@ export function registerPublicContentRoutes(
         }
 
         const sortBy = c.req.query('sort_by') ?? 'created_at'
-        if (!SORTABLE_FIELDS.has(sortBy)) {
+        if (!sortableFieldNames.has(sortBy)) {
           return c.json(
             {
               ok: false,
               error: {
                 code: 'INVALID_SORT_FIELD',
-                message: `'${sortBy}' is not sortable. Allowed: title, created_at, updated_at`,
+                message: `'${sortBy}' is not sortable. Allowed: ${[...sortableFieldNames].join(', ')}`,
               },
             },
             400
@@ -182,11 +211,16 @@ export function registerPublicContentRoutes(
           }
         }
 
-        // sortBy is a validated label (checked above); map it to its storage
-        // column before it reaches the repository. The cast is a narrow lie —
-        // core types sort_by as the label union, but the repository
-        // immediately re-validates the mapped value against sortableColumns.
-        const sortColumn = fieldKeys.columnFor(sortBy) ?? sortBy
+        // sortBy is validated above against sortableFieldNames — this
+        // version's own labels plus its (version-invariant) system fields —
+        // so it is either a label fieldKeys can resolve, or a system field
+        // name that already IS its own storage column. The cast on
+        // `sort_by` below is a narrow lie — core types it as the label
+        // union, but the repository immediately re-validates the mapped
+        // value against sortableColumns.
+        const sortColumn = fieldKeys.labels.includes(sortBy)
+          ? fieldKeys.columnFor(sortBy)!
+          : sortBy
 
         const result = await repo.findMany({
           published_only: true,
