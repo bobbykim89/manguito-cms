@@ -19,12 +19,21 @@ vi.mock('@bobbykim/manguito-cms-core', () => ({
   parseRoutes: vi.fn().mockReturnValue({ ok: true, value: [] }),
   buildSchemaRegistry: vi.fn().mockReturnValue({}),
   loadSchemaFile: vi.fn().mockReturnValue({ ok: true, value: '{}' }),
+  loadVersionSnapshots: vi.fn().mockReturnValue({ ok: true, value: [] }),
+  computeVersionModel: vi.fn().mockReturnValue({
+    ok: true,
+    value: { current: 'v1', live: ['v1'], union: {}, projections: {} },
+  }),
 }))
 vi.mock('../src/codegen/registry.js', () => ({ generateSchemaRegistry: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('../src/codegen/routes.js', () => ({ generateRoutes: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('../src/codegen/forms.js', () => ({ generateForms: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('../src/codegen/server-entries.js', () => ({ generateServerEntries: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('../src/codegen/programmatic-registry.js', () => ({ generateProgrammaticRegistry: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('../src/codegen/version-model.js', () => ({ generateVersionModel: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('../src/utils/schema-config.js', () => ({
+  resolveSchemaConfig: vi.fn().mockReturnValue({ base_path: '/fake/schemas', folders: {} }),
+}))
 vi.mock('vite', () => ({ build: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('tsup', () => ({ build: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('node:fs', async (importOriginal) => {
@@ -40,13 +49,17 @@ import {
   parseRoutes,
   buildSchemaRegistry,
   loadSchemaFile,
+  loadVersionSnapshots,
+  computeVersionModel,
 } from '@bobbykim/manguito-cms-core'
 import { generateSchemaRegistry } from '../src/codegen/registry.js'
 import { generateRoutes } from '../src/codegen/routes.js'
 import { generateForms } from '../src/codegen/forms.js'
+import { generateVersionModel } from '../src/codegen/version-model.js'
 import { build as viteBuild } from 'vite'
 import { build as tsupBuild } from 'tsup'
 import { resolveConfig } from '../src/utils/config.js'
+import { resolveSchemaConfig } from '../src/utils/schema-config.js'
 
 const FAKE_CWD = '/fake/project'
 
@@ -70,9 +83,16 @@ describe('runBuild', () => {
     vi.mocked(buildSchemaRegistry).mockReturnValue({
       content_types: {}, paragraph_types: {}, taxonomy_types: {}, enum_types: {},
     } as never)
+    vi.mocked(resolveSchemaConfig).mockReturnValue({ base_path: '/fake/schemas', folders: {} } as never)
+    vi.mocked(loadVersionSnapshots).mockReturnValue({ ok: true, value: [] } as never)
+    vi.mocked(computeVersionModel).mockReturnValue({
+      ok: true,
+      value: { current: 'v1', live: ['v1'], union: {}, projections: {} },
+    } as never)
     vi.mocked(generateSchemaRegistry).mockResolvedValue(undefined)
     vi.mocked(generateRoutes).mockResolvedValue(undefined)
     vi.mocked(generateForms).mockResolvedValue(undefined)
+    vi.mocked(generateVersionModel).mockResolvedValue(undefined)
     vi.mocked(viteBuild).mockResolvedValue({} as never)
     vi.mocked(tsupBuild).mockResolvedValue([] as never)
     vi.spyOn(process.stdout, 'write').mockImplementation(() => true)

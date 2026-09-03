@@ -15,6 +15,8 @@ export type { NodeServerOptions } from './server/node.js'
 export { createProgrammaticResolver, validateResolverBindings, resolverKey } from './programmatic/resolve.js'
 export type { ResolverMap, ProgrammaticResolver } from './programmatic/resolve.js'
 
+export type { BakedVersionModel } from './versions.js'
+
 // ─── User-facing config factory ───────────────────────────────────────────────
 
 export type APIAdapterOptions = {
