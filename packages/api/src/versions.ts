@@ -1,4 +1,8 @@
-import type { VersionProjection } from '@bobbykim/manguito-cms-core'
+import type { ContentRepository, ParsedField, SchemaRegistry, VersionProjection } from '@bobbykim/manguito-cms-core'
+import { createFieldKeyMap, createFieldKeyMapFromProjection, type FieldKeyMap } from './field-keys.js'
+import { buildProjectors, type Projectors } from './projector.js'
+import { createVersionedPaths, type VersionedPaths } from './paths.js'
+import { SORTABLE_FIELDS } from './routes/query-params.js'
 
 // ─── The baked version model ──────────────────────────────────────────────────
 //
@@ -43,4 +47,97 @@ export function classifyVersion(segment: string, model: BakedVersionModel): Vers
   if (!VERSION_SEGMENT.test(segment)) return 'not-a-version'
   if (model.live.includes(segment)) return 'live'
   return versionNumber(segment) < versionNumber(model.current) ? 'retired' : 'unknown'
+}
+
+// ─── The version-scoped surface ────────────────────────────────────────────────
+//
+// Everything one live version needs to serve its own slice of the schema-driven
+// public API: its paths (under its own segment, or none for the unversioned
+// pass), a field-key map per type, projectors built from those maps, and one
+// repository per content/taxonomy type. Task 6 calls this once per live
+// version — plus once more for the unversioned pass — and mounts the result.
+
+/**
+ * A projection's declared fallbacks, re-keyed for `buildProjectors`: type name
+ * → exposed label → fallback value. The projection already keys fallbacks by
+ * column (`fallback` sits beside `column_name`/`exposed_as` per field); this
+ * flips them onto the label space `TypeProjector.fallbacks` and `projectRow`
+ * actually read against.
+ */
+function fallbacksFor(projection: VersionProjection): Record<string, Record<string, unknown>> {
+  const out: Record<string, Record<string, unknown>> = {}
+  for (const [typeName, type] of Object.entries(projection.types)) {
+    const perLabel: Record<string, unknown> = {}
+    for (const f of type.fields) {
+      if (f.fallback !== undefined) perLabel[f.exposed_as] = f.fallback
+    }
+    if (Object.keys(perLabel).length > 0) out[typeName] = perLabel
+  }
+  return out
+}
+
+export function buildVersionSurface<Row>(input: {
+  /** null = the unversioned pass: paths carry no version segment. */
+  version: string | null
+  /** Which projection's labels this surface serves. For the unversioned pass,
+   * the caller passes `model.current` — the working schema's own labels. */
+  projectionVersion: string
+  prefix: string
+  registry: SchemaRegistry
+  model: BakedVersionModel
+  /** Injected so this module needs no database import: it stays testable
+   * without one, and app.ts keeps ownership of repository construction. */
+  makeRepo: (typeName: string, tableName: string, sortableColumns: Set<string>) => ContentRepository<Row>
+}): {
+  paths: VersionedPaths
+  fieldKeyMaps: Record<string, FieldKeyMap>
+  projectors: Projectors
+  repos: Record<string, ContentRepository<Row>>
+} {
+  const { version, projectionVersion, prefix, registry, model, makeRepo } = input
+
+  const paths = createVersionedPaths(prefix, version)
+  const projection = model.projections[projectionVersion]
+
+  // One map per content, taxonomy AND paragraph type — the same key space
+  // `buildProjectors` and `sortableColumnsFor` below both index into.
+  //
+  // Paragraph types have no projection: core's `buildProjections` iterates
+  // content and taxonomy types only. For those, and for any type this
+  // projection happens to omit, fall back to the registry's own fields —
+  // nested paragraph content follows current's shape on every version, by
+  // design, not by oversight.
+  const fieldKeyMaps: Record<string, FieldKeyMap> = {}
+  const sources: Array<Record<string, { fields: ParsedField[] }>> = [
+    registry.content_types,
+    registry.taxonomy_types,
+    registry.paragraph_types,
+  ]
+  for (const source of sources) {
+    for (const [typeName, type] of Object.entries(source)) {
+      const projectionType = projection?.types[typeName]
+      fieldKeyMaps[typeName] = projectionType
+        ? createFieldKeyMapFromProjection(projectionType, type.fields)
+        : createFieldKeyMap(type.fields)
+    }
+  }
+
+  const fallbacks = projection ? fallbacksFor(projection) : undefined
+  const projectors = buildProjectors(registry, fieldKeyMaps, fallbacks)
+
+  // Maps SORTABLE_FIELDS' labels to THIS version's storage columns. A rename
+  // moves the column a version sorts by, so this must read the per-version
+  // map above, never current's.
+  const sortableColumnsFor = (typeName: string): Set<string> =>
+    new Set([...SORTABLE_FIELDS].map((label) => fieldKeyMaps[typeName]!.columnFor(label) ?? label))
+
+  const repos: Record<string, ContentRepository<Row>> = {}
+  for (const [typeName, ct] of Object.entries(registry.content_types)) {
+    repos[typeName] = makeRepo(typeName, ct.db.table_name, sortableColumnsFor(typeName))
+  }
+  for (const [typeName, tt] of Object.entries(registry.taxonomy_types)) {
+    repos[typeName] = makeRepo(typeName, tt.db.table_name, sortableColumnsFor(typeName))
+  }
+
+  return { paths, fieldKeyMaps, projectors, repos }
 }
