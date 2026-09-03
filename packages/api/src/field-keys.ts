@@ -216,16 +216,26 @@ export function createFieldKeyMapFromProjection(
 ): FieldKeyMap {
   const pairs = projectionType.fields.map((f) => ({ label: f.exposed_as, column: f.column_name }))
   const projected = new Set(pairs.map((p) => p.label))
-  // A tombstone's column is absent from the projection but present on the row,
-  // and remap passes unknown keys through — so it must be actively dropped,
-  // exactly as createFieldKeyMap does for the current version.
+  // Every column-backed field this projection does NOT expose must be
+  // actively dropped — not just tombstones. A tombstone's column is one way
+  // a column can be absent from the projection, but it is not the only one:
+  // a field added to the CURRENT schema after this version was cut is live
+  // (`removed !== true`) and is just as absent from an older version's
+  // projection, and `remap` passes an unknown key through unchanged — so
+  // without this, a column added later would leak into every older live
+  // version's response straight off `SELECT *`. Building the drop-set from
+  // "every column-backed field, then un-drop what this projection exposes"
+  // subsumes the tombstone case instead of special-casing it.
   const dropped = new Set<string>()
   for (const f of allFields) {
-    if (f.removed !== true) continue
+    if (!isColumnBacked(f)) continue
     dropped.add(f.name)
-    if (f.db_column !== null) dropped.add(f.db_column.column_name)
+    dropped.add(f.db_column.column_name)
   }
-  // A retained column this version DOES expose must not be dropped.
+  // A column this version DOES expose must not be dropped — protects both a
+  // retained tombstone column (the original case) and a column that is live
+  // in the current schema but simply predates this version (the general case
+  // above). Same for its label.
   for (const p of pairs) dropped.delete(p.column)
   for (const label of projected) dropped.delete(label)
 

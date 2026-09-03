@@ -284,4 +284,34 @@ describe('createFieldKeyMapFromProjection', () => {
     const map = createFieldKeyMapFromProjection(projection, [retainedColumnTombstoneField])
     expect(map.toLabels({ blog_title: 'Hi', summary: 'S' })).toEqual({ title: 'Hi', summary: 'S' })
   })
+
+  it('drops a LIVE field added after this version was cut, not just a tombstone', () => {
+    // The leak this widening closes: a field added to the CURRENT schema
+    // after this version was cut is live (`removed !== true`), so a
+    // tombstone-only drop-set skips it entirely — and remap passes an
+    // unmapped key straight through, so its raw storage column would leak
+    // into this version's response the moment `SELECT *` returns it. Every
+    // other projection fixture in this file is a superset-or-equal of its
+    // `allFields`; this is the one shape where `allFields` holds a field the
+    // projection does not. Column differs from name so the assertion below
+    // can only pass if the drop is keyed off the column, not the label.
+    const subtitleField: ParsedField = {
+      name: 'subtitle',
+      label: 'Subtitle',
+      field_type: 'text/plain',
+      required: false,
+      nullable: true,
+      order: 11,
+      validation: { required: false },
+      db_column: { column_name: 'blog_sub', column_type: 'varchar', nullable: true },
+      ui_component: { component: 'text-input' },
+    }
+    const map = createFieldKeyMapFromProjection(projection, [subtitleField])
+
+    const row = { blog_title: 'Hi', summary: 'S', blog_sub: 'LEAKED' }
+    const result = map.toLabels(row)
+    expect(result).toEqual({ title: 'Hi', summary: 'S' })
+    expect(result).not.toHaveProperty('blog_sub')
+    expect(result).not.toHaveProperty('subtitle')
+  })
 })
