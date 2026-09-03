@@ -163,3 +163,51 @@ describe('buildProjectors', () => {
     expect(labels).not.toContain('hero')
   })
 })
+
+describe('projectRow — fallbacks', () => {
+  // Mirrors this file's existing PROJECTORS literal. `divergentTextField`
+  // exposes the label 'title' on column 'blog_title', so the fallback is keyed
+  // by LABEL — substitution happens after toLabels has run.
+  const WITH_FALLBACK: Projectors = {
+    post: {
+      map: createFieldKeyMap([divergentTextField]),
+      nested: [],
+      fallbacks: { title: 'no title' },
+    },
+  }
+
+  it('substitutes the fallback when the retained column is null', () => {
+    // A retained column reads null for every row written since the tombstone.
+    // Left as null it would tell an older live version's consumer "no value"
+    // rather than serving the coherent shape the fallback exists to provide.
+    const out = projectRow({ id: 'p1', blog_title: null }, 'post', WITH_FALLBACK)
+    expect(out).toEqual({ id: 'p1', title: 'no title' })
+  })
+
+  it('substitutes when the column is absent from the row entirely', () => {
+    const out = projectRow({ id: 'p1' }, 'post', WITH_FALLBACK)
+    expect(out['title']).toBe('no title')
+  })
+
+  it('does NOT substitute for 0, empty string or false', () => {
+    // The trap. All three are legitimate stored values and replacing them
+    // would silently destroy real data.
+    const zero: Projectors = {
+      post: { map: createFieldKeyMap([divergentTextField]), nested: [], fallbacks: { title: 'FB' } },
+    }
+    expect(projectRow({ blog_title: 0 }, 'post', zero)['title']).toBe(0)
+    expect(projectRow({ blog_title: '' }, 'post', zero)['title']).toBe('')
+    expect(projectRow({ blog_title: false }, 'post', zero)['title']).toBe(false)
+  })
+
+  it('leaves a column with a real value untouched', () => {
+    const out = projectRow({ id: 'p1', blog_title: 'Hi' }, 'post', WITH_FALLBACK)
+    expect(out['title']).toBe('Hi')
+  })
+
+  it('is a no-op when no fallback is declared for the type', () => {
+    // The zero-config path: every existing response must be byte-identical.
+    const none: Projectors = { post: { map: createFieldKeyMap([divergentTextField]), nested: [] } }
+    expect(projectRow({ id: 'p1', blog_title: null }, 'post', none)).toEqual({ id: 'p1', title: null })
+  })
+})
