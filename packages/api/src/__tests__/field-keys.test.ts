@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { ParsedField } from '@bobbykim/manguito-cms-core'
-import { createFieldKeyMap, isColumnBacked } from '../field-keys'
+import { createFieldKeyMap, createFieldKeyMapFromProjection, isColumnBacked } from '../field-keys'
 import {
   divergentTextField,
   divergentMediaField,
@@ -176,5 +176,80 @@ describe('createFieldKeyMap', () => {
         /^Fatal: field key map failed to build — field label "description" collides with the storage column of field "x"/
       )
     })
+  })
+})
+
+describe('createFieldKeyMapFromProjection', () => {
+  const projection = {
+    fields: [
+      { column_name: 'blog_title', exposed_as: 'title' },
+      { column_name: 'summary', exposed_as: 'summary' },
+    ],
+  }
+
+  it('maps a label to the column the projection names', () => {
+    // The rename case: the projection says v1 exposes column blog_title under
+    // the name 'title'. A name-keyed implementation would map title -> title.
+    const map = createFieldKeyMapFromProjection(projection, [])
+    expect(map.columnFor('title')).toBe('blog_title')
+    expect(map.labelFor('blog_title')).toBe('title')
+  })
+
+  it("maps a row back to that version's labels", () => {
+    const map = createFieldKeyMapFromProjection(projection, [])
+    expect(map.toLabels({ blog_title: 'Hi', summary: 'S' })).toEqual({ title: 'Hi', summary: 'S' })
+  })
+
+  it('maps a request body forward to storage keys', () => {
+    const map = createFieldKeyMapFromProjection(projection, [])
+    expect(map.toStorage({ title: 'Hi' })).toEqual({ blog_title: 'Hi' })
+  })
+
+  it('reports the projection\'s labels as the filter and sort surface', () => {
+    const map = createFieldKeyMapFromProjection(projection, [])
+    expect([...map.labels].sort()).toEqual(['summary', 'title'])
+  })
+
+  it('reports diverges when a label differs from its column', () => {
+    expect(createFieldKeyMapFromProjection(projection, []).diverges).toBe(true)
+    const identity = { fields: [{ column_name: 'title', exposed_as: 'title' }] }
+    expect(createFieldKeyMapFromProjection(identity, []).diverges).toBe(false)
+  })
+
+  it("still throws when a NON-projected field's label collides with a column", () => {
+    // The reason this constructor takes allFields at all. A paragraph field is
+    // absent from every projection (it has no column), but its label reaches
+    // the same key space as storage columns before toLabels runs — so a
+    // paragraph field named 'blog_title' would overwrite that column's value
+    // and then be renamed onto 'title'. The projection alone cannot see it.
+    const paragraphNamedAfterAColumn: ParsedField = {
+      name: 'blog_title',
+      label: 'Cards',
+      field_type: 'paragraph',
+      required: false,
+      nullable: true,
+      order: 9,
+      validation: { required: false },
+      db_column: null,
+      ui_component: { component: 'paragraph-embed', ref: 'paragraph--card', rel: 'one-to-many' },
+    }
+    expect(() => createFieldKeyMapFromProjection(projection, [paragraphNamedAfterAColumn])).toThrow(
+      /collides with the storage column/
+    )
+  })
+
+  it('does not throw when allFields is consistent with the projection', () => {
+    const ordinaryParagraph: ParsedField = {
+      name: 'cards',
+      label: 'Cards',
+      field_type: 'paragraph',
+      required: false,
+      nullable: true,
+      order: 9,
+      validation: { required: false },
+      db_column: null,
+      ui_component: { component: 'paragraph-embed', ref: 'paragraph--card', rel: 'one-to-many' },
+    }
+    expect(() => createFieldKeyMapFromProjection(projection, [ordinaryParagraph])).not.toThrow()
   })
 })

@@ -40,79 +40,88 @@ export type FieldKeyMap = {
 }
 
 /**
- * Built ONCE per content type at startup, not per request. Throws on a key
- * collision, matching how createCmsApp refuses to boot on a broken roles
- * registry: an ambiguous mapping would silently corrupt responses.
+ * The shared core: given a label↔column mapping and the FULL label space to
+ * check against, produce a FieldKeyMap. Both `createFieldKeyMap` and
+ * `createFieldKeyMapFromProjection` are thin adapters over this — the
+ * collision check, the `diverges` computation and `remap` live here exactly
+ * once.
  *
- * Tombstones (`field.removed === true`) are column-backed — the parser keeps
- * their column alive for older live versions — but the CURRENT version must
- * never serve or accept them. They are excluded from `labelToColumn` and the
- * public `columnToLabel` below, and additionally dropped by key in `remap`:
- * without that second step, an unmapped retained column would pass through
- * `remap` unchanged (see the comment on `remap`) and reach the response under
- * its raw column name.
+ * `pairs` may include entries that must NOT survive into the final map —
+ * `createFieldKeyMap` passes tombstoned columns in alongside live ones,
+ * exactly as the original single-function implementation did, so that the
+ * collision check below (which runs against the unfiltered map) still
+ * catches a live field's label colliding with a TOMBSTONE's column. Any
+ * pair whose label or column appears in `droppedKeys` is stripped from
+ * `labelToColumn`/`columnToLabel` immediately after the check, before
+ * `diverges` and `labels` are computed — so the caller does not need to
+ * pre-filter `pairs` itself, only tell this function what to drop.
+ *
+ * `allLabels` is every field's label, including fields with no column of
+ * their own. That is not tidiness: a paragraph, many-to-many or programmatic
+ * field's label is written into the same key space as storage columns before
+ * `toLabels` runs, so one named after another field's column would overwrite
+ * that column's value and then be renamed onto the other field's label.
+ * Both constructors must pass the complete set.
+ *
+ * `droppedKeys` also drives `remap`: it must actively remove a key from a
+ * mapped object rather than merely leave it unmapped, because `remap` passes
+ * an unmapped key through unchanged — a retained-but-unexposed column would
+ * otherwise reach the output under its raw name.
  */
-export function createFieldKeyMap(fields: ParsedField[]): FieldKeyMap {
+function buildFieldKeyMap(
+  pairs: Array<{ label: string; column: string }>,
+  allLabels: string[],
+  droppedKeys: Set<string>
+): FieldKeyMap {
   const labelToColumn = new Map<string, string>()
-  // Includes tombstoned columns until the collision check below has run —
-  // see the trap note there before touching this map.
   const columnToLabel = new Map<string, string>()
-  // Both the name and the column of every tombstone, so remap can drop a
-  // tombstone under either key. They differ when a field was renamed and
-  // THEN removed: it carries both `column` (the original, still-live column)
-  // and `removed`.
-  const droppedKeys = new Set<string>()
-
-  for (const f of fields) {
-    if (!isColumnBacked(f)) continue
-    columnToLabel.set(f.db_column.column_name, f.name)
-    if (f.removed === true) {
-      droppedKeys.add(f.name)
-      droppedKeys.add(f.db_column.column_name)
-      continue
-    }
-    labelToColumn.set(f.name, f.db_column.column_name)
+  for (const { label, column } of pairs) {
+    labelToColumn.set(label, column)
+    columnToLabel.set(column, label)
   }
 
   // A label that is also some OTHER field's column name would make toLabels
   // ambiguous: two source keys would map onto one destination key.
   //
-  // Checked against EVERY field's label, not just the column-backed subset.
-  // Paragraph, many-to-many and programmatic fields have no column of their
-  // own, but their labels are written into the same key space as storage
-  // columns before toLabels runs (routes/admin/content.ts, relations.ts,
-  // programmatic/resolve.ts). A paragraph field named after another field's
-  // column would overwrite that column's value on the row and then be renamed
-  // onto the other field's label — serving the wrong value under the wrong key.
+  // Checked against EVERY label in `allLabels`, not just the ones with a
+  // pair of their own. Paragraph, many-to-many and programmatic fields have
+  // no column of their own, but their labels are written into the same key
+  // space as storage columns before toLabels runs (routes/admin/content.ts,
+  // relations.ts, programmatic/resolve.ts). A paragraph field named after
+  // another field's column would overwrite that column's value on the row
+  // and then be renamed onto the other field's label — serving the wrong
+  // value under the wrong key.
   //
-  // Deliberately run against `columnToLabel` BEFORE tombstoned columns are
-  // stripped from it below: a live field's label may collide with a
-  // TOMBSTONE's column (the column still physically exists on the row), and
-  // that must keep throwing. Stripping tombstones first would silently pass
-  // this configuration, and the exclusion step afterward would then delete
-  // the live field's column from every response instead of the tombstone's.
+  // Deliberately run BEFORE dropped pairs are stripped from `columnToLabel`
+  // below: a live field's label may collide with a TOMBSTONE's column (the
+  // column still physically exists on the row), and that must keep
+  // throwing. Stripping first would silently pass this configuration, and
+  // the exclusion step afterward would then delete the live field's column
+  // from every response instead of the tombstone's.
   //
   // Not detected: two fields declaring the SAME column name. A field can now
   // declare its own `column`, so this is no longer structurally impossible —
   // but core rejects it with `DUPLICATE_COLUMN` at parse time, so it is still
   // unreachable here.
-  for (const f of fields) {
-    const columnOwner = columnToLabel.get(f.name)
-    if (columnOwner !== undefined && columnOwner !== f.name) {
+  for (const label of allLabels) {
+    const columnOwner = columnToLabel.get(label)
+    if (columnOwner !== undefined && columnOwner !== label) {
       throw new Error(
-        `Fatal: field key map failed to build — field label "${f.name}" collides with the ` +
+        `Fatal: field key map failed to build — field label "${label}" collides with the ` +
           `storage column of field "${columnOwner}". A field label may not reuse another ` +
           `field's column name. Rename the field, then run \`manguito validate\` to check your schema.`
       )
     }
   }
 
-  // Only now strip tombstoned columns — the collision check above has already
-  // run against the full map.
-  for (const f of fields) {
-    if (isColumnBacked(f) && f.removed === true) {
-      columnToLabel.delete(f.db_column.column_name)
-    }
+  // Only now strip dropped pairs — the collision check above has already run
+  // against the full map. A dropped pair is removed from BOTH maps: from
+  // `labelToColumn` by its label, from `columnToLabel` by its column.
+  for (const label of labelToColumn.keys()) {
+    if (droppedKeys.has(label)) labelToColumn.delete(label)
+  }
+  for (const column of columnToLabel.keys()) {
+    if (droppedKeys.has(column)) columnToLabel.delete(column)
   }
 
   const diverges = [...labelToColumn].some(([label, column]) => label !== column)
@@ -126,7 +135,7 @@ export function createFieldKeyMap(fields: ParsedField[]): FieldKeyMap {
     // caller mutates a row after mapping would reproduce only on renamed
     // fields. A shallow copy per row is not worth that class of bug.
     //
-    // Unknown keys pass through unchanged — which is exactly why a tombstone
+    // Unknown keys pass through unchanged — which is exactly why a dropped
     // key must be checked and skipped explicitly here, rather than relying on
     // its absence from `lookup`: absence alone would let it pass through under
     // its raw key instead of being dropped.
@@ -146,4 +155,74 @@ export function createFieldKeyMap(fields: ParsedField[]): FieldKeyMap {
     labels: [...labelToColumn.keys()],
     diverges,
   }
+}
+
+/**
+ * Built ONCE per content type at startup, not per request. Throws on a key
+ * collision, matching how createCmsApp refuses to boot on a broken roles
+ * registry: an ambiguous mapping would silently corrupt responses.
+ *
+ * Tombstones (`field.removed === true`) are column-backed — the parser keeps
+ * their column alive for older live versions — but the CURRENT version must
+ * never serve or accept them. Their pair is passed into the shared core
+ * alongside the live ones (so the collision check below still sees them —
+ * see `buildFieldKeyMap`'s doc comment), and then stripped from the returned
+ * map via `droppedKeys` — which also drives `remap`: without that, an
+ * unmapped retained column would pass through `remap` unchanged and reach
+ * the response under its raw column name.
+ */
+export function createFieldKeyMap(fields: ParsedField[]): FieldKeyMap {
+  // Both the name and the column of every tombstone, so the shared core can
+  // strip a tombstone under either key. They differ when a field was renamed
+  // and THEN removed: it carries both `column` (the original, still-live
+  // column) and `removed`.
+  const droppedKeys = new Set<string>()
+  const pairs: Array<{ label: string; column: string }> = []
+
+  for (const f of fields) {
+    if (!isColumnBacked(f)) continue
+    pairs.push({ label: f.name, column: f.db_column.column_name })
+    if (f.removed === true) {
+      droppedKeys.add(f.name)
+      droppedKeys.add(f.db_column.column_name)
+    }
+  }
+
+  return buildFieldKeyMap(
+    pairs,
+    fields.map((f) => f.name),
+    droppedKeys
+  )
+}
+
+/**
+ * From a version's projection. The projection is already the label↔column
+ * mapping and already excludes tombstones and non-column-backed fields, so
+ * there is nothing to filter — but the collision check still needs every
+ * field's label, which is why `allFields` is required.
+ */
+export function createFieldKeyMapFromProjection(
+  projectionType: { fields: Array<{ column_name: string; exposed_as: string; fallback?: unknown }> },
+  allFields: ParsedField[]
+): FieldKeyMap {
+  const pairs = projectionType.fields.map((f) => ({ label: f.exposed_as, column: f.column_name }))
+  const projected = new Set(pairs.map((p) => p.label))
+  // A tombstone's column is absent from the projection but present on the row,
+  // and remap passes unknown keys through — so it must be actively dropped,
+  // exactly as createFieldKeyMap does for the current version.
+  const dropped = new Set<string>()
+  for (const f of allFields) {
+    if (f.removed !== true) continue
+    dropped.add(f.name)
+    if (f.db_column !== null) dropped.add(f.db_column.column_name)
+  }
+  // A retained column this version DOES expose must not be dropped.
+  for (const p of pairs) dropped.delete(p.column)
+  for (const label of projected) dropped.delete(label)
+
+  return buildFieldKeyMap(
+    pairs,
+    allFields.map((f) => f.name),
+    dropped
+  )
 }
