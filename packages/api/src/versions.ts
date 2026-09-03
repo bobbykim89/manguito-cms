@@ -141,3 +141,46 @@ export function buildVersionSurface<Row>(input: {
 
   return { paths, fieldKeyMaps, projectors, repos }
 }
+
+// ─── Deprecation headers ────────────────────────────────────────────────────
+
+/**
+ * The headers a response carries, or null for none.
+ *
+ * Two different mistakes get two different messages: the unversioned path
+ * FLOATS and will change under the consumer when a version is cut; an older
+ * live version is BEHIND. A consumer on the current version's own path has
+ * made neither mistake and gets nothing.
+ *
+ * The unversioned path stays silent while only one version is live. The
+ * warning would be technically true — cutting v2 later does move it — but it
+ * is not yet actionable risk, and emitting it would nag every project that
+ * never opted into versioning the moment it rebuilt.
+ */
+export function deprecationHeaders(input: {
+  requested: string | null   // null = the unversioned path
+  model: BakedVersionModel
+  successor: string          // the URL to point at
+}): Record<string, string> | null {
+  const { requested, model, successor } = input
+  const link = `<${successor}>; rel="successor-version"`
+
+  if (requested === null) {
+    // Silent while only one version is live: the warning would be technically
+    // true, since cutting v2 later does move this path, but it is not yet
+    // actionable risk and would nag every project that never opted in.
+    if (model.live.length <= 1) return null
+    return {
+      Deprecation: 'true',
+      Link: link,
+      Warning:
+        `299 - "Unversioned path resolves to the latest version (${model.current}) and will ` +
+        `change when a new version is cut. Pin a version."`,
+    }
+  }
+
+  // A consumer on the current version's own path has made no mistake.
+  if (requested === model.current) return null
+
+  return { Deprecation: 'true', Link: link }
+}

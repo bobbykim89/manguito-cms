@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import type { Handler } from 'hono'
+import type { Handler, MiddlewareHandler } from 'hono'
 import { sql } from 'drizzle-orm'
 import type { StorageAdapter, SchemaRegistry, ParsedContentType, ParsedTaxonomyType, ParsedParagraphType, ResolvedRateLimitConfig, CorsConfig, ResolvedGraphQLConfig } from '@bobbykim/manguito-cms-core'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
@@ -27,7 +27,8 @@ import { createMediaRepository } from './repositories/media.js'
 import { createFieldKeyMap, type FieldKeyMap } from './field-keys.js'
 import { SORTABLE_FIELDS } from './routes/query-params.js'
 import { buildProjectors, type Projectors } from './projector.js'
-import { normalizePrefix, createPublicPaths, createVersionedPaths } from './paths.js'
+import { normalizePrefix, createPublicPaths, createVersionedPaths, type VersionedPaths } from './paths.js'
+import { buildVersionSurface, classifyVersion, deprecationHeaders, type BakedVersionModel } from './versions.js'
 
 export type CreateCmsAppOptions = {
   /** CMS display name shown in GET /admin/api/config. Defaults to 'Manguito CMS'. */
@@ -46,11 +47,39 @@ export type CreateCmsAppOptions = {
   resolvers?: ResolverMap
   /** GraphQL module config (resolved). When enabled, mounts POST /graphql. */
   graphql?: ResolvedGraphQLConfig
+  /**
+   * The baked version model — what `manguito build` writes into
+   * .manguito/version-model.ts. When absent, the app behaves exactly as it
+   * did before versioning existed: one unversioned pass at the current
+   * schema, no version routes, no deprecation headers, no catch-all.
+   */
+  versions?: BakedVersionModel
 }
 
 export interface ManguitoCmsAPIAdapter {
   readonly prefix: string
   readonly app: Hono
+}
+
+/**
+ * Every exact route path one version's public surface registers — the two
+ * meta-list endpoints, one entry per content type (its collection, plus its
+ * item route unless `only_one`), and a collection/item pair per taxonomy
+ * type. Mirrors `registerPublicContentRoutes`' own enumeration exactly,
+ * because the deprecation-header middleware must attach to precisely these
+ * paths — never a `${prefix}/*` wildcard, which would also catch
+ * `/api/media` where "pin a version" is meaningless.
+ */
+function versionRoutePaths(registry: SchemaRegistry, paths: VersionedPaths): string[] {
+  const out: string[] = [paths.collection('content'), paths.collection('taxonomy')]
+  for (const ct of Object.values(registry.content_types) as ParsedContentType[]) {
+    out.push(paths.collection(ct.default_base_path))
+    if (!ct.only_one) out.push(paths.item(ct.default_base_path))
+  }
+  for (const tt of Object.values(registry.taxonomy_types) as ParsedTaxonomyType[]) {
+    out.push(paths.taxonomyCollection(tt.name), paths.taxonomyItem(tt.name))
+  }
+  return out
 }
 
 const MISSING_STORAGE_ERROR = `✗ api.storage is required but not configured.
@@ -70,8 +99,10 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
 
   const prefix = normalizePrefix(options.prefix)
   const publicPaths = createPublicPaths(prefix)
-  // Task 6 replaces this single call with a per-version loop. Until then the
-  // unversioned shape keeps the app's behaviour identical.
+  // Unversioned paths — used only to document the OpenAPI spec below, which
+  // always describes the current schema's own shape regardless of how many
+  // versions are live. The actual public routes are registered per version
+  // further down (one pass per live version, plus one unversioned pass).
   const versionedPaths = createVersionedPaths(prefix, null)
   const { storage, registry, db, rateLimit, media, cors } = options
   const cmsName = options.name ?? 'Manguito CMS'
@@ -198,33 +229,29 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
   const repos = { ...contentRepos, ...taxonomyRepos }
   const mediaRepo = createMediaRepository(db)
 
-  // ── Public-only repos ───────────────────────────────────────────────────────
+  // ── Public repo factory ──────────────────────────────────────────────────────
   //
   // Relation resolution (?include=, always-resolved media) is wired only for
   // the public read API. Admin routes reuse `repos` above and must keep
   // receiving raw foreign-key IDs back from findOne/update — the edit forms
   // (e.g. MediaUpload.vue) expect a plain ID string, not a resolved object.
-  const publicContentRepos = Object.fromEntries(
-    Object.entries(registry.content_types).map(([typeName, ct]) => [
-      typeName,
-      createDrizzleContentRepository(db, (ct as ParsedContentType).db.table_name, {
-        relations: buildRelationsMap((ct as ParsedContentType).fields, registry),
-        publishedRelations: true,
-        sortableColumns: sortableColumnsFor(typeName),
-      }),
-    ])
-  )
-  const publicTaxonomyRepos = Object.fromEntries(
-    Object.entries(registry.taxonomy_types).map(([typeName, tt]) => [
-      typeName,
-      createDrizzleContentRepository(db, (tt as ParsedTaxonomyType).db.table_name, {
-        relations: buildRelationsMap((tt as ParsedTaxonomyType).fields, registry),
-        publishedRelations: true,
-        sortableColumns: sortableColumnsFor(typeName),
-      }),
-    ])
-  )
-  const publicRepos = { ...publicContentRepos, ...publicTaxonomyRepos }
+  //
+  // Passed as `makeRepo` into `buildVersionSurface` below — once per live
+  // version, plus once more for the unversioned pass — so every version of
+  // the public surface keeps this same relation-resolution distinction.
+  // Relations are keyed by field name and derived from the registry's own
+  // (current) fields, which describe STRUCTURE (foreign keys, junction
+  // tables) rather than a version's exposed labels — nested/related content
+  // follows current's shape on every version, by design, same as paragraph
+  // fields (see versions.ts). Only the field-key mapping varies per version.
+  const makeRepo = (typeName: string, tableName: string, sortableColumns: Set<string>) => {
+    const type = registry.content_types[typeName] ?? registry.taxonomy_types[typeName]
+    return createDrizzleContentRepository(db, tableName, {
+      relations: buildRelationsMap(type!.fields, registry),
+      publishedRelations: true,
+      sortableColumns,
+    })
+  }
 
   // ── GraphQL repos ───────────────────────────────────────────────────────────
   //
@@ -317,8 +344,83 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
   )
 
   // ── Public routes ─────────────────────────────────────────────────────────────
+  //
+  // A project that never cut a version gets the identity model, so the
+  // unversioned pass below is the only registration and behaviour is
+  // unchanged from before versioning existed.
+  const model: BakedVersionModel = options.versions ?? {
+    current: 'v1',
+    live: ['v1'],
+    projections: {},
+  }
 
-  registerPublicContentRoutes(app, registry, publicRepos, projectors, versionedPaths, listRateLimit, programmaticResolver)
+  // One pass per live version, then one unversioned pass at the latest.
+  const passes: Array<{ version: string | null; projectionVersion: string }> = [
+    ...(options.versions !== undefined
+      ? model.live.map((v) => ({ version: v, projectionVersion: v }))
+      : []),
+    { version: null, projectionVersion: model.current },
+  ]
+
+  for (const pass of passes) {
+    const surface = buildVersionSurface({ ...pass, prefix, registry, model, makeRepo })
+    const headers = deprecationHeaders({
+      requested: pass.version,
+      model,
+      // The version root, with no trailing slash — never
+      // createVersionedPaths(prefix, model.current).collection(''), which
+      // would yield `${prefix}/${model.current}/` in every Link header.
+      successor: `${prefix}/${model.current}`,
+    })
+    // Header middleware registers on this pass's exact paths — never a
+    // ${prefix}/* wildcard, which would also catch /api/media where "pin a
+    // version" is meaningless, and would need a guard kept in sync with the
+    // catch-all's.
+    if (headers !== null) {
+      const attachDeprecationHeaders: MiddlewareHandler = async (c, next) => {
+        await next()
+        for (const [key, value] of Object.entries(headers)) c.res.headers.set(key, value)
+      }
+      for (const path of versionRoutePaths(registry, surface.paths)) {
+        app.use(path, attachDeprecationHeaders)
+      }
+    }
+    registerPublicContentRoutes(app, registry, surface.repos, surface.projectors, surface.paths, listRateLimit, programmaticResolver)
+  }
+
+  // Registered last. Only ever reached by a request that matched no live
+  // version's routes. `not-a-version` falls through, which is what protects
+  // /api/media/:id — order-independent rather than dependent on registration
+  // sequence.
+  if (options.versions !== undefined) {
+    app.all(`${prefix}/:version/*`, async (c, next) => {
+      const kind = classifyVersion(c.req.param('version'), model)
+      if (kind === 'not-a-version' || kind === 'live') return next()
+      const live = model.live.join(', ')
+      return kind === 'retired'
+        ? c.json(
+            {
+              ok: false,
+              error: {
+                code: 'VERSION_RETIRED',
+                message: `Version ${c.req.param('version')} is no longer served. Live versions: ${live}.`,
+              },
+            },
+            410
+          )
+        : c.json(
+            {
+              ok: false,
+              error: {
+                code: 'VERSION_NOT_FOUND',
+                message: `No version ${c.req.param('version')} is served. Live versions: ${live}.`,
+              },
+            },
+            404
+          )
+    })
+  }
+
   registerPublicMediaRoutes(app, mediaRepo, publicPaths, listRateLimit)
 
   // ── GraphQL (opt-in) ──────────────────────────────────────────────────────────
