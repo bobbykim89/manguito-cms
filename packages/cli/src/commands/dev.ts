@@ -24,6 +24,8 @@ import {
   buildSchemaRegistry,
   loadSchemaFile,
   hashPassword,
+  loadVersionSnapshots,
+  computeVersionModel,
   type SchemaRegistry,
   type ParsedSchema,
 } from '@bobbykim/manguito-cms-core'
@@ -32,9 +34,11 @@ import { generateSchemaRegistry } from '../codegen/registry.js'
 import { generateRoutes } from '../codegen/routes.js'
 import { generateForms } from '../codegen/forms.js'
 import { generateNav } from '../codegen/nav.js'
+import { reduceVersionModel } from '../codegen/version-model.js'
 import { loadEnvFile } from '../utils/env.js'
 import { shouldBridgeToHono } from './dev-routing.js'
 import { resolveConfig } from '../utils/config.js'
+import { resolveSchemaConfig } from '../utils/schema-config.js'
 import { connectDb } from '../utils/db.js'
 import { printGuidedError, printSuccess } from '../utils/error.js'
 import { createPromptAdapter } from '../utils/prompt.js'
@@ -157,6 +161,25 @@ export async function runDev(
   await generateForms(registry, join(manguitoDir, 'forms'))
   await generateNav(registry, manguitoDir)
 
+  // 7b. Compute the version model — same pair `manguito build` bakes
+  // (loadVersionSnapshots then computeVersionModel), so `dev` serves the
+  // same versioned routes a build would. A missing/invalid version contract
+  // at startup is a structural error, matching how the schema-parse failures
+  // above are handled: print a guided error and exit rather than silently
+  // starting with versioning disabled.
+  const schemaConfig = resolveSchemaConfig(cwd, config)
+  const snapshotsResult = loadVersionSnapshots(schemaConfig, registry)
+  if (!snapshotsResult.ok) {
+    printGuidedError('Version snapshot errors — run `manguito validate` for details.')
+    process.exit(1)
+  }
+  const versionModelResult = computeVersionModel({ current: registry, snapshots: snapshotsResult.value })
+  if (!versionModelResult.ok) {
+    printGuidedError('Version model errors — run `manguito validate` for details.')
+    process.exit(1)
+  }
+  const versionModel = reduceVersionModel(versionModelResult.value)
+
   // 8. Create Hono app via createCmsApp
   const resolverMap = await loadProgrammaticResolvers(cwd, config.programmatic.dir)
   const adapter = createCmsApp({
@@ -165,6 +188,7 @@ export async function runDev(
     db: db.getDb(),
     storage: config.storage,
     resolvers: resolverMap,
+    versions: versionModel,
     ...(config.api.prefix ? { prefix: config.api.prefix } : {}),
     ...(config.api.media?.max_file_size ? { media: { max_file_size: config.api.media.max_file_size } } : {}),
     ...(config.api.rateLimit ? { rateLimit: config.api.rateLimit } : {}),
@@ -339,6 +363,27 @@ async function onSchemaFileChange(args: OnSchemaFileChangeArgs): Promise<void> {
   await generateForms(registry, join(manguitoDir, 'forms'))
   await generateNav(registry, manguitoDir)
 
+  // Recompute the version model — a schema edit can add a tombstone or a
+  // `column` declaration, which changes the projections, so this must be
+  // recomputed on every reload rather than reused from startup. Following
+  // the same "keep serving the last good state" policy as the schema-parse
+  // failure above (and the drizzle-kit push failure below): an invalid
+  // version contract here means the edited schema is mid-flight, not that
+  // the whole watch process should die, so warn and bail out before the DB
+  // push and hot-swap, leaving the previous adapter in place.
+  const schemaConfig = resolveSchemaConfig(cwd, config)
+  const snapshotsResult = loadVersionSnapshots(schemaConfig, registry)
+  if (!snapshotsResult.ok) {
+    process.stderr.write('⚠ Version snapshot errors — changes not applied.\n')
+    return
+  }
+  const versionModelResult = computeVersionModel({ current: registry, snapshots: snapshotsResult.value })
+  if (!versionModelResult.ok) {
+    process.stderr.write('⚠ Version model errors — changes not applied.\n')
+    return
+  }
+  const versionModel = reduceVersionModel(versionModelResult.value)
+
   // Push schema changes to DB
   try {
     await runDevMigration(drizzleConfigPath)
@@ -355,6 +400,7 @@ async function onSchemaFileChange(args: OnSchemaFileChangeArgs): Promise<void> {
     db: db.getDb(),
     storage: config.storage,
     resolvers: resolverMap,
+    versions: versionModel,
     ...(config.api.prefix ? { prefix: config.api.prefix } : {}),
     ...(config.api.media?.max_file_size ? { media: { max_file_size: config.api.media.max_file_size } } : {}),
     ...(config.api.rateLimit ? { rateLimit: config.api.rateLimit } : {}),
