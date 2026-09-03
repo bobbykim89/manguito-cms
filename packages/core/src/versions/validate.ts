@@ -92,8 +92,8 @@ function checkUnionCompleteness(input: {
           message:
             `Live version ${version} exposes type "${typeName}", which the current schema no longer ` +
             `defines. Every column a live version serves must still exist. Keep "${typeName}" in the ` +
-            `current schema with its fields marked "removed": true, or retire ${version} by deleting ` +
-            `schemas/versions/${version}.`,
+            `current schema with its fields marked "removed": true, or retire it with ` +
+            `\`manguito version:retire ${version}\` — which will refuse if ${version} is the newest cut version.`,
         })
         continue
       }
@@ -144,8 +144,9 @@ function checkUnionCompleteness(input: {
           message:
             `Live version ${snap.version} exposes paragraph type "${typeName}", which the current ` +
             `schema no longer defines. Every column a live version serves must still exist. Keep ` +
-            `"${typeName}" in the current schema with its fields marked "removed": true, or retire ` +
-            `${snap.version} by deleting schemas/versions/${snap.version}.`,
+            `"${typeName}" in the current schema with its fields marked "removed": true, or retire it ` +
+            `with \`manguito version:retire ${snap.version}\` — which will refuse if ${snap.version} is ` +
+            `the newest cut version.`,
         })
         continue
       }

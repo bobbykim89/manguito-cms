@@ -30,6 +30,18 @@ _Avoid_: serve, run
 The read-only lint command — parses config and all schema/roles/routes files, exits non-zero on any error, writes nothing.
 _Avoid_: check, lint, verify
 
+**version:diff**:
+Compares the highest-numbered snapshot against the working schema and prints what cutting would freeze — fields added, renamed, tombstoned, or restored — or says plainly that nothing changed.
+_Avoid_: compare, changelog
+
+**version:cut**:
+Freezes the working schema as a new version: copies the four schema type folders into `schemas/versions/vN/`. `roles.json` and `routes.json` are excluded, since they live at the schema root rather than in a type folder — core assembles every snapshot with *current's* roles and routes because neither is versioned. Refuses when no column was added, renamed, tombstoned or restored since the last cut — a change confined to paragraph, programmatic, many-to-many or enum definitions needs no new version, since none of them appear in a version's served contract; otherwise prints the change report and what the new live set commits you to, then confirms before writing to a `.vN.tmp` staging directory and doing one atomic rename into place, so a partial snapshot is impossible.
+_Avoid_: freeze (as command name), tag, release
+
+**version:retire**:
+Deletes a cut version's snapshot. Computes the tombstones the retirement would orphan *before* deleting anything, and names the fields the caller must then delete — it does not edit schema files itself, because the CLI writes only to generated locations.
+_Avoid_: delete version, prune
+
 ### Orchestration concepts
 
 **Composition root**:
@@ -59,3 +71,11 @@ _Avoid_: health check, preflight
 **Superuser**:
 An admin user created out-of-band via `createsuperuser`, the dev first-run prompt, or `users:promote` — never through the admin panel. Governed by [[roles-schema-defined-only]].
 _Avoid_: root, owner, first user
+
+**Two-step retirement**:
+Retiring a version and deleting the tombstones it orphans is always two separate steps, and neither order is valid: deleting a tombstone while its version is still live is `VERSION_COLUMN_MISSING` (the version exposes a column the union no longer has), and retiring while the tombstone remains is `ORPHANED_TOMBSTONE` (a retained column nothing exposes). There is no valid resting point between them, so `version:retire` deletes the snapshot and names the fields to delete next — it does not touch schema files itself.
+_Avoid_: cleanup, garbage collection, cascade delete
+
+**Highest-snapshot refusal**:
+Why `version:retire` refuses the highest-numbered snapshot: the working schema's version is derived as highest + 1, so retiring the highest would renumber the working schema backwards onto an already-published version number, and a consumer pinned to it would silently receive a different contract. Cutting first makes it retirable.
+_Avoid_: latest-version protection, version pinning

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { loadVersionModel } from '../load'
+import { loadVersionModel, loadVersionSnapshots } from '../load'
 import { makeContentType, makeRegistry } from './fixtures'
 import type { ResolvedSchemaConfig } from '../../config/types'
 
@@ -194,5 +194,65 @@ describe('loadVersionModel', () => {
     expect(r.ok).toBe(false)
     if (r.ok) return
     expect(r.errors.map((e) => e.code)).toContain('VERSION_COLUMN_MISSING')
+  })
+})
+
+describe('loadVersionSnapshots', () => {
+  it('returns an empty array when versions/ is absent', () => {
+    const current = makeRegistry([makeContentType('content--post', [{ name: 'a' }])])
+    const r = loadVersionSnapshots(config(), current)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.value).toEqual([])
+  })
+
+  it('returns every snapshot, ordered by numeric version', () => {
+    // v10 before v9 lexicographically — the ordering guard that already
+    // exists for loadVersionModel must hold for the extracted loader too,
+    // because callers read the LAST element as the highest version.
+    writeSnapshot(path.join(dir, 'versions', 'v9'), 'a')
+    writeSnapshot(path.join(dir, 'versions', 'v10'), 'a')
+    const current = makeRegistry([makeContentType('content--post', [{ name: 'a' }])])
+    const r = loadVersionSnapshots(config(), current)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.value.map((s) => s.version)).toEqual(['v9', 'v10'])
+  })
+
+  it('reads snapshots through config.folders, not hardcoded folder names', () => {
+    // Guards a Critical defect found in review: a hardcoded folder name made
+    // every snapshot read as silently EMPTY for any project that renamed a
+    // schema folder — which would then drop columns from the union.
+    const typesDir = path.join(dir, 'versions', 'v1', 'ct')
+    fs.mkdirSync(typesDir, { recursive: true })
+    fs.writeFileSync(
+      path.join(typesDir, 'content--post.json'),
+      JSON.stringify({
+        name: 'content--post', label: 'Post', type: 'content-type',
+        default_base_path: 'x', only_one: false,
+        fields: [{ tab: { name: 'primary_tab', label: 'Primary', fields: [
+          { name: 'a', label: 'a', type: 'text/plain', required: false },
+        ] } }],
+      })
+    )
+    const custom = { ...config(), folders: { ...config().folders, content_types: 'ct' } }
+    const current = makeRegistry([makeContentType('content--post', [{ name: 'a' }])])
+
+    const r = loadVersionSnapshots(custom, current)
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(Object.keys(r.value[0]!.registry.content_types)).toEqual(['content--post'])
+  })
+
+  it('reports VERSION_SNAPSHOT_INVALID for an unparseable snapshot file', () => {
+    const typesDir = path.join(dir, 'versions', 'v1', 'content-types')
+    fs.mkdirSync(typesDir, { recursive: true })
+    fs.writeFileSync(path.join(typesDir, 'content--post.json'), '{ not json')
+    const current = makeRegistry([makeContentType('content--post', [{ name: 'a' }])])
+
+    const r = loadVersionSnapshots(config(), current)
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.errors.map((e) => e.code)).toContain('VERSION_SNAPSHOT_INVALID')
   })
 })
