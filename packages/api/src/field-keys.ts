@@ -181,6 +181,15 @@ export function createFieldKeyMap(fields: ParsedField[]): FieldKeyMap {
 
   for (const f of fields) {
     if (!isColumnBacked(f)) continue
+    // Keyed by `f.name` for every column-backed field, live or tombstoned, so
+    // buildFieldKeyMap's post-check stripping (which deletes from
+    // `labelToColumn` by the labels in `droppedKeys`) can find and remove a
+    // tombstone's own entry. That leans on field names being unique across
+    // live and tombstoned fields within one type — true today (core rejects
+    // a duplicate name at parse time) but only load-bearing here because this
+    // refactor now writes a tombstone's pair into the shared map at all; the
+    // original single-function implementation `continue`d past a tombstone
+    // before ever writing one, so the collision was structurally impossible.
     pairs.push({ label: f.name, column: f.db_column.column_name })
     if (f.removed === true) {
       droppedKeys.add(f.name)

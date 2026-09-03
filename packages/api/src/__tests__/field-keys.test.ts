@@ -8,6 +8,7 @@ import {
   paragraphField,
   manyToManyField,
   renamedTombstoneField,
+  retainedColumnTombstoneField,
   collisionLiveField,
   collisionTombstoneField,
 } from '../field-keys.test-fixtures'
@@ -251,5 +252,36 @@ describe('createFieldKeyMapFromProjection', () => {
       ui_component: { component: 'paragraph-embed', ref: 'paragraph--card', rel: 'one-to-many' },
     }
     expect(() => createFieldKeyMapFromProjection(projection, [ordinaryParagraph])).not.toThrow()
+  })
+
+  it("drops a tombstone's column the projection does not expose", () => {
+    // renamedTombstoneField: name 'legacy_desc', column 'blog_desc', removed.
+    // The projection (blog_title/title, summary/summary) never names
+    // 'blog_desc' — this version does not retain it — so it must be actively
+    // dropped from both maps. Without the drop, remap would pass the raw
+    // 'blog_desc' key straight through toLabels, since a retained column is
+    // genuinely present on the database row.
+    const map = createFieldKeyMapFromProjection(projection, [renamedTombstoneField])
+
+    const row = { blog_title: 'Hi', summary: 'S', blog_desc: 'dead value' }
+    const labelResult = map.toLabels(row)
+    expect(labelResult).toEqual({ title: 'Hi', summary: 'S' })
+    expect(labelResult).not.toHaveProperty('blog_desc')
+
+    const body = { title: 'Hi', legacy_desc: 'client-supplied', blog_desc: 'raw-column-supplied' }
+    const storageResult = map.toStorage(body)
+    expect(storageResult).toEqual({ blog_title: 'Hi' })
+    expect(storageResult).not.toHaveProperty('legacy_desc')
+    expect(storageResult).not.toHaveProperty('blog_desc')
+  })
+
+  it('does not drop a tombstone column this projection still exposes', () => {
+    // retainedColumnTombstoneField: name 'legacy_title', column 'blog_title',
+    // removed — the older-live-version situation, where the current schema has
+    // renamed-and-removed the field but THIS version's projection still maps
+    // column 'blog_title' to label 'title'. Dropping it here would delete real
+    // data from this version's responses.
+    const map = createFieldKeyMapFromProjection(projection, [retainedColumnTombstoneField])
+    expect(map.toLabels({ blog_title: 'Hi', summary: 'S' })).toEqual({ title: 'Hi', summary: 'S' })
   })
 })
