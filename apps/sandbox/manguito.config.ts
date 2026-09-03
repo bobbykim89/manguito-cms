@@ -52,7 +52,7 @@ export default defineConfig({
     prefix: '/api',
     media: { max_file_size: 4 * 1024 * 1024 },
     // GraphQL public API (opt-in, query-only). Uncomment to enable POST /graphql.
-    //   graphql: { enabled: true },  // maxDepth: 8, maxComplexity: 1000, graphiql: dev-only
+    graphql: { enabled: true }, // maxDepth: 8, maxComplexity: 1000, graphiql: dev-only
     // Rate limiting for public list endpoints (paginated collections).
     // Defaults: 30 req/IP and 500 req global per 60s window when omitted.
     //   rateLimit: { findAll: { windowMs: 60_000, maxPerIp: 30, maxGlobal: 500 } },
