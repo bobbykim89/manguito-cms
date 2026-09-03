@@ -11,7 +11,7 @@ import { registerPublicContentRoutes } from '../content'
 import { createProgrammaticResolver, resolverKey } from '../../programmatic/resolve'
 import { createFieldKeyMap } from '../../field-keys'
 import { buildProjectors } from '../../projector'
-import { createPublicPaths } from '../../paths'
+import { createVersionedPaths } from '../../paths'
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -185,7 +185,7 @@ describe('programmatic resolution in public routes', () => {
       REGISTRY,
       { 'content--blog_post': repoWith(rows) },
       PROJECTORS,
-      createPublicPaths('/api'),
+      createVersionedPaths('/api', null),
       undefined,
       resolverFor()
     )
@@ -203,7 +203,7 @@ describe('programmatic resolution in public routes', () => {
       REGISTRY,
       { 'content--blog_post': repoWith(rows) },
       PROJECTORS,
-      createPublicPaths('/api'),
+      createVersionedPaths('/api', null),
       undefined,
       resolverFor()
     )
@@ -229,7 +229,7 @@ describe('programmatic resolution in public routes', () => {
       REGISTRY,
       { 'content--blog_post': repoWith([]) },
       PROJECTORS,
-      createPublicPaths('/api'),
+      createVersionedPaths('/api', null),
       undefined,
       resolverFor()
     )
@@ -249,7 +249,7 @@ describe('programmatic resolution with a divergent field label', () => {
       DIVERGENT_REGISTRY,
       { 'content--blog_post': repoWith(rows) },
       DIVERGENT_PROJECTORS,
-      createPublicPaths('/api'),
+      createVersionedPaths('/api', null),
       undefined,
       divergentResolverFor()
     )
@@ -269,7 +269,7 @@ describe('programmatic resolution with a divergent field label', () => {
       DIVERGENT_REGISTRY,
       { 'content--blog_post': repoWith(rows) },
       DIVERGENT_PROJECTORS,
-      createPublicPaths('/api'),
+      createVersionedPaths('/api', null),
       undefined,
       divergentResolverFor()
     )

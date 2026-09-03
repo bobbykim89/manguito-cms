@@ -27,7 +27,7 @@ import { createMediaRepository } from './repositories/media.js'
 import { createFieldKeyMap, type FieldKeyMap } from './field-keys.js'
 import { SORTABLE_FIELDS } from './routes/query-params.js'
 import { buildProjectors, type Projectors } from './projector.js'
-import { normalizePrefix, createPublicPaths } from './paths.js'
+import { normalizePrefix, createPublicPaths, createVersionedPaths } from './paths.js'
 
 export type CreateCmsAppOptions = {
   /** CMS display name shown in GET /admin/api/config. Defaults to 'Manguito CMS'. */
@@ -70,6 +70,9 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
 
   const prefix = normalizePrefix(options.prefix)
   const publicPaths = createPublicPaths(prefix)
+  // Task 6 replaces this single call with a per-version loop. Until then the
+  // unversioned shape keeps the app's behaviour identical.
+  const versionedPaths = createVersionedPaths(prefix, null)
   const { storage, registry, db, rateLimit, media, cors } = options
   const cmsName = options.name ?? 'Manguito CMS'
   const maxFileSize = media?.max_file_size
@@ -279,18 +282,18 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
     for (const ct of Object.values(registry.content_types) as ParsedContentType[]) {
       const base = ct.default_base_path
       if (ct.only_one) {
-        paths[publicPaths.collection(base)] = { get: { summary: `Get ${ct.label}`, tags: [ct.label] } }
+        paths[versionedPaths.collection(base)] = { get: { summary: `Get ${ct.label}`, tags: [ct.label] } }
       } else {
-        paths[publicPaths.collection(base)] = { get: { summary: `List published ${ct.label}`, tags: [ct.label] } }
-        paths[publicPaths.item(base).replace(':slug', '{slug}')] = {
+        paths[versionedPaths.collection(base)] = { get: { summary: `List published ${ct.label}`, tags: [ct.label] } }
+        paths[versionedPaths.item(base).replace(':slug', '{slug}')] = {
           get: { summary: `Get ${ct.label} by slug`, tags: [ct.label] },
         }
       }
     }
 
     for (const tt of Object.values(registry.taxonomy_types) as ParsedTaxonomyType[]) {
-      paths[publicPaths.taxonomyCollection(tt.name)] = { get: { summary: `List published ${tt.label}`, tags: [tt.label] } }
-      paths[publicPaths.taxonomyItem(tt.name).replace(':id', '{id}')] = {
+      paths[versionedPaths.taxonomyCollection(tt.name)] = { get: { summary: `List published ${tt.label}`, tags: [tt.label] } }
+      paths[versionedPaths.taxonomyItem(tt.name).replace(':id', '{id}')] = {
         get: { summary: `Get ${tt.label} by id`, tags: [tt.label] },
       }
     }
@@ -315,7 +318,7 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
 
   // ── Public routes ─────────────────────────────────────────────────────────────
 
-  registerPublicContentRoutes(app, registry, publicRepos, projectors, publicPaths, listRateLimit, programmaticResolver)
+  registerPublicContentRoutes(app, registry, publicRepos, projectors, versionedPaths, listRateLimit, programmaticResolver)
   registerPublicMediaRoutes(app, mediaRepo, publicPaths, listRateLimit)
 
   // ── GraphQL (opt-in) ──────────────────────────────────────────────────────────

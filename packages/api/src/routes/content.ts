@@ -6,7 +6,7 @@ import type {
 import type { ProgrammaticResolver } from '../programmatic/resolve.js'
 import type { Projectors } from '../projector.js'
 import { projectRow } from '../projector.js'
-import type { PublicPaths } from '../paths.js'
+import type { VersionedPaths } from '../paths.js'
 import {
   SORTABLE_FIELDS,
   RELATION_FIELD_TYPES,
@@ -39,7 +39,7 @@ export function registerPublicContentRoutes(
   registry: SchemaRegistry,
   repos: ContentRepos,
   projectors: Projectors,
-  paths: PublicPaths,
+  paths: VersionedPaths,
   listRateLimit?: MiddlewareHandler,
   resolver?: ProgrammaticResolver
 ): void {
