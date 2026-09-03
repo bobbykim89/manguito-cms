@@ -38,6 +38,11 @@ describe('classifyVersion', () => {
     expect(classifyVersion('vX', MODEL)).toBe('not-a-version')
     expect(classifyVersion('1', MODEL)).toBe('not-a-version')
     expect(classifyVersion('v1x', MODEL)).toBe('not-a-version')
+    // Exercises the LEADING anchor. Without ^ this matches, then
+    // parseInt('v1') is NaN, `NaN < current` is false, and the function
+    // silently answers 'unknown' — so the catch-all would claim a path it
+    // should have let fall through.
+    expect(classifyVersion('xv1', MODEL)).toBe('not-a-version')
   })
 
   it('treats a leading-zero version as its own segment, not a live alias', () => {
