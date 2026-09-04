@@ -17,7 +17,7 @@ import {
 import { createFieldKeyMap } from '../../field-keys'
 import { buildProjectors } from '../../projector'
 import { createProgrammaticResolver } from '../../programmatic/resolve'
-import { createPublicPaths } from '../../paths'
+import { createVersionedPaths } from '../../paths'
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -102,7 +102,7 @@ describe('public content routes', () => {
       mockRegistry,
       { 'blog-post': mockRepo },
       buildProjectors(mockRegistry, { 'blog-post': createFieldKeyMap(BLOG_TYPE.fields) }),
-      createPublicPaths('/api')
+      createVersionedPaths('/api', null)
     )
   })
 
@@ -164,7 +164,7 @@ describe('public content routes', () => {
       mockRegistry,
       { 'blog-post': repo },
       buildProjectors(mockRegistry, { 'blog-post': createFieldKeyMap(BLOG_TYPE.fields) }),
-      createPublicPaths('/content-api'),
+      createVersionedPaths('/content-api', null),
       undefined,
       createProgrammaticResolver(new Map())
     )
@@ -209,7 +209,7 @@ describe('public reads with a divergent field label', () => {
       divergentRegistry,
       { 'divergent-post': repo },
       buildProjectors(divergentRegistry, { 'divergent-post': createFieldKeyMap([divergentTextField]) }),
-      createPublicPaths('/api'),
+      createVersionedPaths('/api', null),
       undefined,
       createProgrammaticResolver(new Map())
     )
@@ -238,7 +238,7 @@ describe('public reads with a divergent field label', () => {
       divergentRegistry,
       { 'divergent-post': repo },
       buildProjectors(divergentRegistry, { 'divergent-post': createFieldKeyMap([divergentTextField]) }),
-      createPublicPaths('/api'),
+      createVersionedPaths('/api', null),
       undefined,
       createProgrammaticResolver(new Map())
     )
@@ -291,7 +291,7 @@ describe('public reads with a divergent field label', () => {
       refRegistry,
       { 'divergent-ref-post': repo },
       buildProjectors(refRegistry, { 'divergent-ref-post': createFieldKeyMap([divergentReferenceField]) }),
-      createPublicPaths('/api'),
+      createVersionedPaths('/api', null),
       undefined,
       createProgrammaticResolver(new Map())
     )
@@ -343,7 +343,7 @@ function appForDivergentPostWithCards(repo: ContentRepository<unknown>): Hono {
       'divergent-post': createFieldKeyMap(DIVERGENT_POST_WITH_CARDS_TYPE.fields),
       'paragraph--card': createFieldKeyMap(divergentParagraphType.fields),
     }),
-    createPublicPaths('/api'),
+    createVersionedPaths('/api', null),
     undefined,
     createProgrammaticResolver(new Map())
   )

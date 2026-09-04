@@ -29,6 +29,8 @@ export type TypeProjector = {
   map: FieldKeyMap
   /** Relation fields worth recursing into: the field's LABEL and its target type. */
   nested: Array<{ label: string; target: string }>
+  /** Fallback values for retained columns, keyed by label. */
+  fallbacks?: Record<string, unknown>
 }
 
 export type Projectors = Record<string, TypeProjector>
@@ -54,10 +56,18 @@ function nestedTargets(fields: ParsedField[]): Array<{ label: string; target: st
  * Built ONCE at startup, not per request. Covers content, taxonomy and
  * paragraph types, keyed by machine name — the same key space `fieldKeyMaps`
  * uses and the same one a field's `ui_component.ref` points into.
+ *
+ * `fallbacks`, keyed the same way (type name → label → value), supplies what
+ * a retained-but-unexposed column serves in place of null on THIS version's
+ * responses — see `fallbacksFor` in versions.ts, the only caller that
+ * actually populates it. Every other caller (the unversioned/current pass,
+ * and every non-versioned use of this function) omits it, since a tombstone
+ * is never retained-and-exposed outside an older live version's projection.
  */
 export function buildProjectors(
   registry: SchemaRegistry,
-  fieldKeyMaps: Record<string, FieldKeyMap>
+  fieldKeyMaps: Record<string, FieldKeyMap>,
+  fallbacks?: Record<string, Record<string, unknown>>
 ): Projectors {
   const projectors: Projectors = {}
   const sources: Array<Record<string, { fields: ParsedField[] }>> = [
@@ -70,7 +80,14 @@ export function buildProjectors(
     for (const [typeName, type] of Object.entries(source)) {
       const map = fieldKeyMaps[typeName]
       if (!map) continue
-      projectors[typeName] = { map, nested: nestedTargets(type.fields) }
+      const typeFallbacks = fallbacks?.[typeName]
+      projectors[typeName] = {
+        map,
+        nested: nestedTargets(type.fields),
+        // Spread rather than assign: with exactOptionalPropertyTypes, an optional
+        // property may be ABSENT but not present-and-undefined.
+        ...(typeFallbacks !== undefined && { fallbacks: typeFallbacks }),
+      }
     }
   }
 
@@ -93,6 +110,16 @@ export function projectRow(
   // Top level first: `nested` is keyed by label, so the keys must be labels
   // before the loop below reads them. toLabels returns a fresh object.
   const out = p.map.toLabels(row)
+
+  // A retained column reads null for every row written since the tombstone.
+  // Substituting the declared fallback is what lets an older live version keep
+  // serving a coherent shape. ONLY for null/undefined: 0, '' and false are
+  // legitimate stored values, and replacing them would destroy real data.
+  if (p.fallbacks !== undefined) {
+    for (const [label, value] of Object.entries(p.fallbacks)) {
+      if (out[label] === null || out[label] === undefined) out[label] = value
+    }
+  }
 
   for (const { label, target } of p.nested) {
     const v = out[label]

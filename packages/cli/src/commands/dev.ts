@@ -24,6 +24,8 @@ import {
   buildSchemaRegistry,
   loadSchemaFile,
   hashPassword,
+  loadVersionSnapshots,
+  computeVersionModel,
   type SchemaRegistry,
   type ParsedSchema,
 } from '@bobbykim/manguito-cms-core'
@@ -32,11 +34,13 @@ import { generateSchemaRegistry } from '../codegen/registry.js'
 import { generateRoutes } from '../codegen/routes.js'
 import { generateForms } from '../codegen/forms.js'
 import { generateNav } from '../codegen/nav.js'
+import { reduceVersionModel } from '../codegen/version-model.js'
 import { loadEnvFile } from '../utils/env.js'
 import { shouldBridgeToHono } from './dev-routing.js'
 import { resolveConfig } from '../utils/config.js'
+import { resolveSchemaConfig } from '../utils/schema-config.js'
 import { connectDb } from '../utils/db.js'
-import { printGuidedError, printSuccess } from '../utils/error.js'
+import { printGuidedError, printSuccess, printValidationErrors } from '../utils/error.js'
 import { createPromptAdapter } from '../utils/prompt.js'
 import { loadProgrammaticResolvers } from '../utils/programmatic-loader.js'
 
@@ -157,6 +161,29 @@ export async function runDev(
   await generateForms(registry, join(manguitoDir, 'forms'))
   await generateNav(registry, manguitoDir)
 
+  // 7b. Compute the version model — same pair `manguito build` bakes
+  // (loadVersionSnapshots then computeVersionModel), so `dev` serves the
+  // same versioned routes a build would. A missing/invalid version contract
+  // at startup is a structural error, matching how the schema-parse failures
+  // above are handled: print a guided error and exit rather than silently
+  // starting with versioning disabled.
+  const schemaConfig = resolveSchemaConfig(cwd, config)
+  const snapshotsResult = loadVersionSnapshots(schemaConfig, registry)
+  if (!snapshotsResult.ok) {
+    // `manguito validate` never loads version snapshots — it has no version
+    // function at all — so it would report success while this exits 1 with
+    // no explanation. `version:diff` is the command that actually loads
+    // snapshots and computes the model, so it is what can show these errors.
+    printValidationErrors(snapshotsResult.errors, 'Version snapshot errors', 'manguito version:diff')
+    process.exit(1)
+  }
+  const versionModelResult = computeVersionModel({ current: registry, snapshots: snapshotsResult.value })
+  if (!versionModelResult.ok) {
+    printValidationErrors(versionModelResult.errors, 'Version model errors', 'manguito version:diff')
+    process.exit(1)
+  }
+  const versionModel = reduceVersionModel(versionModelResult.value)
+
   // 8. Create Hono app via createCmsApp
   const resolverMap = await loadProgrammaticResolvers(cwd, config.programmatic.dir)
   const adapter = createCmsApp({
@@ -165,6 +192,7 @@ export async function runDev(
     db: db.getDb(),
     storage: config.storage,
     resolvers: resolverMap,
+    versions: versionModel,
     ...(config.api.prefix ? { prefix: config.api.prefix } : {}),
     ...(config.api.media?.max_file_size ? { media: { max_file_size: config.api.media.max_file_size } } : {}),
     ...(config.api.rateLimit ? { rateLimit: config.api.rateLimit } : {}),
@@ -339,6 +367,29 @@ async function onSchemaFileChange(args: OnSchemaFileChangeArgs): Promise<void> {
   await generateForms(registry, join(manguitoDir, 'forms'))
   await generateNav(registry, manguitoDir)
 
+  // Recompute the version model — a schema edit can add a tombstone or a
+  // `column` declaration, which changes the projections, so this must be
+  // recomputed on every reload rather than reused from startup. Following
+  // the same "keep serving the last good state" policy as the schema-parse
+  // failure above (and the drizzle-kit push failure below): an invalid
+  // version contract here means the edited schema is mid-flight, not that
+  // the whole watch process should die, so warn and bail out before the DB
+  // push and hot-swap, leaving the previous adapter in place.
+  const schemaConfig = resolveSchemaConfig(cwd, config)
+  const snapshotsResult = loadVersionSnapshots(schemaConfig, registry)
+  if (!snapshotsResult.ok) {
+    printValidationErrors(snapshotsResult.errors, 'Version snapshot errors', 'manguito version:diff')
+    process.stderr.write('⚠ Changes not applied.\n')
+    return
+  }
+  const versionModelResult = computeVersionModel({ current: registry, snapshots: snapshotsResult.value })
+  if (!versionModelResult.ok) {
+    printValidationErrors(versionModelResult.errors, 'Version model errors', 'manguito version:diff')
+    process.stderr.write('⚠ Changes not applied.\n')
+    return
+  }
+  const versionModel = reduceVersionModel(versionModelResult.value)
+
   // Push schema changes to DB
   try {
     await runDevMigration(drizzleConfigPath)
@@ -355,6 +406,7 @@ async function onSchemaFileChange(args: OnSchemaFileChangeArgs): Promise<void> {
     db: db.getDb(),
     storage: config.storage,
     resolvers: resolverMap,
+    versions: versionModel,
     ...(config.api.prefix ? { prefix: config.api.prefix } : {}),
     ...(config.api.media?.max_file_size ? { media: { max_file_size: config.api.media.max_file_size } } : {}),
     ...(config.api.rateLimit ? { rateLimit: config.api.rateLimit } : {}),

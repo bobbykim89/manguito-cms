@@ -22,6 +22,7 @@ export async function generateServerEntries(
 export function appSetup(): string {
   return `import config from '../../manguito.config.js'
 import { schemaRegistry } from './schema-registry.js'
+import { versionModel } from './version-model.js'
 import { programmaticResolvers } from './programmatic-registry.js'
 import { createCmsApp } from '@bobbykim/manguito-cms-api'
 import { createPostgresAdapter } from '@bobbykim/manguito-cms-db'
@@ -32,6 +33,7 @@ await dbAdapter.connect()
 const { app } = createCmsApp({
   name: config.name,
   registry: schemaRegistry,
+  versions: versionModel,
   db: dbAdapter.getDb(),
   storage: config.storage,
   prefix: config.api.prefix,

@@ -25,12 +25,27 @@ vi.mock('@bobbykim/manguito-cms-core', () => ({
   buildSchemaRegistry: vi.fn().mockReturnValue({ content_types: {}, paragraph_types: {}, taxonomy_types: {} }),
   loadSchemaFile: vi.fn().mockReturnValue({ ok: true, value: '{}' }),
   hashPassword: vi.fn().mockResolvedValue('hashed-pw'),
+  loadVersionSnapshots: vi.fn().mockReturnValue({ ok: true, value: [] }),
+  computeVersionModel: vi.fn().mockReturnValue({
+    ok: true,
+    value: { current: 'v1', live: ['v1'], union: {}, projections: {} },
+  }),
 }))
 vi.mock('../src/codegen/drizzle-config.js', () => ({ generateDrizzleConfig: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('../src/codegen/registry.js', () => ({ generateSchemaRegistry: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('../src/codegen/routes.js', () => ({ generateRoutes: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('../src/codegen/forms.js', () => ({ generateForms: vi.fn().mockResolvedValue(undefined) }))
 vi.mock('../src/codegen/nav.js', () => ({ generateNav: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('../src/codegen/version-model.js', () => ({
+  reduceVersionModel: vi.fn((model: { current: string; live: string[]; projections: unknown }) => ({
+    current: model.current,
+    live: model.live,
+    projections: model.projections,
+  })),
+}))
+vi.mock('../src/utils/schema-config.js', () => ({
+  resolveSchemaConfig: vi.fn().mockReturnValue({ base_path: '/fake/schemas', folders: {} }),
+}))
 vi.mock('vite', () => ({
   createServer: vi.fn().mockResolvedValue({ middlewares: vi.fn() }),
   searchForWorkspaceRoot: vi.fn((cwd: string) => cwd),
@@ -57,7 +72,15 @@ import { runDev } from '../src/commands/dev.js'
 import { connectDb } from '../src/utils/db.js'
 import { resolveConfig } from '../src/utils/config.js'
 import { createPromptAdapter } from '../src/utils/prompt.js'
-import { walkSchemaDirectory, parseRoles, parseRoutes, buildSchemaRegistry, loadSchemaFile } from '@bobbykim/manguito-cms-core'
+import {
+  walkSchemaDirectory,
+  parseRoles,
+  parseRoutes,
+  buildSchemaRegistry,
+  loadSchemaFile,
+  loadVersionSnapshots,
+  computeVersionModel,
+} from '@bobbykim/manguito-cms-core'
 import { createCmsApp } from '@bobbykim/manguito-cms-api'
 import { createServer as createViteServer } from 'vite'
 import { createServer as httpCreateServer } from 'node:http'
@@ -66,6 +89,8 @@ import { generateSchemaRegistry } from '../src/codegen/registry.js'
 import { generateRoutes } from '../src/codegen/routes.js'
 import { generateForms } from '../src/codegen/forms.js'
 import { generateNav } from '../src/codegen/nav.js'
+import { reduceVersionModel } from '../src/codegen/version-model.js'
+import { resolveSchemaConfig } from '../src/utils/schema-config.js'
 import { watch as fsWatch } from 'node:fs/promises'
 
 const FAKE_CWD = '/fake/project'
@@ -111,6 +136,19 @@ describe('runDev', () => {
     vi.mocked(parseRoles).mockReturnValue({ ok: true, value: [] } as never)
     vi.mocked(parseRoutes).mockReturnValue({ ok: true, value: [] } as never)
     vi.mocked(buildSchemaRegistry).mockReturnValue({ content_types: {}, paragraph_types: {}, taxonomy_types: {} } as never)
+    vi.mocked(resolveSchemaConfig).mockReturnValue({ base_path: '/fake/schemas', folders: {} } as never)
+    vi.mocked(loadVersionSnapshots).mockReturnValue({ ok: true, value: [] } as never)
+    vi.mocked(computeVersionModel).mockReturnValue({
+      ok: true,
+      value: { current: 'v1', live: ['v1'], union: {}, projections: {} },
+    } as never)
+    vi.mocked(reduceVersionModel).mockImplementation(
+      (model: { current: string; live: string[]; projections: unknown }) => ({
+        current: model.current,
+        live: model.live,
+        projections: model.projections,
+      }) as never,
+    )
     vi.mocked(generateDrizzleConfig).mockResolvedValue(undefined)
     vi.mocked(generateSchemaRegistry).mockResolvedValue(undefined)
     vi.mocked(generateRoutes).mockResolvedValue(undefined)
@@ -149,6 +187,10 @@ describe('runDev', () => {
     expect(generateForms).toHaveBeenCalled()
     expect(generateNav).toHaveBeenCalled()
     expect(createCmsApp).toHaveBeenCalled()
+    // The only automated link between the version-model work and a running
+    // server: without this, createCmsApp could silently stop receiving
+    // `versions` and every test above would still pass green.
+    expect(vi.mocked(createCmsApp).mock.calls[0]![0]).toHaveProperty('versions')
     expect(createViteServer).toHaveBeenCalled()
     // fs.allow must include the project cwd so Vite can serve sibling deps
     // (e.g. @fontsource fonts) that live outside the admin package root.

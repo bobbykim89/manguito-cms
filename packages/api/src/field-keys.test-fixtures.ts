@@ -128,6 +128,26 @@ export const collisionTombstoneField: ParsedField = {
   removed: true,
 }
 
+// A tombstone whose retained column is exactly what an OLDER live version's
+// projection still maps to a label — the "un-drop" case for
+// createFieldKeyMapFromProjection: the version being served genuinely exposes
+// this column, so it must NOT be stripped even though the field itself is a
+// tombstone in the current schema. Name and column are deliberately distinct
+// (see renamedTombstoneField above) so a test can't pass under a name-keyed
+// implementation.
+export const retainedColumnTombstoneField: ParsedField = {
+  name: 'legacy_title',
+  label: 'Legacy Title',
+  field_type: 'text/plain',
+  required: false,
+  nullable: true,
+  order: 10,
+  validation: { required: false },
+  db_column: { column_name: 'blog_title', column_type: 'varchar', nullable: true },
+  ui_component: { component: 'text-input' },
+  removed: true,
+}
+
 export const manyToManyField: ParsedField = {
   name: 'tags',
   label: 'Tags',

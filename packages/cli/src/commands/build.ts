@@ -11,6 +11,8 @@ import {
   parseRoutes,
   buildSchemaRegistry,
   loadSchemaFile,
+  loadVersionSnapshots,
+  computeVersionModel,
   type ParseError,
   type ParsedSchema,
 } from '@bobbykim/manguito-cms-core'
@@ -20,7 +22,9 @@ import { generateRoutes } from '../codegen/routes.js'
 import { generateForms } from '../codegen/forms.js'
 import { generateServerEntries } from '../codegen/server-entries.js'
 import { generateProgrammaticRegistry } from '../codegen/programmatic-registry.js'
+import { generateVersionModel } from '../codegen/version-model.js'
 import { resolveConfig } from '../utils/config.js'
+import { resolveSchemaConfig } from '../utils/schema-config.js'
 import { loadEnvFile } from '../utils/env.js'
 import { printGuidedError, printSuccess, printValidationErrors } from '../utils/error.js'
 
@@ -124,6 +128,20 @@ export async function runBuild(
   await generateSchemaRegistry(registry, generatedDir)
   await generateRoutes(registry, generatedDir)
   await generateForms(registry, join(generatedDir, 'forms'))
+
+  const schema = resolveSchemaConfig(cwd, config)
+  const snapshots = loadVersionSnapshots(schema, registry)
+  if (!snapshots.ok) {
+    printValidationErrors(snapshots.errors, 'Snapshot errors', 'manguito build')
+    process.exit(1)
+  }
+  const versionModel = computeVersionModel({ current: registry, snapshots: snapshots.value })
+  if (!versionModel.ok) {
+    printValidationErrors(versionModel.errors, 'Version model errors', 'manguito build')
+    process.exit(1)
+  }
+  await generateVersionModel(versionModel.value, generatedDir)
+  printSuccess(`Version model baked (live: ${versionModel.value.live.join(', ')})`)
 
   const programmaticDir = resolve(cwd, config.programmatic.dir)
   const resolverFiles = existsSync(programmaticDir)
