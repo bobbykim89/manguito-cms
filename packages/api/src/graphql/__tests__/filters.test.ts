@@ -3,6 +3,8 @@ import { GraphQLObjectType, GraphQLSchema, GraphQLString as GraphQLStringType } 
 import type { ParsedContentType } from '@bobbykim/manguito-cms-core'
 import { buildFieldNameMap } from '../naming'
 import { SortOrderEnum, buildSortFieldEnum, translateFilters, buildFilterInputType } from '../filters'
+import { createFieldKeyMap } from '../../field-keys'
+import { divergentTextField, identityTextField } from '../../field-keys.test-fixtures'
 
 describe('sort enums', () => {
   it('SortOrderEnum has ASC/DESC', () => {
@@ -85,5 +87,62 @@ describe('buildFilterInputType', () => {
 
     expect(filter!.getFields()['views']).toBeDefined()
     expect(filter!.getFields()['likes']).toBeDefined()
+  })
+})
+
+describe('buildSortFieldEnum — version awareness', () => {
+  it('offers title when the version exposes that label', () => {
+    // divergentTextField's label IS 'title' (over column blog_title), so
+    // columnFor('title') resolves and the value is legitimately sortable.
+    const keys = createFieldKeyMap([divergentTextField])
+    const values = buildSortFieldEnum('Category', keys).getValues().map((v) => v.name)
+
+    expect(values).toContain('title')
+    expect(values).toContain('createdAt')
+    expect(values).toContain('updatedAt')
+  })
+
+  it('omits title when the version cannot resolve that label to a column', () => {
+    // identityTextField is label `summary`. Nothing on this type is named
+    // `title`, so offering it would hand the repository a label that maps to
+    // no column — 2d's inbound bug, in enum form.
+    const keys = createFieldKeyMap([identityTextField])
+    const values = buildSortFieldEnum('Category', keys).getValues().map((v) => v.name)
+
+    expect(values).not.toContain('title')
+    expect(values).toEqual(['createdAt', 'updatedAt'])
+  })
+
+  it('keeps title when no field key map is supplied', () => {
+    // Back-compatibility: schema.divergence.test.ts calls buildGraphQLSchema
+    // with no maps and asserts `sortBy: title` passes through unchanged.
+    const values = buildSortFieldEnum('Category').getValues().map((v) => v.name)
+    expect(values).toContain('title')
+  })
+
+  it('never yields an empty enum, which GraphQL would reject', () => {
+    const keys = createFieldKeyMap([])
+    expect(buildSortFieldEnum('Category', keys).getValues().length).toBeGreaterThan(0)
+  })
+})
+
+describe('buildFilterInputType — version awareness', () => {
+  it("names filter fields by the version's exposed label, not current's", () => {
+    // The view exposes column blog_title as `blogTitle` (v1's name) while
+    // current's field object calls it `title`. A filter input built from
+    // field.name would advertise the wrong key.
+    const type = {
+      schema_type: 'content-type' as const,
+      name: 'content--category',
+      fields: [divergentTextField],
+    } as unknown as ParsedContentType
+
+    const input = buildFilterInputType(type, [
+      { field: divergentTextField, exposedAs: 'blog_title', required: false },
+    ])
+
+    const keys = Object.keys(input!.getFields())
+    expect(keys).toContain('blogTitle')
+    expect(keys).not.toContain('title')
   })
 })
