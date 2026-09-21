@@ -12,7 +12,7 @@ describe('computeVersionModel', () => {
     expect(r.value.live).toEqual(['v1'])
     expect(r.value.union).toBe(current)
     expect(r.value.projections['v1']!.types['content--post']!.fields).toEqual([
-      { column_name: 'a', exposed_as: 'a' },
+      { column_name: 'a', exposed_as: 'a', required: false },
     ])
   })
 

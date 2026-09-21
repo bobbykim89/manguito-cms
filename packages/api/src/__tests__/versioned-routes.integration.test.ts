@@ -93,13 +93,13 @@ const TWO_LIVE: BakedVersionModel = {
     v1: {
       version: 'v1',
       types: {
-        [TEST_TYPE_NAME]: { fields: [{ column_name: 'blog_title', exposed_as: 'blog_title' }] },
+        [TEST_TYPE_NAME]: { fields: [{ column_name: 'blog_title', exposed_as: 'blog_title', required: false }] },
       },
     },
     v3: {
       version: 'v3',
       types: {
-        [TEST_TYPE_NAME]: { fields: [{ column_name: 'blog_title', exposed_as: 'title' }] },
+        [TEST_TYPE_NAME]: { fields: [{ column_name: 'blog_title', exposed_as: 'title', required: false }] },
       },
     },
   },
@@ -256,7 +256,7 @@ describe('versioned routes — integration', () => {
       current: 'v1',
       live: ['v1'],
       projections: { v1: { version: 'v1', types: { [TEST_TYPE_NAME]: { fields: [
-        { column_name: 'blog_title', exposed_as: 'title' },
+        { column_name: 'blog_title', exposed_as: 'title', required: false },
       ] } } } },
     }
     const res = await makeApp(solo).request(`/api/${BASE_PATH}`)
@@ -295,11 +295,11 @@ describe('versioned routes — integration', () => {
       projections: {
         v1: {
           version: 'v1',
-          types: { [TEST_TYPE_NAME]: { fields: [{ column_name: 'blog_title', exposed_as: 'title' }] } },
+          types: { [TEST_TYPE_NAME]: { fields: [{ column_name: 'blog_title', exposed_as: 'title', required: false }] } },
         },
         v3: {
           version: 'v3',
-          types: { [TEST_TYPE_NAME]: { fields: [{ column_name: 'blog_title', exposed_as: 'headline' }] } },
+          types: { [TEST_TYPE_NAME]: { fields: [{ column_name: 'blog_title', exposed_as: 'headline', required: false }] } },
         },
       },
     }

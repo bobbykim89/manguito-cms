@@ -129,7 +129,7 @@ describe('loadVersionModel', () => {
     if (!r.ok) return
     expect(r.value.current).toBe('v2')
     expect(r.value.projections['v1']?.types['content--post']?.fields).toEqual([
-      { column_name: 'a', exposed_as: 'a' },
+      { column_name: 'a', exposed_as: 'a', required: false },
     ])
   })
 
@@ -175,10 +175,10 @@ describe('loadVersionModel', () => {
 
     expect(r.value.current).toBe('v2')
     expect(r.value.projections['v1']!.types['content--post']!.fields).toEqual([
-      { column_name: 'old_title', exposed_as: 'old_title' },
+      { column_name: 'old_title', exposed_as: 'old_title', required: false },
     ])
     expect(r.value.projections['v2']!.types['content--post']!.fields).toEqual([
-      { column_name: 'old_title', exposed_as: 'title' },
+      { column_name: 'old_title', exposed_as: 'title', required: false },
     ])
   })
 

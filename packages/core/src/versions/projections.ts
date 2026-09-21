@@ -68,10 +68,12 @@ export function buildProjections(input: {
           const column_name = f.db_column!.column_name
           const fallback = fallbacks.get(`${typeName}.${column_name}`)
           // Omitted entirely rather than set undefined, so the zero-config
-          // case deep-equals cleanly in tests and over the wire.
+          // case deep-equals cleanly in tests and over the wire. `required`
+          // is read from THIS version's own registry, which is the whole
+          // point — see VersionProjection's doc comment.
           return fallback === undefined
-            ? { column_name, exposed_as: f.name }
-            : { column_name, exposed_as: f.name, fallback }
+            ? { column_name, exposed_as: f.name, required: f.required }
+            : { column_name, exposed_as: f.name, required: f.required, fallback }
         })
       types[typeName] = { fields }
     }

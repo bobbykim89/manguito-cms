@@ -183,8 +183,8 @@ describe('createFieldKeyMap', () => {
 describe('createFieldKeyMapFromProjection', () => {
   const projection = {
     fields: [
-      { column_name: 'blog_title', exposed_as: 'title' },
-      { column_name: 'summary', exposed_as: 'summary' },
+      { column_name: 'blog_title', exposed_as: 'title', required: false },
+      { column_name: 'summary', exposed_as: 'summary', required: false },
     ],
   }
 
@@ -213,7 +213,7 @@ describe('createFieldKeyMapFromProjection', () => {
 
   it('reports diverges when a label differs from its column', () => {
     expect(createFieldKeyMapFromProjection(projection, []).diverges).toBe(true)
-    const identity = { fields: [{ column_name: 'title', exposed_as: 'title' }] }
+    const identity = { fields: [{ column_name: 'title', exposed_as: 'title', required: false }] }
     expect(createFieldKeyMapFromProjection(identity, []).diverges).toBe(false)
   })
 

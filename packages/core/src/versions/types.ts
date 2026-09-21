@@ -21,7 +21,14 @@ export type VersionSnapshot = {
 export type VersionProjection = {
   version: string
   types: Record<string, {
-    fields: Array<{ column_name: string; exposed_as: string; fallback?: unknown }>
+    /**
+     * `required` is THIS version's, never current's. Nothing validates
+     * requiredness across versions (validate.ts checks columns only), so a
+     * field nullable when this version was cut can be required in current.
+     * A consumer that builds a non-null type from current's flag would break
+     * reads that work today — see the 2e design.
+     */
+    fields: Array<{ column_name: string; exposed_as: string; required: boolean; fallback?: unknown }>
   }>
 }
 
