@@ -1,10 +1,17 @@
 import { describe, it, expect } from 'vitest'
 import { graphql, printSchema } from 'graphql'
-import type { ParsedContentType, SchemaRegistry } from '@bobbykim/manguito-cms-core'
+import { programmaticField } from '@bobbykim/manguito-cms-core'
+import type { ParsedContentType, ParsedField, SchemaRegistry } from '@bobbykim/manguito-cms-core'
 import { buildGraphQLSchema } from '../schema'
 import type { GraphQLContext } from '../context'
 import { createFieldKeyMap } from '../../field-keys'
-import { divergentTargetType, divergentTextField, renamedTombstoneField } from '../../field-keys.test-fixtures'
+import { createProgrammaticResolver, resolverKey } from '../../programmatic/resolve'
+import {
+  divergentMediaField,
+  divergentTargetType,
+  divergentTextField,
+  renamedTombstoneField,
+} from '../../field-keys.test-fixtures'
 
 // renamedTombstoneField is label `legacy_desc` over retained column
 // `blog_desc` — name and column deliberately distinct, so a test cannot pass
@@ -83,5 +90,89 @@ describe('GraphQL schema — tombstoned fields', () => {
     expect(sdl).toContain('input CategoryFilter')
     const filterBlock = sdl.slice(sdl.indexOf('input CategoryFilter'))
     expect(filterBlock.slice(0, filterBlock.indexOf('}'))).not.toContain('legacyDesc')
+  })
+})
+
+// The four cases above all tombstone `divergentTextField` (text/plain) — a
+// regression that dropped the tombstone filter on `mediaFieldNames`
+// specifically (schema.ts's buildObjectType, not the field list itself) would
+// go undetected by any of them, even though a tombstoned MEDIA field would
+// then still be handed straight to `ctx.loaders.load` (resolvers.ts:82).
+const tombstonedMediaField: ParsedField = { ...divergentMediaField, removed: true }
+
+const summaryField: ParsedField = {
+  name: 'summary',
+  label: 'Summary',
+  field_type: 'programmatic',
+  required: false,
+  nullable: true,
+  order: 2,
+  validation: { required: false },
+  db_column: null,
+  ui_component: { component: 'computed-display' },
+}
+
+const withTombstonedMedia: ParsedContentType = {
+  ...divergentTargetType,
+  fields: [divergentTextField, tombstonedMediaField, summaryField],
+}
+
+const mediaRegistry = {
+  content_types: { 'content--category': withTombstonedMedia },
+  taxonomy_types: {},
+  paragraph_types: {},
+  enum_types: {},
+} as unknown as SchemaRegistry
+
+describe('GraphQL schema — tombstoned MEDIA field', () => {
+  const maps = { 'content--category': createFieldKeyMap(withTombstonedMedia.fields) }
+
+  it('drops a tombstoned media field from the schema and from mediaFieldNames', async () => {
+    const schema = buildGraphQLSchema(mediaRegistry, maps)
+    const sdl = printSchema(schema)
+
+    // Absent from the built schema (same proof as the text/plain cases above).
+    expect(sdl).not.toContain('hero:')
+
+    // Absent from mediaFieldNames' effect too: a programmatic field's
+    // resolution loop is the only place that list drives a real
+    // ctx.loaders.load call, so drive that path and check what it asked for.
+    const loaded: string[] = []
+    const resolvers = new Map([
+      [
+        resolverKey('content--category', 'summary'),
+        programmaticField({ schema: 'content--category', field: 'summary' }, (ctx) =>
+          `S:${String(ctx.get('title'))}`
+        ),
+      ],
+    ])
+    const repo = {
+      findMany: async () => ({
+        data: [{ id: 'c1', blog_title: 'Live', blog_hero_image: 'SHOULD NOT LOAD' }],
+        meta: { total: 1, page: 1, per_page: 10, total_pages: 1, has_next: false, has_prev: false },
+      }),
+    }
+    const ctx = {
+      repos: { 'content--category': repo },
+      resolver: createProgrammaticResolver(resolvers),
+      loaders: {
+        load: async (_type: string, field: string) => {
+          loaded.push(field)
+          return null
+        },
+      },
+      programmaticMemo: new WeakMap(),
+    } as unknown as GraphQLContext
+
+    const result = await graphql({
+      schema,
+      source: '{ categories { data { summary } } }',
+      contextValue: ctx,
+    })
+
+    expect(result.errors).toBeUndefined()
+    const data = result.data as { categories: { data: Array<{ summary: string }> } }
+    expect(data.categories.data[0]!.summary).toBe('S:Live')
+    expect(loaded).not.toContain('hero')
   })
 })

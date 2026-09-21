@@ -22,6 +22,7 @@ import type {
 } from '@bobbykim/manguito-cms-core'
 import type { GraphQLContext } from './context.js'
 import type { FieldKeyMap } from '../field-keys.js'
+import type { VersionView, ViewField } from './version-view.js'
 import { DateTimeScalar } from './scalars.js'
 import { scalarOutputType } from './type-mapping.js'
 import {
@@ -72,7 +73,8 @@ const MEDIA = new GraphQLObjectType({
 
 export function buildGraphQLSchema(
   registry: SchemaRegistry,
-  fieldKeyMaps: Record<string, FieldKeyMap> = {}
+  fieldKeyMaps: Record<string, FieldKeyMap> = {},
+  view?: VersionView
 ): GraphQLSchema {
   const objectTypes = new Map<string, GraphQLObjectType>() // machineName → type
   const enumTypes = new Map<string, GraphQLEnumType>() // enum machineName → type (only when valid)
@@ -95,15 +97,15 @@ export function buildGraphQLSchema(
   }
 
   // Output type for one field (scalar, enum, relation, media, programmatic).
-  function outputTypeForField(field: ParsedField): GraphQLOutputType {
+  function outputTypeForField(field: ParsedField, required: boolean): GraphQLOutputType {
     const scalar = scalarOutputType(field.field_type)
-    if (scalar) return field.required ? new GraphQLNonNull(scalar) : scalar
+    if (scalar) return required ? new GraphQLNonNull(scalar) : scalar
 
     if (field.field_type === 'enum') {
       const ref = field.ui_component.component === 'select' ? field.ui_component.enum_ref : undefined
       const et = ref ? enumTypes.get(ref) : undefined
       const t = et ?? GraphQLString
-      return field.required ? new GraphQLNonNull(t) : t
+      return required ? new GraphQLNonNull(t) : t
     }
 
     if (field.field_type === 'image' || field.field_type === 'video' || field.field_type === 'file') {
@@ -151,19 +153,37 @@ export function buildGraphQLSchema(
     return type.fields.filter((f) => f.removed !== true)
   }
 
+  /**
+   * The fields one schema exposes for a type, as ViewFields. With a view, the
+   * served version's own list; without one, the registry's minus tombstones.
+   */
+  function viewFieldsFor(machineName: string, type: { fields: ParsedField[] }): ViewField[] {
+    return (
+      view?.[machineName]?.fields ??
+      exposedFields(type).map((f) => ({ field: f, exposedAs: f.name, required: f.required }))
+    )
+  }
+
   // Build the object type for a content/taxonomy/paragraph type. Fields are a
   // thunk so relations can reference types created later (circular graphs).
   function buildObjectType(
     machineName: string,
     type: ParsedContentType | ParsedTaxonomyType | ParsedParagraphType
   ): GraphQLObjectType {
-    const visible = exposedFields(type)
+    const visible = viewFieldsFor(machineName, type)
 
     // Handed to the programmatic resolvers so they can present the same record
     // shape REST does, where media fields are resolved objects (see resolvers.ts).
+    //
+    // The field's REAL name, not its exposed label: this list goes straight to
+    // ctx.loaders.load(typeName, name, row), which looks the field up in the
+    // registry (resolvers.ts:81).
     const mediaFieldNames = visible
-      .filter((f) => f.field_type === 'image' || f.field_type === 'video' || f.field_type === 'file')
-      .map((f) => f.name)
+      .filter(
+        (v) =>
+          v.field.field_type === 'image' || v.field.field_type === 'video' || v.field.field_type === 'file'
+      )
+      .map((v) => v.field.name)
 
     return new GraphQLObjectType({
       name: graphqlTypeName(machineName),
@@ -180,17 +200,13 @@ export function buildGraphQLSchema(
         fields['createdAt'] = { type: new GraphQLNonNull(DateTimeScalar), resolve: (p) => p['created_at'] }
         fields['updatedAt'] = { type: new GraphQLNonNull(DateTimeScalar), resolve: (p) => p['updated_at'] }
 
-        for (const field of visible) {
-          const gqlName = toCamelCase(field.name)
-          const outType = outputTypeForField(field)
+        for (const vf of visible) {
+          const field = vf.field
+          const gqlName = toCamelCase(vf.exposedAs)
+          const outType = outputTypeForField(field, vf.required)
           let resolve: GraphQLFieldConfig<Record<string, unknown>, GraphQLContext>['resolve']
           if (field.field_type === 'programmatic') {
-            resolve = programmaticFieldResolver(
-              machineName,
-              field.name,
-              mediaFieldNames,
-              fieldKeyMaps[machineName]
-            )
+            resolve = programmaticFieldResolver(machineName, field.name, mediaFieldNames, fieldKeyMaps[machineName])
           } else if (
             field.field_type === 'reference' ||
             field.field_type === 'paragraph' ||
@@ -200,9 +216,15 @@ export function buildGraphQLSchema(
           ) {
             resolve = relationFieldResolver(machineName, field.name)
           } else {
-            resolve = scalarFieldResolver(field)
+            resolve = scalarFieldResolver(field, vf.fallback)
           }
-          fields[gqlName] = { type: outType, resolve }
+          fields[gqlName] = {
+            type: outType,
+            resolve,
+            // Conditional spread, not `deprecationReason: vf.deprecationReason`
+            // — exactOptionalPropertyTypes forbids present-and-undefined.
+            ...(vf.deprecationReason !== undefined && { deprecationReason: vf.deprecationReason }),
+          }
         }
         return fields
       },
@@ -244,7 +266,10 @@ export function buildGraphQLSchema(
 
   for (const [name, ct] of Object.entries(registry.content_types) as [string, ParsedContentType][]) {
     const objType = objectTypes.get(name)!
-    const nameMap = buildFieldNameMap(ct.fields.map((f) => f.name))
+    const visible = viewFieldsFor(name, ct)
+    // The version's own labels: translateFilters maps a GraphQL name back to a
+    // label, and columnFor then takes that label to the storage column.
+    const nameMap = buildFieldNameMap(visible.map((v) => v.exposedAs))
 
     if (ct.only_one) {
       queryFields[singleQueryName(name)] = { type: objType, resolve: singletonResolver(name) }
@@ -258,14 +283,14 @@ export function buildGraphQLSchema(
         meta: { type: new GraphQLNonNull(PAGE_META), resolve: (r) => r.meta },
       },
     })
-    const filterType = buildFilterInputType(ct)
+    const filterType = buildFilterInputType(ct, visible)
 
     queryFields[collectionQueryName(name)] = {
       type: new GraphQLNonNull(listType),
       args: {
         page: { type: GraphQLInt },
         perPage: { type: GraphQLInt },
-        sortBy: { type: buildSortFieldEnum(graphqlTypeName(name)) },
+        sortBy: { type: buildSortFieldEnum(graphqlTypeName(name), fieldKeyMaps[name]) },
         sortOrder: { type: SortOrderEnum },
         ...(filterType ? { filter: { type: filterType } } : {}),
       },
@@ -290,7 +315,11 @@ export function buildGraphQLSchema(
     queryFields[collectionQueryName(name)] = {
       type: new GraphQLNonNull(listType),
       args: { page: { type: GraphQLInt }, perPage: { type: GraphQLInt } },
-      resolve: collectionResolver(name, buildFieldNameMap(tt.fields.map((f) => f.name)), fieldKeyMaps[name]),
+      resolve: collectionResolver(
+        name,
+        buildFieldNameMap(viewFieldsFor(name, tt).map((v) => v.exposedAs)),
+        fieldKeyMaps[name]
+      ),
     }
     queryFields[singleQueryName(name)] = {
       type: objType,

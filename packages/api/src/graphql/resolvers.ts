@@ -18,14 +18,25 @@ function isPublished(item: Row | null): boolean {
  * A GraphQL field's value on a content row. The GraphQL field NAME comes from
  * the field's label (see naming.ts), but the value lives under its storage
  * column, which differs once a field has been renamed.
+ *
+ * `fallback` is the value a version declares for a column that stopped being
+ * written: rows created since the removal hold null there. Substituted on
+ * null/undefined ONLY — never on '' or 0 — matching projectRow's rule, so the
+ * REST and GraphQL surfaces cannot disagree about the same version.
  */
-export function resolveFieldValue(field: ParsedField, row: Record<string, unknown>): unknown {
+export function resolveFieldValue(
+  field: ParsedField,
+  row: Record<string, unknown>,
+  fallback?: unknown
+): unknown {
   const key = isColumnBacked(field) ? field.db_column.column_name : field.name
-  return row[key] ?? null
+  const value = row[key]
+  if ((value === null || value === undefined) && fallback !== undefined) return fallback
+  return value ?? null
 }
 
-export function scalarFieldResolver(field: ParsedField) {
-  return (parent: Row): unknown => resolveFieldValue(field, parent)
+export function scalarFieldResolver(field: ParsedField, fallback?: unknown) {
+  return (parent: Row): unknown => resolveFieldValue(field, parent, fallback)
 }
 
 export function relationFieldResolver(typeName: string, schemaFieldName: string) {
