@@ -269,7 +269,7 @@ A standalone public-exposure fix, landed before the versioning machinery. The fi
 - Test: `packages/api/src/graphql/__tests__/schema.tombstones.test.ts` (create)
 
 **Interfaces:**
-- Produces: `exposedFields(type: { fields: ParsedField[] }): ParsedField[]`, exported from `schema.ts`. Task 5 uses it as the no-view fallback.
+- Produces: `exposedFields(type: { fields: ParsedField[] }): ParsedField[]` — a **closure inside `buildGraphQLSchema`**, not an export. Task 5's `viewFieldsFor` is a sibling closure that calls it as the no-view fallback; nothing outside the function needs it, and `filters.ts` carries its own inline `removed !== true` filter.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1778,6 +1778,17 @@ In place of the removed block:
               model,
               makeRepo: makeGraphqlRepo,
             })
+            // Hoisted into locals and spread under their own guards.
+            // `noUncheckedIndexedAccess` makes each index
+            // `VersionProjection | undefined`, and
+            // `exactOptionalPropertyTypes` then rejects assigning that to an
+            // optional property — a present-and-undefined key. This is also
+            // why no `options.versions` check is needed: with versioning off
+            // `model.projections` is `{}`, so both are absent and the handler
+            // builds from the registry, exactly the pre-versioning behaviour.
+            const projection = model.projections[pass.projectionVersion]
+            const currentProjection = model.projections[model.current]
+
             mount.handler = createGraphQLHandler(
               registry,
               surface.repos,
@@ -1787,14 +1798,9 @@ In place of the removed block:
               gqlOptions,
               {
                 endpoint: mount.path,
-                // Only when versioning is configured: without it every
-                // projection is absent and the handler builds from the
-                // registry, which is exactly the pre-versioning behaviour.
-                ...(options.versions !== undefined && {
-                  projection: model.projections[pass.projectionVersion],
-                  currentProjection: model.projections[model.current],
-                  currentVersion: model.current,
-                }),
+                currentVersion: model.current,
+                ...(projection !== undefined && { projection }),
+                ...(currentProjection !== undefined && { currentProjection }),
               }
             )
           } catch (err) {
