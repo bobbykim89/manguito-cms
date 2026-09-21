@@ -107,6 +107,9 @@ export function buildFilterInputType(
   if (type.schema_type === 'content-type') fields['slug'] = { type: StringFilter }
 
   for (const f of type.fields) {
+    // A tombstone retains a real column, so without this a client could
+    // filter on a column the schema does not expose.
+    if (f.removed === true) continue
     if (f.field_type === 'programmatic' || f.field_type === 'paragraph') continue
     if (f.field_type === 'image' || f.field_type === 'video' || f.field_type === 'file') continue
     const input = filterInputForField(f.field_type)

@@ -136,15 +136,32 @@ export function buildGraphQLSchema(
     return GraphQLString
   }
 
+  /**
+   * A type's fields minus its tombstones.
+   *
+   * A tombstone (`removed: true`) is column-backed — the parser keeps its
+   * column alive for older live versions — but the version being served must
+   * never expose it. REST drops it via the FieldKeyMap's drop-set, which
+   * `remap` applies; GraphQL resolves per field by column through
+   * `resolveFieldValue` and never touches that map, so the exclusion has to
+   * happen where the schema is BUILT. A field absent from the schema is a
+   * validation error, so the retained value cannot reach a response at all.
+   */
+  function exposedFields(type: { fields: ParsedField[] }): ParsedField[] {
+    return type.fields.filter((f) => f.removed !== true)
+  }
+
   // Build the object type for a content/taxonomy/paragraph type. Fields are a
   // thunk so relations can reference types created later (circular graphs).
   function buildObjectType(
     machineName: string,
     type: ParsedContentType | ParsedTaxonomyType | ParsedParagraphType
   ): GraphQLObjectType {
+    const visible = exposedFields(type)
+
     // Handed to the programmatic resolvers so they can present the same record
     // shape REST does, where media fields are resolved objects (see resolvers.ts).
-    const mediaFieldNames = type.fields
+    const mediaFieldNames = visible
       .filter((f) => f.field_type === 'image' || f.field_type === 'video' || f.field_type === 'file')
       .map((f) => f.name)
 
@@ -163,7 +180,7 @@ export function buildGraphQLSchema(
         fields['createdAt'] = { type: new GraphQLNonNull(DateTimeScalar), resolve: (p) => p['created_at'] }
         fields['updatedAt'] = { type: new GraphQLNonNull(DateTimeScalar), resolve: (p) => p['updated_at'] }
 
-        for (const field of type.fields) {
+        for (const field of visible) {
           const gqlName = toCamelCase(field.name)
           const outType = outputTypeForField(field)
           let resolve: GraphQLFieldConfig<Record<string, unknown>, GraphQLContext>['resolve']
