@@ -1538,6 +1538,7 @@ Append to `packages/api/src/graphql/__tests__/handler.test.ts`, **inside the exi
     const rejected = await ask('{ posts { data { blogTitle } } }')
     expect(rejected.errors).toBeDefined()
   })
+```
 
 - [ ] **Step 2: Run it and confirm it fails**
 
