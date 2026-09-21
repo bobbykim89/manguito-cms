@@ -98,6 +98,18 @@ So no further core change is needed for typing: `field_type` and `ui_component` 
 
 A new `graphql/version-view.ts` builds this join once per version into a `VersionView` keyed by type name, and `buildGraphQLSchema` takes it alongside the registry.
 
+### Fallbacks
+
+A projection carries a `fallback` for a column that stopped being written: rows created since the
+removal hold NULL there, and the version still serving the column must present the declared value.
+REST does this in `projectRow` via `TypeProjector.fallbacks`. GraphQL has no route-level projection
+— `resolveFieldValue` returns `row[key] ?? null` — so without substitution the same version would
+serve `null` over GraphQL and the fallback over REST.
+
+The view therefore carries `fallback` through from the projection, and the scalar resolver
+substitutes it on `null`/`undefined` only, matching `projectRow`'s rule exactly. Never on empty
+string or `0`.
+
 ### The boundary
 
 Types absent from a projection fall back to the registry's own fields with no deprecation — exactly as `buildVersionSurface` already does for field-key maps, for the same reason. That covers:
@@ -106,6 +118,23 @@ Types absent from a projection fall back to the registry's own fields with no de
 - **Programmatic, many-to-many and enum-typed fields**, which are not column-backed and so never appear in a projection.
 
 Nested paragraph content and programmatic output therefore follow current's shape on every version, by design and not by oversight. This is the 2d boundary, inherited verbatim.
+
+## Tombstones are exposed today
+
+`grep -rn "removed" packages/api/src/graphql/` returns nothing. The api's tombstone exclusion lives
+entirely in `field-keys.ts`'s drop-set, which the REST surface reaches through `remap` — but
+`scalarFieldResolver(field)` reads `field.db_column.column_name` directly and never consults the
+FieldKeyMap. A tombstoned field is therefore built into the GraphQL schema and serves its retained
+data.
+
+This is the same public-exposure class closed for REST in the tombstone-exclusion branch, still
+open on this surface. It is reachable by any project that enables the GraphQL module and tombstones
+a field — both opt-in, so the blast radius is narrow, but it is a live hole and 2e is the
+sub-project that makes tombstones reachable here.
+
+Fixed ahead of the versioning machinery, as its own change: `buildObjectType`, its `mediaFieldNames`
+list, and `buildFilterInputType` all skip `removed === true`. That filter then stays permanently as
+the no-view fallback path, which is also what paragraph types take.
 
 ## Deprecation directives
 
@@ -193,7 +222,7 @@ A `/graphql/:version` catch-all classifies the segment with `classifyVersion` an
 | Package | Change |
 |---|---|
 | core | `required` on `VersionProjection`; `buildProjections` sets it. Minor bump. |
-| api | `graphql/version-view.ts` (new); `buildGraphQLSchema` takes a `VersionView`; `filters.ts` args become version-aware; `createGraphQLHandler` takes a path and a view; `app.ts` per-version loop, catch-all, headers, CSP prefix, per-version fault isolation. Minor bump. |
+| api | Tombstone exclusion in `schema.ts`/`filters.ts`; `graphql/version-view.ts` (new); `buildGraphQLSchema` takes a `VersionView`; `filters.ts` args become version-aware; `createGraphQLHandler` takes a path and a view; `app.ts` per-version loop, catch-all, headers, CSP prefix, per-version fault isolation. Minor bump. |
 | cli | None — `reduceVersionModel` passes projections through. A re-bake carries `required`. |
 | docs | This spec; the GraphQL module docs in `docs/v2/` updated for the versioned surface. |
 
