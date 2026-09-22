@@ -1984,8 +1984,14 @@ describe('graphql — deprecation headers', () => {
         v1: {
           version: 'v1',
           types: {
+            // Divergence must sit on author_id/author, NOT blog_title. A
+            // projection that exposes column `blog_title` under any label
+            // other than `blog_title` trips buildFieldKeyMap's collision
+            // check, because content--gqlpost's field NAME equals that column
+            // — see the ledger's Task 7 ruling. author_id never collides,
+            // since the registry names that field `author`.
             [GQLPOST]: {
-              fields: [{ column_name: 'blog_title', exposed_as: 'title', required: true }],
+              fields: [{ column_name: 'author_id', exposed_as: 'author', required: false }],
             },
           },
         },
