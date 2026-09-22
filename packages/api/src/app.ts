@@ -128,7 +128,8 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
   // browser→storage directly, so that host must be allowlisted.
   // The GraphiQL explorer (dev-only by default) boots from a CDN bundle plus
   // inline scripts, which the strict script-src blocks — so when it is enabled
-  // the /graphql path alone gets a relaxed CSP (ADR api/0010).
+  // the /graphql subtree (the unversioned endpoint plus every /graphql/vN
+  // mount below) gets a relaxed CSP (ADR api/0010).
   const uploadOrigins = storage.getUploadOrigins?.() ?? []
   const graphiqlEnabled = options.graphql?.enabled === true && options.graphql.graphiql === true
   app.use(
@@ -433,12 +434,18 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
   // `publicRepos` (published-only, same as the REST public routes).
   //
   // `buildGraphQLSchema` can throw synchronously (e.g. a GraphQL type-name
-  // collision between a content type and a taxonomy type) — since that throw
-  // happens inside a `.then()` callback, it rejects `ready`. A `.catch` is
-  // attached below so that rejection is HANDLED: an unhandled rejection here
-  // would otherwise crash the entire Node process at startup, taking down all
-  // REST routes with it, regardless of whether any client ever hits /graphql.
-  // Init failure is instead contained to a 500 on /graphql itself.
+  // collision between a content type and a taxonomy type) for any ONE
+  // version's schema. Each version below builds inside its own try/catch, so
+  // that throw is contained to that version's mount returning a 500 — it
+  // does not take any other live version's endpoint down with it, and does
+  // NOT reject the shared `ready` promise (the try/catch swallows it first).
+  // The outer `.catch` attached to `ready` covers a narrower failure: the
+  // dynamic `import()` itself rejecting (e.g. the graphql/ module failing to
+  // load at all) — a case no per-version try/catch can reach, since it
+  // happens before any version's schema-building code even runs. Either way
+  // the rejection is HANDLED here: an unhandled one would otherwise crash the
+  // entire Node process at startup, taking down all REST routes with it,
+  // regardless of whether any client ever hits /graphql.
   if (options.graphql?.enabled) {
     const gqlOptions = options.graphql
 
@@ -453,6 +460,12 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
     // and the dataloaders filter relation targets by published (ADR api/0002).
     // Kept a separate factory from the admin `repos` so a future change there
     // can never silently widen the public surface.
+    //
+    // They do take `sortableColumns`, like every other repo here: the GraphQL
+    // sort enum's values are a schema field's LABELS, which `collectionResolver`
+    // maps to columns before calling findMany — and this commit makes that
+    // mapping per-version, since `sortableColumnsFor` (via `buildVersionSurface`)
+    // now reads each version's OWN field-key map, not just current's.
     const makeGraphqlRepo = (_typeName: string, tableName: string, sortableColumns: Set<string>) =>
       createDrizzleContentRepository(db, tableName, { sortableColumns })
 
@@ -533,7 +546,8 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
         // at startup, taking every REST route with it.
         for (const m of mounts) m.error = err
         const message = err instanceof Error ? err.message : String(err)
-        process.stderr.write(`✗ GraphQL module failed to load; /graphql will return 500. ${message}\n`)
+        const paths = mounts.map((m) => m.path).join(', ')
+        process.stderr.write(`✗ GraphQL module failed to load; ${paths} will return 500. ${message}\n`)
       })
 
     const invokeFor =

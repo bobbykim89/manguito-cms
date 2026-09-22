@@ -452,13 +452,14 @@ describe('graphql integration', () => {
 
 // A GraphQL type-name collision (two schemas whose machine-name segments both
 // map to the same PascalCase GraphQL type name) makes `buildGraphQLSchema`
-// throw synchronously. That throw happens inside the `.then()` callback of the
-// dynamic `import('./graphql/handler.js')` in app.ts, so it rejects the shared
-// `ready` promise. Without a `.catch` there, that's an unhandled rejection —
-// Node terminates the whole process at startup, taking every REST route down
-// with it, independent of whether any client ever hits /graphql. This suite
-// proves the failure is instead contained: the process survives and /graphql
-// answers with a 500 envelope.
+// throw synchronously. app.ts builds each mounted version's schema inside its
+// own try/catch, so that throw is caught right there and turned into a 500 for
+// just that mount — it never reaches (let alone rejects) the shared `ready`
+// promise from the dynamic `import('./graphql/handler.js')`. Node's process
+// survival therefore doesn't depend on this suite's registry having only one
+// version: with a single unversioned pass (no `versions` option here), this
+// proves the same per-mount containment collapses to the original guarantee —
+// the process survives and /graphql answers with a 500 envelope.
 describe('graphql schema-init failure', () => {
   const DUP_CONTENT: ParsedContentType = {
     ...POST,
@@ -562,6 +563,50 @@ describe('graphql — one endpoint per live version', () => {
     }
   })
 
+  // `{ __typename }` above only pins ROUTING — it says nothing about which
+  // projection each mount actually built from. An implementation that reads
+  // `model.projections[model.current]` on every pass (always serving
+  // current's schema, regardless of which endpoint was hit) would satisfy
+  // every assertion above while defeating the entire point of this task, so
+  // this test reads each endpoint's OWN schema via introspection instead.
+  it("serves each endpoint's OWN projection, not current's on every mount", async () => {
+    const app = makeGraphqlApp(TWO_LIVE_MODEL)
+
+    type IntrospectedField = { name: string; deprecationReason: string | null }
+    async function fieldsOf(path: string): Promise<IntrospectedField[]> {
+      const res = await app.fetch(new Request(`http://local${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          query: '{ __type(name: "Gqlpost") { fields(includeDeprecated: true) { name deprecationReason } } }',
+        }),
+      }))
+      const body = (await res.json()) as { data?: { __type?: { fields?: IntrospectedField[] } } }
+      return body.data?.__type?.fields ?? []
+    }
+
+    // v1's projection exposes `author_id` under its OLD label 'author' — a
+    // regular (non-deprecated) query would never even see it, since
+    // buildVersionView marks it deprecated. `includeDeprecated: true` is what
+    // makes it visible here.
+    const v1Fields = await fieldsOf('/graphql/v1')
+    const v1Author = v1Fields.find((f) => f.name === 'author')
+    expect(v1Author?.deprecationReason).toBe("Renamed to 'writer' in v3.")
+    expect(v1Fields.some((f) => f.name === 'writer')).toBe(false)
+
+    // v3 (current) and the unversioned pass both build at
+    // `projectionVersion: model.current` — same projection, same schema — so
+    // both must show the RENAMED label and no trace of v1's, proving the
+    // divergence above came from /graphql/v1 reading its OWN projection
+    // rather than every mount reading current's.
+    for (const path of ['/graphql/v3', '/graphql']) {
+      const fields = await fieldsOf(path)
+      const writer = fields.find((f) => f.name === 'writer')
+      expect(writer?.deprecationReason ?? null, path).toBeNull()
+      expect(fields.some((f) => f.name === 'author'), path).toBe(false)
+    }
+  })
+
   it('registers no version segments when no version model is configured', async () => {
     const app = makeGraphqlApp(undefined)
 
@@ -597,8 +642,14 @@ describe('graphql — one endpoint per live version', () => {
       body: JSON.stringify({ query: '{ __typename }' }),
     }))
 
-    // Mirror the exact expectation of the existing GraphiQL CSP test in this
-    // file (`graphql.integration.test.ts:363`), rather than inventing one.
-    expect(res.headers.get('content-security-policy')).toContain("'unsafe-inline'")
+    // Assert the strong `script-src` directive, not just `'unsafe-inline'` —
+    // the STRICT policy's own `style-src` already contains `'unsafe-inline'`
+    // (security-headers.ts's `csp`), so a bare `toContain("'unsafe-inline'")`
+    // would pass even under the old exact-path comparison this test exists to
+    // guard against. Mirrors the existing GraphiQL CSP test in this file
+    // (`graphql.integration.test.ts:415`), rather than inventing a new bar.
+    expect(res.headers.get('content-security-policy')).toContain(
+      "script-src 'self' 'unsafe-inline' https://unpkg.com"
+    )
   })
 })

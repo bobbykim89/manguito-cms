@@ -39,8 +39,9 @@ describe('createSecurityHeadersMiddleware', () => {
   // ── GraphiQL CSP exception (ADR api/0010) ───────────────────────────────────
   //
   // Yoga's GraphiQL loads its UI from a CDN and boots via inline scripts, which
-  // the strict script-src blocks. The relaxation must apply to that one path and
-  // nowhere else.
+  // the strict script-src blocks. The relaxation must apply to `graphiqlPath`
+  // and its subtree (e.g. per-version mounts like `/graphql/v1`) and nowhere
+  // else — not a sibling path that merely starts with the same characters.
 
   it('keeps the strict script-src when graphiqlPath is not set', async () => {
     const app = new Hono()
@@ -106,5 +107,31 @@ describe('createSecurityHeadersMiddleware', () => {
       expect(csp, path).not.toContain('unpkg.com')
       expect(csp, path).not.toContain("script-src 'self' 'unsafe-inline'")
     }
+  })
+
+  it('relaxes a versioned mount under the GraphiQL path (e.g. /graphql/v1)', async () => {
+    // Schema versioning mounts one GraphQL endpoint per live version under
+    // graphiqlPath's own subtree — the explorer must still boot on each of them.
+    const app = new Hono()
+    app.use('*', createSecurityHeadersMiddleware({ graphiqlPath: '/graphql' }))
+    app.get('/graphql/v1', (c) => c.text('explorer'))
+    const res = await app.request('/graphql/v1')
+    const csp = res.headers.get('Content-Security-Policy') ?? ''
+    expect(csp).toContain("script-src 'self' 'unsafe-inline' https://unpkg.com")
+    expect(csp).toContain("style-src 'self' 'unsafe-inline' https://unpkg.com")
+  })
+
+  it('keeps the strict policy on a path that merely starts with graphiqlPath', async () => {
+    // A naive `path.startsWith(graphiqlPath)` (no separator check) would also
+    // relax an unrelated route that just happens to share the same prefix.
+    // This pins the boundary at a path SEGMENT, not a string prefix.
+    const app = new Hono()
+    app.use('*', createSecurityHeadersMiddleware({ graphiqlPath: '/graphql' }))
+    app.get('/graphqlfoo', (c) => c.json({ ok: true }))
+    const res = await app.request('/graphqlfoo')
+    const csp = res.headers.get('Content-Security-Policy') ?? ''
+    expect(csp).toContain("script-src 'self'")
+    expect(csp).not.toContain('unpkg.com')
+    expect(csp).not.toContain("script-src 'self' 'unsafe-inline'")
   })
 })

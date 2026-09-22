@@ -5,7 +5,8 @@ export type SecurityHeadersOptions = {
   connectSrc?: string[]
   /**
    * Path of the GraphiQL explorer (e.g. `/graphql`), set ONLY when GraphiQL is
-   * enabled. That one path gets a relaxed CSP so the explorer can boot; every
+   * enabled. That path AND its version segments (`/graphql/v1`, ...) get a
+   * relaxed CSP so the explorer can boot on every mounted endpoint; every
    * other route keeps the strict policy. Leave undefined to disable entirely.
    */
   graphiqlPath?: string
@@ -23,9 +24,11 @@ const GRAPHIQL_CDN = 'https://unpkg.com'
  * The GraphiQL explorer is the one documented exception: its UI is a CDN bundle
  * booted by inline scripts, which the strict policy blocks. When `graphiqlPath`
  * is set (i.e. GraphiQL is enabled — off in production by default), requests to
- * exactly that path get `'unsafe-inline'` + the CDN origin for script/style.
- * The relaxation is scoped to that single path and never applies to the admin
- * SPA, the REST API, or GraphQL POST queries from other origins.
+ * that path OR any path under it (`${graphiqlPath}/...`, e.g. per-version
+ * mounts like `/graphql/v1`) get `'unsafe-inline'` + the CDN origin for
+ * script/style. The relaxation is scoped to that path and its subtree only —
+ * it never applies to the admin SPA, the REST API, or a sibling path that
+ * merely starts with the same characters (e.g. `/graphqlfoo` stays strict).
  */
 export function createSecurityHeadersMiddleware(
   options: SecurityHeadersOptions = {},
@@ -62,10 +65,10 @@ export function createSecurityHeadersMiddleware(
     connectSrc,
   })
 
-  // GraphiQL needs four exceptions, all confined to its own path: the CDN for
-  // the UI bundle + stylesheet, 'unsafe-inline' for its bootstrap scripts,
-  // connect-src for the Monaco worker bundles it fetches from that CDN, and
-  // worker-src blob: because it spawns those workers from Blob URLs.
+  // GraphiQL needs four exceptions, all confined to its own path and subtree:
+  // the CDN for the UI bundle + stylesheet, 'unsafe-inline' for its bootstrap
+  // scripts, connect-src for the Monaco worker bundles it fetches from that
+  // CDN, and worker-src blob: because it spawns those workers from Blob URLs.
   const graphiqlCsp = buildCsp({
     scriptSrc: `'self' 'unsafe-inline' ${GRAPHIQL_CDN}`,
     styleSrc: `'self' 'unsafe-inline' ${GRAPHIQL_CDN}`,
