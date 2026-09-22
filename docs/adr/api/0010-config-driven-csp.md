@@ -28,21 +28,37 @@ un-substituted `Loading __TITLE__...` shell.
 `createSecurityHeadersMiddleware` therefore takes an optional `graphiqlPath`.
 `createCmsApp` sets it **only** when GraphQL is enabled *and* `graphiql` is on —
 which is `NODE_ENV !== 'production'` by default, so production is unaffected
-unless an operator explicitly opts in. Requests whose path matches exactly get
-`'unsafe-inline'` + the CDN origin on `script-src`/`style-src`, the CDN added to
-`connect-src`, and `worker-src 'self' blob:`. Every other path — the admin SPA,
-the REST API, and GraphQL `POST` queries — keeps the strict policy verbatim.
+unless an operator explicitly opts in. Requests whose path **is that path, or
+falls under it** (`${graphiqlPath}/…`) get `'unsafe-inline'` + the CDN origin on
+`script-src`/`style-src`, the CDN added to `connect-src`, and
+`worker-src 'self' blob:`. Every other path — the admin SPA and the REST API —
+keeps the strict policy verbatim. A path that merely starts with the same
+characters but is not actually under it (`/graphqlfoo` against a
+`graphiqlPath` of `/graphql`) also keeps the strict policy; a test pins that
+boundary (`security-headers.test.ts`).
 
 The relaxation is deliberately *path-scoped rather than global*: it is the
 narrowest change that makes the explorer work, and it disappears entirely when
 GraphiQL is off.
 
+**Widened to the path's subtree (schema versioning 2e).** The relaxation
+originally matched one exact path. Serving GraphQL per schema version mounts
+GraphiQL again at `/graphql/v1`, `/graphql/v3`, etc., alongside `/graphql`
+itself, and an exact-path match would leave every versioned mount's explorer
+unable to boot — blocked by the strict policy and rendering as the
+un-substituted `Loading __TITLE__...` shell. The match was widened from one
+path to that path's subtree so every version's explorer works identically.
+This is a genuine widening of a security control's scope, done because the
+number of paths the control must cover grew from one to N — not a loosening of
+what is allowed on any single path, and still confined to non-production,
+opt-in GraphiQL mounts under the one configured prefix.
+
 ## Considered Options
 
 - **Relax `script-src` to `'unsafe-inline'` / add a broad `connect-src *`** —
   rejected: guts the XSS/exfiltration protection the middleware exists for. (The
-  GraphiQL carve-out above is scoped to one path behind a dev-only flag, not a
-  global relaxation.)
+  GraphiQL carve-out above is scoped to one path's subtree behind a dev-only
+  flag, not a global relaxation.)
 - **Self-host the GraphiQL assets so `'self'` suffices** — rejected for now:
   ships a ~1 MB bundle inside the api package and the inline bootstrap would
   still need a nonce or hash, so it does not actually avoid a CSP change.

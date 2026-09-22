@@ -164,3 +164,32 @@ query {
 This single request replaces a REST sequence of `GET /api/posts?...` followed by
 per-post author lookups — the "fewer round-trips" driver from the
 [index](./graphql-module.md#1-is-it-worth-it).
+
+---
+
+## Versioned schemas
+
+When a project has cut a schema version, each live version gets its own
+`GraphQLSchema`, built from that version's projection rather than the current
+registry:
+
+- A field's GraphQL name comes from the label **that version** exposes the
+  column under, so a rename changes the field name per version over one column.
+- Nullability comes from the version's own `required`, never current's. A field
+  nullable when the version was cut stays nullable on its schema.
+- `field_type` and `ui_component` are recovered from current's field for the
+  same column, which `FIELD_TYPE_CHANGED_WHILE_LIVE` and
+  `VERSION_COLUMN_MISSING` make sound.
+- A field whose name or presence differs from current carries `@deprecated`
+  with the reason, so a pinned consumer can introspect what an upgrade changes.
+- A column a version declares a `fallback` for serves that value when the
+  column is null — matching REST's `projectRow`.
+
+**Not versioned:** paragraph types, programmatic fields, many-to-many
+references and enum types. None are column-backed (or projected at all), so
+they follow the current schema on every version. `manguito version:diff` still
+reports paragraph renames the served contract does not honour.
+
+**Tombstones are never exposed.** A field marked `removed: true` retains its
+column for older live versions and is excluded from every schema that declares
+it — including the unversioned `/graphql`.

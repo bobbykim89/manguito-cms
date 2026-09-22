@@ -1236,7 +1236,10 @@ Expected: FAIL — `buildGraphQLSchema` takes two parameters, so the view is ign
  * `fallback` is the value a version declares for a column that stopped being
  * written: rows created since the removal hold null there. Substituted on
  * null/undefined ONLY — never on '' or 0 — matching projectRow's rule, so the
- * REST and GraphQL surfaces cannot disagree about the same version.
+ * REST and GraphQL surfaces cannot disagree about the same version. That
+ * empty-string/0 case is a real hazard for a `||`-based shorthand, not for
+ * `??`: `row[key] ?? fallback ?? null` is nullish, not falsy, so it is
+ * equivalent to the explicit check below.
  */
 export function resolveFieldValue(
   field: ParsedField,
