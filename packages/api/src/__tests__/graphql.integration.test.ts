@@ -664,6 +664,10 @@ describe('graphql — non-live versions', () => {
     const res = await gqlPost(makeGraphqlApp(TWO_LIVE_MODEL), '/graphql/v2')
     const body = await res.json()
 
+    // 200, not REST's 410: a GraphQL client surfaces `errors` from a 200 as
+    // readable GraphQL errors but a 4xx as an opaque network error — the
+    // deliberate divergence this task exists to lock in.
+    expect(res.status).toBe(200)
     expect(body.errors).toBeDefined()
     expect(body.errors[0].extensions.code).toBe('VERSION_RETIRED')
     expect(body.errors[0].message).toContain('v2')
@@ -678,6 +682,8 @@ describe('graphql — non-live versions', () => {
     const res = await gqlPost(makeGraphqlApp(TWO_LIVE_MODEL), '/graphql/v9')
     const body = await res.json()
 
+    // Same 200-not-4xx divergence as the retired case above.
+    expect(res.status).toBe(200)
     expect(body.errors[0].extensions.code).toBe('VERSION_UNKNOWN')
   })
 
