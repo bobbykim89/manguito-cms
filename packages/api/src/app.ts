@@ -563,11 +563,68 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
         return mount.handler(c, async () => {})
       }
 
+    // Reuses the REST helper, so the two surfaces stay diagnosable the same
+    // way — including its decision not to nag a project that never opted into
+    // versioning. Registered BEFORE the route handlers below: Hono matches in
+    // registration order and a handler terminates the chain, so middleware
+    // added afterwards would never run.
+    for (const mount of mounts) {
+      const headers = deprecationHeaders({
+        requested: mount.version,
+        model,
+        successor: `/graphql/${model.current}`,
+      })
+      if (headers === null) continue
+      const attach: MiddlewareHandler = async (c, next) => {
+        await next()
+        for (const [key, value] of Object.entries(headers)) c.res.headers.set(key, value)
+      }
+      app.use(mount.path, attach)
+    }
+
     // Concrete paths registered BEFORE Task 8's catch-all — Hono matches in
     // registration order, exactly as the REST surface relies on.
     for (const mount of mounts) {
       if (listRateLimit) app.all(mount.path, listRateLimit, invokeFor(mount))
       else app.all(mount.path, invokeFor(mount))
+    }
+
+    // Registered last, so it is only reached by a request that matched no live
+    // version's endpoint above. `not-a-version` falls through, which keeps the
+    // guard from claiming any non-version segment under /graphql.
+    if (options.versions !== undefined) {
+      app.all('/graphql/:version', async (c, next) => {
+        const segment = c.req.param('version')
+        const kind = classifyVersion(segment, model)
+        if (kind === 'not-a-version' || kind === 'live') return next()
+
+        const live = model.live.join(', ')
+        // GraphQL's own error shape, not the { ok, error } envelope: the caller
+        // is a GraphQL client, and Apollo or urql handed a body they do not
+        // recognise reports "unexpected response" — hiding the one message a
+        // pinned consumer actually needs to read.
+        //
+        // Status 200, unlike REST's 410/404 for the same conditions. A
+        // GraphQL client surfaces `errors` from a 200 as readable GraphQL
+        // errors but a 4xx as an opaque network error, which would defeat the
+        // point of choosing this shape. The divergence is deliberate and
+        // recorded in the 2e design's residuals.
+        return c.json({
+          errors: [
+            {
+              message:
+                kind === 'retired'
+                  ? `Version ${segment} is no longer served. Live versions: ${live}.`
+                  : `Version ${segment} does not exist. Live versions: ${live}.`,
+              extensions: {
+                code: kind === 'retired' ? 'VERSION_RETIRED' : 'VERSION_UNKNOWN',
+                current: model.current,
+                live: model.live,
+              },
+            },
+          ],
+        })
+      })
     }
   }
 

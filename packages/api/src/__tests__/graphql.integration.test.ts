@@ -649,3 +649,92 @@ describe('graphql — one endpoint per live version', () => {
     )
   })
 })
+
+async function gqlPost(app: ReturnType<typeof makeGraphqlApp>, path: string) {
+  return app.fetch(new Request(`http://local${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ query: '{ __typename }' }),
+  }))
+}
+
+describe('graphql — non-live versions', () => {
+  it('reports a retired version as a GraphQL error', async () => {
+    // v2 was cut and later retired: it is below current and absent from live.
+    const res = await gqlPost(makeGraphqlApp(TWO_LIVE_MODEL), '/graphql/v2')
+    const body = await res.json()
+
+    expect(body.errors).toBeDefined()
+    expect(body.errors[0].extensions.code).toBe('VERSION_RETIRED')
+    expect(body.errors[0].message).toContain('v2')
+    expect(body.errors[0].message).toContain('v1, v3')
+    expect(body.errors[0].extensions.current).toBe('v3')
+    expect(body.errors[0].extensions.live).toEqual(['v1', 'v3'])
+    // No `ok` envelope — a GraphQL client would not parse it.
+    expect(body.ok).toBeUndefined()
+  })
+
+  it('reports a version that was never cut as unknown', async () => {
+    const res = await gqlPost(makeGraphqlApp(TWO_LIVE_MODEL), '/graphql/v9')
+    const body = await res.json()
+
+    expect(body.errors[0].extensions.code).toBe('VERSION_UNKNOWN')
+  })
+
+  it('falls through for a segment that is not version-shaped', async () => {
+    // Nothing else lives under /graphql today, but the guard must not claim a
+    // non-version segment — the same order-independence the REST catch-all
+    // gives /api/media/:id.
+    const res = await gqlPost(makeGraphqlApp(TWO_LIVE_MODEL), '/graphql/playground')
+    expect(res.status).toBe(404)
+    const text = await res.text()
+    expect(text).not.toContain('VERSION_UNKNOWN')
+    expect(text).not.toContain('VERSION_RETIRED')
+  })
+})
+
+describe('graphql — deprecation headers', () => {
+  it('marks an older live version deprecated and names its successor', async () => {
+    const res = await gqlPost(makeGraphqlApp(TWO_LIVE_MODEL), '/graphql/v1')
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('deprecation')).toBe('true')
+    expect(res.headers.get('link')).toBe('</graphql/v3>; rel="successor-version"')
+  })
+
+  it("sends no deprecation headers on the current version's own endpoint", async () => {
+    const res = await gqlPost(makeGraphqlApp(TWO_LIVE_MODEL), '/graphql/v3')
+    expect(res.headers.get('deprecation')).toBeNull()
+  })
+
+  it('warns that the unversioned endpoint floats, once more than one version is live', async () => {
+    const res = await gqlPost(makeGraphqlApp(TWO_LIVE_MODEL), '/graphql')
+    expect(res.headers.get('deprecation')).toBe('true')
+    expect(res.headers.get('warning')).toContain('Pin a version')
+  })
+
+  it('stays silent on the unversioned endpoint for a project with one live version', async () => {
+    const oneLive: BakedVersionModel = {
+      current: 'v1',
+      live: ['v1'],
+      projections: {
+        v1: {
+          version: 'v1',
+          types: {
+            // Divergence must sit on author_id/author, NOT blog_title. A
+            // projection that exposes column `blog_title` under any label
+            // other than `blog_title` trips buildFieldKeyMap's collision
+            // check, because content--gqlpost's field NAME equals that column
+            // — see the ledger's Task 7 ruling. author_id never collides,
+            // since the registry names that field `author`.
+            [GQLPOST]: {
+              fields: [{ column_name: 'author_id', exposed_as: 'author', required: false }],
+            },
+          },
+        },
+      },
+    }
+    const res = await gqlPost(makeGraphqlApp(oneLive), '/graphql')
+    expect(res.headers.get('deprecation')).toBeNull()
+  })
+})
