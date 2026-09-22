@@ -6,7 +6,7 @@ import type { ProgrammaticResolver } from '../programmatic/resolve.js'
 import type { FieldKeyMap } from '../field-keys.js'
 import type { GraphQLContext } from './context.js'
 import { buildGraphQLSchema } from './schema.js'
-import { buildVersionView } from './version-view.js'
+import { buildVersionView, type VersionView } from './version-view.js'
 import { createRelationLoaders } from './dataloaders.js'
 import { buildArmorPlugin, introspectionPlugin } from './security.js'
 
@@ -57,15 +57,21 @@ export function createGraphQLHandler(
     currentVersion?: string
   } = {}
 ): Handler {
-  const view =
-    versioning.projection !== undefined
-      ? buildVersionView({
-          registry,
-          projection: versioning.projection,
-          currentProjection: versioning.currentProjection,
-          currentVersion: versioning.currentVersion ?? '',
-        })
-      : undefined
+  let view: VersionView | undefined
+  if (versioning.projection !== undefined) {
+    if (versioning.currentVersion === undefined) {
+      throw new Error(
+        'createGraphQLHandler: currentVersion is required when a projection is supplied — ' +
+          'deprecation reasons name it, and an empty one ships "Removed in ." into published SDL.'
+      )
+    }
+    view = buildVersionView({
+      registry,
+      projection: versioning.projection,
+      currentProjection: versioning.currentProjection,
+      currentVersion: versioning.currentVersion,
+    })
+  }
   const schema = buildGraphQLSchema(registry, fieldKeyMaps, view)
   const { plugins } = buildArmorPlugin({
     maxDepth: options.maxDepth,

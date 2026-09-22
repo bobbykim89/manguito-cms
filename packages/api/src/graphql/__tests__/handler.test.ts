@@ -295,4 +295,25 @@ describe('createGraphQLHandler', () => {
     const rejected = await ask('{ posts { data { blogTitle } } }')
     expect(rejected.errors).toBeDefined()
   })
+
+  // Against the old `currentVersion: versioning.currentVersion ?? ''` fallback
+  // this would NOT throw: it would silently build a working handler whose
+  // deprecation reasons embed an empty version, e.g. "Removed in .", straight
+  // into published SDL/introspection. A projection without a currentVersion
+  // must fail loudly instead.
+  it('throws when a projection is supplied without a currentVersion', () => {
+    expect(() =>
+      createGraphQLHandler(registry, repos, fieldKeyMaps, resolver, db, baseOptions, {
+        endpoint: '/graphql/v1',
+        projection: {
+          version: 'v1',
+          types: {
+            'content--post': {
+              fields: [{ column_name: 'blog_title', exposed_as: 'legacy_title', required: true }],
+            },
+          },
+        },
+      })
+    ).toThrow(/currentVersion is required/)
+  })
 })
