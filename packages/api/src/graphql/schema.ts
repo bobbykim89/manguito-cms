@@ -43,6 +43,7 @@ import {
   singletonResolver,
   taxonomySingleResolver,
 } from './resolvers.js'
+import type { MediaFieldKey } from './resolvers.js'
 
 const PAGE_META = new GraphQLObjectType({
   name: 'PageMeta',
@@ -182,7 +183,7 @@ export function buildGraphQLSchema(
     // serves, which is where `ctx.get()` looks for it. A version that renames a
     // media field makes them differ, and passing only one of the two loses the
     // resolved object (see relabelMedia in resolvers.ts).
-    const mediaFields = visible
+    const mediaFields: MediaFieldKey[] = visible
       .filter(
         (v) =>
           v.field.field_type === 'image' || v.field.field_type === 'video' || v.field.field_type === 'file'

@@ -97,7 +97,7 @@ describe('GraphQL schema — tombstoned fields', () => {
 // regression that dropped the tombstone filter on `mediaFields`
 // specifically (schema.ts's buildObjectType, not the field list itself) would
 // go undetected by any of them, even though a tombstoned MEDIA field would
-// then still be handed straight to `ctx.loaders.load` (resolvers.ts:82).
+// then still be handed straight to `ctx.loaders.load` (resolvers.ts:116).
 const tombstonedMediaField: ParsedField = { ...divergentMediaField, removed: true }
 
 const summaryField: ParsedField = {

@@ -45,7 +45,7 @@ export type CreateCmsAppOptions = {
   cors?: CorsConfig
   /** Programmatic field resolvers, keyed `${schema}::${field}`. */
   resolvers?: ResolverMap
-  /** GraphQL module config (resolved). When enabled, mounts POST /graphql. */
+  /** GraphQL module config (resolved). When enabled, mounts `/graphql` (and one `/graphql/<version>` per live version) via `app.all`. */
   graphql?: ResolvedGraphQLConfig
   /**
    * The baked version model — what `manguito build` writes into
@@ -431,7 +431,7 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
   // there's a single shared `ready` promise, never a re-import per request.
   // Unauthenticated by design: it sits alongside /api/*, not behind the
   // /admin/api/* auth middleware registered above, and only ever reads through
-  // `publicRepos` (published-only, same as the REST public routes).
+  // `makeGraphqlRepo` (published-only, same as the REST public routes).
   //
   // `buildGraphQLSchema` can throw synchronously (e.g. a GraphQL type-name
   // collision between a content type and a taxonomy type) for any ONE
@@ -582,8 +582,14 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
       app.use(mount.path, attach)
     }
 
-    // Concrete paths registered BEFORE Task 8's catch-all — Hono matches in
-    // registration order, exactly as the REST surface relies on.
+    // Concrete paths registered before the catch-all below, but unlike the
+    // REST surface this ordering is NOT load-bearing here: the catch-all
+    // `return next()`s for any live version, so Hono falls through to the
+    // mount handler regardless of which was registered first (confirmed by
+    // moving the catch-all before this loop — every test stayed green). What
+    // IS load-bearing, and is tested, is the deprecation-header middleware's
+    // ordering above: it must run before the mount handlers so it can attach
+    // headers to the response they produce.
     for (const mount of mounts) {
       if (listRateLimit) app.all(mount.path, listRateLimit, invokeFor(mount))
       else app.all(mount.path, invokeFor(mount))
