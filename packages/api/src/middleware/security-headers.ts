@@ -79,7 +79,9 @@ export function createSecurityHeadersMiddleware(
     c.res.headers.set('X-Content-Type-Options', 'nosniff')
     c.res.headers.set('X-Frame-Options', 'DENY')
     c.res.headers.set('Referrer-Policy', 'no-referrer')
-    const isGraphiql = graphiqlPath !== undefined && c.req.path === graphiqlPath
+    const isGraphiql =
+      graphiqlPath !== undefined &&
+      (c.req.path === graphiqlPath || c.req.path.startsWith(`${graphiqlPath}/`))
     c.res.headers.set('Content-Security-Policy', isGraphiql ? graphiqlCsp : csp)
   }
 }

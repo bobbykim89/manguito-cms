@@ -12,6 +12,7 @@ import type {
 } from '@bobbykim/manguito-cms-core'
 import { createCmsApp } from '../app'
 import { createLocalAdapter } from '../storage/adapters/local'
+import type { BakedVersionModel } from '../versions'
 
 const DB_URL = process.env['DB_URL']
 if (!DB_URL) throw new Error('DB_URL must be set in .env.test')
@@ -82,6 +83,44 @@ const POST: ParsedContentType = {
   api: { default_base_path: 'gqlpost', http_methods: ['GET'], item_path: '/gqlpost/:slug' },
 }
 
+// content--gqlpost's `blog_title` field NAME equals its column, so a
+// projection cannot diverge on it: createFieldKeyMapFromProjection's
+// collision check (field-keys.ts, shared by every FieldKeyMap builder) walks
+// EVERY field's own registry name and rejects any name that equals a column
+// mapped to a DIFFERENT label — including a field's own column, once some
+// projection renames it. `blog_title`'s bare name IS that column, so
+// remapping it to anything else (e.g. `title`, as an earlier draft of this
+// fixture tried) makes createCmsApp throw
+// "Fatal: field key map failed to build — field label ... collides with the
+// storage column" at startup, for EVERY version, not just the one that
+// diverges — confirmed by running this suite. That is a real bug, distinct
+// from the documented Task 7b relation-resolution one, and out of this
+// task's scope to fix.
+//
+// `author` (name `author`, column `author_id`) already diverges at the
+// registry level, so it has no such landmine — used here instead to get a
+// genuinely different label per version: v1 keeps the registry's own label,
+// v3 (current) renames it, mirroring how `versioned-routes.integration.test`
+// exercises this (current's projection matches the registry name; an older
+// version carries the legacy one). v2 is deliberately absent from `live` so
+// Task 8 has a retired version to probe.
+const GQLPOST = 'content--gqlpost'
+
+const TWO_LIVE_MODEL: BakedVersionModel = {
+  current: 'v3',
+  live: ['v1', 'v3'],
+  projections: {
+    v1: {
+      version: 'v1',
+      types: { [GQLPOST]: { fields: [{ column_name: 'author_id', exposed_as: 'author', required: false }] } },
+    },
+    v3: {
+      version: 'v3',
+      types: { [GQLPOST]: { fields: [{ column_name: 'author_id', exposed_as: 'writer', required: false }] } },
+    },
+  },
+}
+
 const resolvers: Map<string, ProgrammaticFieldDefinition> = new Map([
   [
     'content--gqlpost::reading_time',
@@ -128,6 +167,20 @@ const registry: SchemaRegistry = {
 const pgAdapter = createPostgresAdapter({ url: DB_URL })
 let db: DrizzlePostgresInstance
 let app: { fetch: (r: Request) => Response | Promise<Response> }
+
+// `resolvers` is required: the registry carries a programmatic field, and
+// createCmsApp's validateResolverBindings throws at startup without it.
+function makeGraphqlApp(model: BakedVersionModel | undefined) {
+  const built = createCmsApp({
+    registry,
+    db,
+    storage: createLocalAdapter(),
+    graphql: { enabled: true, maxDepth: 8, maxComplexity: 1000, graphiql: false, introspection: true },
+    resolvers,
+    ...(model !== undefined && { versions: model }),
+  })
+  return built.app
+}
 
 beforeAll(async () => {
   await pgAdapter.connect()
@@ -490,5 +543,62 @@ describe('graphql schema-init failure', () => {
     expect(diagnostic).toContain('GraphQL schema failed to initialize')
     expect(diagnostic).toContain('content--dup')
     expect(diagnostic).toContain('taxonomy--dup')
+  })
+})
+
+describe('graphql — one endpoint per live version', () => {
+  it('serves /graphql/v1 and /graphql/v3 when a version model is configured', async () => {
+    const app = makeGraphqlApp(TWO_LIVE_MODEL)
+
+    for (const path of ['/graphql/v1', '/graphql/v3', '/graphql']) {
+      const res = await app.fetch(new Request(`http://local${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ query: '{ __typename }' }),
+      }))
+      expect(res.status, path).toBe(200)
+      const body = (await res.json()) as { data?: { __typename?: string } }
+      expect(body.data?.__typename, path).toBe('Query')
+    }
+  })
+
+  it('registers no version segments when no version model is configured', async () => {
+    const app = makeGraphqlApp(undefined)
+
+    const res = await app.fetch(new Request('http://local/graphql/v1', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query: '{ __typename }' }),
+    }))
+    // No versioned endpoint and no catch-all — the app simply has no route.
+    expect(res.status).toBe(404)
+
+    const unversioned = await app.fetch(new Request('http://local/graphql', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query: '{ __typename }' }),
+    }))
+    expect(unversioned.status).toBe(200)
+  })
+
+  it('relaxes the CSP on a versioned endpoint too, when graphiql is enabled', async () => {
+    const built = createCmsApp({
+      registry,
+      db,
+      storage: createLocalAdapter(),
+      versions: TWO_LIVE_MODEL,
+      graphql: { enabled: true, maxDepth: 8, maxComplexity: 1000, graphiql: true, introspection: true },
+      resolvers,
+    })
+
+    const res = await built.app.fetch(new Request('http://local/graphql/v1', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query: '{ __typename }' }),
+    }))
+
+    // Mirror the exact expectation of the existing GraphiQL CSP test in this
+    // file (`graphql.integration.test.ts:363`), rather than inventing one.
+    expect(res.headers.get('content-security-policy')).toContain("'unsafe-inline'")
   })
 })

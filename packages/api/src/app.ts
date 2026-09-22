@@ -272,39 +272,6 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
     })
   }
 
-  // ── GraphQL repos ───────────────────────────────────────────────────────────
-  //
-  // GraphQL resolves relations lazily, per selected field, through its own
-  // request-scoped dataloaders — so its repos must NOT resolve relations
-  // eagerly. Reusing `publicRepos` here is actively wrong: their eager pass
-  // overwrites a media field's column (the FK column and the field share a
-  // name) with the resolved media object, and the dataloader then reads that
-  // object back where a UUID is expected. It also pays for resolving every
-  // relation on every query, including the ones the client never selected.
-  //
-  // These are still public reads: every GraphQL resolver passes
-  // `published_only: true`, and the dataloaders filter relation targets by
-  // published (ADR api/0002). Built separately from the admin `repos` so a
-  // future change there can never silently widen the public surface.
-  //
-  // They do take `sortableColumns`, like every other repo here: the GraphQL
-  // sort enum's `title` value is a schema field's LABEL, which
-  // `collectionResolver` maps to a column before calling findMany.
-  const graphqlRepos = Object.fromEntries([
-    ...Object.entries(registry.content_types).map(([typeName, ct]) => [
-      typeName,
-      createDrizzleContentRepository(db, (ct as ParsedContentType).db.table_name, {
-        sortableColumns: sortableColumnsFor(typeName),
-      }),
-    ]),
-    ...Object.entries(registry.taxonomy_types).map(([typeName, tt]) => [
-      typeName,
-      createDrizzleContentRepository(db, (tt as ParsedTaxonomyType).db.table_name, {
-        sortableColumns: sortableColumnsFor(typeName),
-      }),
-    ]),
-  ])
-
   // ── Auth routes registered directly on app BEFORE the blanket use() calls ───────
   //
   // registerAuthRoutes uses full paths (/admin/api/auth/login etc.). Mounting via
@@ -474,31 +441,119 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
   // Init failure is instead contained to a 500 on /graphql itself.
   if (options.graphql?.enabled) {
     const gqlOptions = options.graphql
-    let gqlHandler: Handler | null = null
-    let initError: unknown = null
+
+    // GraphQL resolves relations lazily, per selected field, through its own
+    // request-scoped dataloaders — so its repos must NOT resolve relations
+    // eagerly the way `makeRepo` does. Reusing that factory is actively wrong:
+    // its eager pass overwrites a media field's column (the FK column and the
+    // field share a name) with the resolved media object, and the dataloader
+    // then reads that object back where a UUID is expected.
+    //
+    // Still public reads: every GraphQL resolver passes `published_only: true`
+    // and the dataloaders filter relation targets by published (ADR api/0002).
+    // Kept a separate factory from the admin `repos` so a future change there
+    // can never silently widen the public surface.
+    const makeGraphqlRepo = (_typeName: string, tableName: string, sortableColumns: Set<string>) =>
+      createDrizzleContentRepository(db, tableName, { sortableColumns })
+
+    // The same pass list the REST loop uses: one per live version when
+    // versioning is configured, then the unversioned pass at current.
+    const gqlPasses: Array<{ version: string | null; projectionVersion: string }> = [
+      ...(options.versions !== undefined
+        ? model.live.map((v) => ({ version: v, projectionVersion: v }))
+        : []),
+      { version: null, projectionVersion: model.current },
+    ]
+
+    type GqlMount = { path: string; version: string | null; handler: Handler | null; error: unknown }
+    const mounts: GqlMount[] = gqlPasses.map((pass) => ({
+      path: pass.version === null ? '/graphql' : `/graphql/${pass.version}`,
+      version: pass.version,
+      handler: null,
+      error: null,
+    }))
+
+    // Loaded via a DYNAMIC import so `graphql`/`graphql-yoga` never load unless
+    // a consumer opts in — the `.` entry must stay free of a static dependency
+    // on the graphql/ subpath (ADR api/0006). One shared `ready` promise, never
+    // a re-import per request.
     const ready = import('./graphql/handler.js')
       .then(({ createGraphQLHandler }) => {
-        gqlHandler = createGraphQLHandler(registry, graphqlRepos, fieldKeyMaps, programmaticResolver, db, gqlOptions)
+        gqlPasses.forEach((pass, i) => {
+          const mount = mounts[i]!
+          // Each version builds inside its OWN try/catch. A synchronous throw
+          // from one version's schema (e.g. a type-name collision) must not
+          // reject the shared promise and take every other version's endpoint
+          // down with it.
+          try {
+            const surface = buildVersionSurface<unknown>({
+              ...pass,
+              prefix,
+              registry,
+              model,
+              makeRepo: makeGraphqlRepo,
+            })
+            // Hoisted into locals and spread under their own guards.
+            // `noUncheckedIndexedAccess` makes each index
+            // `VersionProjection | undefined`, and
+            // `exactOptionalPropertyTypes` then rejects assigning that to an
+            // optional property — a present-and-undefined key. This is also
+            // why no `options.versions` check is needed: with versioning off
+            // `model.projections` is `{}`, so both are absent and the handler
+            // builds from the registry, exactly the pre-versioning behaviour.
+            const projection = model.projections[pass.projectionVersion]
+            const currentProjection = model.projections[model.current]
+
+            mount.handler = createGraphQLHandler(
+              registry,
+              surface.repos,
+              surface.fieldKeyMaps,
+              programmaticResolver,
+              db,
+              gqlOptions,
+              {
+                endpoint: mount.path,
+                currentVersion: model.current,
+                ...(projection !== undefined && { projection }),
+                ...(currentProjection !== undefined && { currentProjection }),
+              }
+            )
+          } catch (err) {
+            mount.error = err
+            const message = err instanceof Error ? err.message : String(err)
+            process.stderr.write(
+              `✗ GraphQL schema failed to initialize for ${mount.path}; it will return 500. ${message}\n`
+            )
+          }
+        })
       })
       .catch((err: unknown) => {
-        initError = err
+        // The import itself failed, so nothing can serve. Caught so the
+        // rejection is HANDLED: an unhandled one would crash the whole process
+        // at startup, taking every REST route with it.
+        for (const m of mounts) m.error = err
         const message = err instanceof Error ? err.message : String(err)
-        process.stderr.write(`✗ GraphQL schema failed to initialize; /graphql will return 500. ${message}\n`)
+        process.stderr.write(`✗ GraphQL module failed to load; /graphql will return 500. ${message}\n`)
       })
-    const invokeGraphQL: Handler = async (c) => {
-      if (!gqlHandler && !initError) await ready
-      if (!gqlHandler) {
-        return c.json(
-          { ok: false, error: { code: 'GRAPHQL_INIT_FAILED', message: 'GraphQL schema failed to initialize' } },
-          500
-        )
+
+    const invokeFor =
+      (mount: GqlMount): Handler =>
+      async (c) => {
+        if (!mount.handler && !mount.error) await ready
+        if (!mount.handler) {
+          return c.json(
+            { ok: false, error: { code: 'GRAPHQL_INIT_FAILED', message: 'GraphQL schema failed to initialize' } },
+            500
+          )
+        }
+        return mount.handler(c, async () => {})
       }
-      return gqlHandler(c, async () => {})
-    }
-    if (listRateLimit) {
-      app.all('/graphql', listRateLimit, invokeGraphQL)
-    } else {
-      app.all('/graphql', invokeGraphQL)
+
+    // Concrete paths registered BEFORE Task 8's catch-all — Hono matches in
+    // registration order, exactly as the REST surface relies on.
+    for (const mount of mounts) {
+      if (listRateLimit) app.all(mount.path, listRateLimit, invokeFor(mount))
+      else app.all(mount.path, invokeFor(mount))
     }
   }
 
