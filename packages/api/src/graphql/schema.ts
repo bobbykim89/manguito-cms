@@ -175,15 +175,19 @@ export function buildGraphQLSchema(
     // Handed to the programmatic resolvers so they can present the same record
     // shape REST does, where media fields are resolved objects (see resolvers.ts).
     //
-    // The field's REAL name, not its exposed label: this list goes straight to
-    // ctx.loaders.load(typeName, name, row), which looks the field up in the
-    // registry (resolvers.ts:81).
-    const mediaFieldNames = visible
+    // BOTH names, because that record straddles two key spaces. `name` is the
+    // field's REAL name — it goes straight to ctx.loaders.load(typeName, name,
+    // row), which looks the field up in the registry, and is therefore the key
+    // the resolved object lands on. `exposedAs` is the label this version
+    // serves, which is where `ctx.get()` looks for it. A version that renames a
+    // media field makes them differ, and passing only one of the two loses the
+    // resolved object (see relabelMedia in resolvers.ts).
+    const mediaFields = visible
       .filter(
         (v) =>
           v.field.field_type === 'image' || v.field.field_type === 'video' || v.field.field_type === 'file'
       )
-      .map((v) => v.field.name)
+      .map((v) => ({ name: v.field.name, exposedAs: v.exposedAs }))
 
     return new GraphQLObjectType({
       name: graphqlTypeName(machineName),
@@ -206,7 +210,7 @@ export function buildGraphQLSchema(
           const outType = outputTypeForField(field, vf.required)
           let resolve: GraphQLFieldConfig<Record<string, unknown>, GraphQLContext>['resolve']
           if (field.field_type === 'programmatic') {
-            resolve = programmaticFieldResolver(machineName, field.name, mediaFieldNames, fieldKeyMaps[machineName])
+            resolve = programmaticFieldResolver(machineName, field.name, mediaFields, fieldKeyMaps[machineName])
           } else if (
             field.field_type === 'reference' ||
             field.field_type === 'paragraph' ||

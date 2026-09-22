@@ -94,7 +94,7 @@ describe('GraphQL schema — tombstoned fields', () => {
 })
 
 // The four cases above all tombstone `divergentTextField` (text/plain) — a
-// regression that dropped the tombstone filter on `mediaFieldNames`
+// regression that dropped the tombstone filter on `mediaFields`
 // specifically (schema.ts's buildObjectType, not the field list itself) would
 // go undetected by any of them, even though a tombstoned MEDIA field would
 // then still be handed straight to `ctx.loaders.load` (resolvers.ts:82).
@@ -127,14 +127,14 @@ const mediaRegistry = {
 describe('GraphQL schema — tombstoned MEDIA field', () => {
   const maps = { 'content--category': createFieldKeyMap(withTombstonedMedia.fields) }
 
-  it('drops a tombstoned media field from the schema and from mediaFieldNames', async () => {
+  it('drops a tombstoned media field from the schema and from mediaFields', async () => {
     const schema = buildGraphQLSchema(mediaRegistry, maps)
     const sdl = printSchema(schema)
 
     // Absent from the built schema (same proof as the text/plain cases above).
     expect(sdl).not.toContain('hero:')
 
-    // Absent from mediaFieldNames' effect too: a programmatic field's
+    // Absent from `mediaFields`' effect too: a programmatic field's
     // resolution loop is the only place that list drives a real
     // ctx.loaders.load call, so drive that path and check what it asked for.
     const loaded: string[] = []
