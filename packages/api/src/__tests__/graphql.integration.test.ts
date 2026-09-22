@@ -83,23 +83,19 @@ const POST: ParsedContentType = {
   api: { default_base_path: 'gqlpost', http_methods: ['GET'], item_path: '/gqlpost/:slug' },
 }
 
-// content--gqlpost's `blog_title` field NAME equals its column, so a
-// projection cannot diverge on it: createFieldKeyMapFromProjection's
-// collision check (field-keys.ts, shared by every FieldKeyMap builder) walks
-// EVERY field's own registry name and rejects any name that equals a column
-// mapped to a DIFFERENT label — including a field's own column, once some
-// projection renames it. `blog_title`'s bare name IS that column, so
-// remapping it to anything else (e.g. `title`, as an earlier draft of this
-// fixture tried) makes createCmsApp throw
-// "Fatal: field key map failed to build — field label ... collides with the
-// storage column" at startup, for EVERY version, not just the one that
-// diverges — confirmed by running this suite. That is a real bug, distinct
-// from the documented Task 7b relation-resolution one, and out of this
-// task's scope to fix.
+// content--gqlpost's `blog_title` field NAME equals its column. That used to
+// make a projection unable to diverge on it: createFieldKeyMapFromProjection's
+// collision check walked EVERY field's own registry name and rejected any name
+// that equalled a column mapped to a DIFFERENT label — a field's OWN column
+// included, once some projection renamed it — so remapping `blog_title` to
+// anything else made createCmsApp throw at startup for every version at once.
+// Task 7b fixed that false positive (field-keys.ts skips the same-field case),
+// so the landmine is gone; this fixture keeps `author` as its divergent field
+// only because the versioned assertions below are written against it.
 //
 // `author` (name `author`, column `author_id`) already diverges at the
-// registry level, so it has no such landmine — used here instead to get a
-// genuinely different label per version: v1 keeps the registry's own label,
+// registry level, which is what makes it useful here: it gives a genuinely
+// different label per version — v1 keeps the registry's own label,
 // v3 (current) renames it, mirroring how `versioned-routes.integration.test`
 // exercises this (current's projection matches the registry name; an older
 // version carries the legacy one). v2 is deliberately absent from `live` so

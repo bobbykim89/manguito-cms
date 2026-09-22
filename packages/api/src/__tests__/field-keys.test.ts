@@ -285,6 +285,54 @@ describe('createFieldKeyMapFromProjection', () => {
     expect(map.toLabels({ blog_title: 'Hi', summary: 'S' })).toEqual({ title: 'Hi', summary: 'S' })
   })
 
+  it('accepts a version that exposes a field under a label other than its own column', () => {
+    // The rename-away-and-back trigger. Current's field is named `summary` over
+    // column `summary` — name and column coincide, which is the default when no
+    // `column` is declared — and a still-live older version exposes that same
+    // column as `blurb`. The collision check walks current's NAMES against this
+    // version's exposed COLUMNS, so it saw `summary` mapped to a different
+    // label and threw, taking createCmsApp down synchronously at startup for
+    // EVERY version. One field seen under two names is not an ambiguity: there
+    // is exactly one column and exactly one value.
+    const renamedOntoItsOwnColumn = {
+      fields: [{ column_name: 'summary', exposed_as: 'blurb', required: false }],
+    }
+    expect(() =>
+      createFieldKeyMapFromProjection(renamedOntoItsOwnColumn, [identityTextField])
+    ).not.toThrow()
+
+    const map = createFieldKeyMapFromProjection(renamedOntoItsOwnColumn, [identityTextField])
+    expect(map.columnFor('blurb')).toBe('summary')
+    expect(map.labelFor('summary')).toBe('blurb')
+    expect(map.toLabels({ summary: 'S' })).toEqual({ blurb: 'S' })
+    expect(map.toStorage({ blurb: 'S' })).toEqual({ summary: 'S' })
+  })
+
+  it("still throws when a DIFFERENT field is named after a column this version renames", () => {
+    // The true positive the skip above must not swallow. `blog_title` is
+    // divergentTextField's column, exposed here as `heading` — and a second,
+    // column-backed field is NAMED `blog_title` while owning a different column
+    // (`other_col`). Its value is written into the row under its own name, which
+    // is the first field's column, so toLabels would rename it onto `heading`
+    // and serve the wrong value under the wrong key. Two fields, one key: the
+    // ambiguity is real, and `ownColumn` ('other_col') is not the label under
+    // inspection, so the skip does not apply.
+    const renamesSomeoneElsesColumn = {
+      fields: [{ column_name: 'blog_title', exposed_as: 'heading', required: false }],
+    }
+    const namedAfterThatColumn: ParsedField = {
+      ...identityTextField,
+      name: 'blog_title',
+      db_column: { column_name: 'other_col', column_type: 'varchar', nullable: true },
+    }
+    expect(() =>
+      createFieldKeyMapFromProjection(renamesSomeoneElsesColumn, [
+        divergentTextField,
+        namedAfterThatColumn,
+      ])
+    ).toThrow(/^Fatal: field key map failed to build — field label "blog_title" collides with the storage column of field "heading"/)
+  })
+
   it('drops a LIVE field added after this version was cut, not just a tombstone', () => {
     // The leak this widening closes: a field added to the CURRENT schema
     // after this version was cut is live (`removed !== true`), so a
