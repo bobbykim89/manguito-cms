@@ -16,10 +16,13 @@ const TYPE_NAME = 'content--gqlver_blog'
 // ─── Schema fixture ───────────────────────────────────────────────────────────
 //
 // `title` over column `blog_title` — label and column diverge, which is the
-// only reason these tests can tell versions apart. `subtitle` over column
-// `blog_sub` is CURRENT-ONLY: it does not exist in v1's projection, and it is
-// what the leak probe below looks for. `legacy_desc` is a tombstone retaining
-// column `blog_desc`, which v1 still exposes with a fallback.
+// only reason these tests can tell v1 and v3 apart ON THIS FIELD. `subtitle`
+// over column `blog_sub` is CURRENT-ONLY: it does not exist in v1's
+// projection, and its tests tell versions apart by presence/absence, not by a
+// label/column split. `legacy_desc` is a tombstone retaining column
+// `blog_desc`, which v1 still exposes with a fallback under the label
+// `blog_desc` itself — label and column happen to be equal there too, so its
+// fallback test also tells versions apart without any divergence.
 
 const BLOG_TYPE: ParsedContentType = {
   schema_type: 'content-type',
