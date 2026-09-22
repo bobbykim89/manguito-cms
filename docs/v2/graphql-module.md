@@ -80,9 +80,12 @@ Every item in the case against is contained by the design:
 
 **In scope**
 
-- A `/graphql` endpoint on the **public** API, plus one per live schema version
-  at `/graphql/<version>` when the project has cut a version. `/graphql` floats
-  to the current version; a pinned endpoint serves a frozen contract. See
+- A `/graphql` endpoint on the **public** API, plus one per live schema
+  version at `/graphql/<version>`. `/graphql` floats to the current version; a
+  pinned endpoint serves a frozen contract. A project that has never cut a
+  version still gets `/graphql/v1` as an alias of `/graphql` — both serve the
+  same, single live version — mirroring how the REST surface already aliases
+  an unversioned project onto `v1`. See
   [the 2e design](../superpowers/specs/2026-09-21-graphql-versioning-design.md).
 - **Queries only** — the public API is a read surface; all writes stay on the
   authenticated admin REST API.

@@ -138,6 +138,27 @@ The field's GraphQL output type is derived from the programmatic field's declare
 return type in the schema. Programmatic fields remain **excluded from `filter` and
 `sortBy`** (no column to filter or sort on), consistent with REST.
 
+### Writing a version-durable resolver
+
+The record a programmatic resolver receives (`ctx.get('someField')`) is
+projected into **the served version's own label space**, not current's.
+A resolver is authored once, against current's field names — so a call like
+`ctx.get('title')` only works as written on `/graphql` and on the current
+version's own pinned endpoint. On an older live version where `title` was
+renamed since (say, exposed there as `legacy_title`), `ctx.get('title')`
+resolves to `undefined`, silently — there is no error, the field is simply
+absent from the label space that version's record was built in.
+
+REST resolvers do not have this problem today only because, before per-version
+GraphQL schemas existed, GraphQL had exactly one label space (current's). Now
+that `/graphql/<version>` exists, a resolver that must behave the same way on
+every live version needs to read fields defensively — e.g. by checking a
+renamed field's current *and* known prior labels — rather than assuming
+`ctx.get('<current label>')` is always populated. This is recorded as a known
+residual (see the design spec's Residuals section); it is not fixed by this
+module, since the general fix touches the shared resolver/record-building
+path, not schema mapping.
+
 ---
 
 ## 7. Worked example

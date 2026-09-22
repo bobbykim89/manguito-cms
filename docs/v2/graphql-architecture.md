@@ -40,25 +40,50 @@ The module exposes a single factory:
 // @bobbykim/manguito-cms-api/graphql
 export function createGraphQLHandler(
   registry: SchemaRegistry,
-  publicRepos: ContentRepos,
+  repos: Record<string, ContentRepository<unknown>>,
+  fieldKeyMaps: Record<string, FieldKeyMap>,
   resolver: ProgrammaticResolver,
-  options: GraphQLHandlerOptions
+  db: DrizzlePostgresInstance,
+  options: ResolvedGraphQLOptions,
+  versioning?: {
+    endpoint?: string
+    projection?: VersionProjection
+    currentProjection?: VersionProjection
+    currentVersion?: string
+  }
 ): Handler // a Hono handler
 ```
 
-`createCmsApp` (in `app.ts`) mounts it as a single route **only when enabled**:
+> Updated by the schema-versioning work (2026-09-21): the handler now takes a
+> per-version `versioning` argument so each mount can build against its own
+> projection. See
+> [the 2e design](../superpowers/specs/2026-09-21-graphql-versioning-design.md)
+> for the current mounting behavior.
+
+`createCmsApp` (in `app.ts`) mounts **one route per live schema version, plus
+the unversioned `/graphql`**, each built from its own `createGraphQLHandler`
+call — not a single route:
 
 ```ts
-if (graphqlOptions?.enabled) {
-  const graphqlHandler = createGraphQLHandler(
-    registry,
-    publicRepos,          // the published-only repos already built at app.ts:140
-    programmaticResolver,
-    graphqlOptions
-  )
-  app.all('/graphql', listRateLimit ?? passthrough, graphqlHandler)
+if (options.graphql?.enabled) {
+  for (const mount of mounts) { // one per live version, plus { path: '/graphql', version: null }
+    const handler = createGraphQLHandler(
+      registry,
+      repos,                 // the published-only repos built for GraphQL (app.ts's makeGraphqlRepo)
+      fieldKeyMaps,
+      programmaticResolver,
+      db,
+      graphqlOptions,
+      { endpoint: mount.path, projection: /* mount's version, or omitted for /graphql */ }
+    )
+    app.all(mount.path, listRateLimit ?? passthrough, handler)
+  }
 }
 ```
+
+A project that has never cut a version still gets exactly one live version
+(`v1`), so it still ends up with two mounts: `/graphql` and `/graphql/v1`,
+both serving the same schema.
 
 Key points:
 

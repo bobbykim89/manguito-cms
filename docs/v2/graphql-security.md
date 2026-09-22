@@ -157,3 +157,8 @@ A GraphQL client surfaces `errors` from a 200 as readable GraphQL errors but a
 4xx as an opaque network error, so the REST codes would hide the one message a
 pinned consumer needs. A segment that is not version-shaped falls through
 rather than being claimed.
+
+The error **code string** also differs from REST for the same "never cut"
+condition: REST answers `VERSION_NOT_FOUND`, GraphQL answers `VERSION_UNKNOWN`.
+Deliberate — no shared error-code contract is asserted between the two
+surfaces — but worth stating so it is not mistaken for drift.
