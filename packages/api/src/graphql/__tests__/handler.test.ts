@@ -220,4 +220,79 @@ describe('createGraphQLHandler', () => {
     expect(deep.body.errors).toBeUndefined()
     expect(deep.body.data.posts.data[0].blogTitle).toBe('Hello')
   })
+
+  it('answers on the endpoint it was given, not /graphql', async () => {
+    const handler = createGraphQLHandler(registry, repos, fieldKeyMaps, resolver, db, baseOptions, {
+      endpoint: '/graphql/v1',
+    })
+    const app = new Hono()
+    app.all('/graphql/v1', handler)
+
+    const res = await app.request('/graphql/v1', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query: '{ posts { data { blogTitle } } }' }),
+    })
+
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { data: { posts: { data: Array<{ blogTitle: string }> } } }
+    expect(body.data.posts.data[0]!.blogTitle).toBe('Hello')
+  })
+
+  it('still defaults to /graphql when given no versioning options', async () => {
+    // buildApp passes no 7th argument, so this pins the default explicitly.
+    const { status, body } = await post(buildApp(baseOptions), '{ posts { data { blogTitle } } }')
+    expect(status).toBe(200)
+    expect(body.data.posts.data[0].blogTitle).toBe('Hello')
+  })
+
+  it('builds a versioned schema when given a projection', async () => {
+    // registry's field name EQUALS its column ('blog_title'), so divergence
+    // has to come from the projection: v1 exposes that column as
+    // `legacy_title`, and current exposes it under its own name.
+    const handler = createGraphQLHandler(registry, repos, fieldKeyMaps, resolver, db, baseOptions, {
+      endpoint: '/graphql/v1',
+      projection: {
+        version: 'v1',
+        types: {
+          'content--post': {
+            fields: [{ column_name: 'blog_title', exposed_as: 'legacy_title', required: true }],
+          },
+        },
+      },
+      currentProjection: {
+        version: 'v2',
+        types: {
+          'content--post': {
+            fields: [{ column_name: 'blog_title', exposed_as: 'blog_title', required: true }],
+          },
+        },
+      },
+      currentVersion: 'v2',
+    })
+    const app = new Hono()
+    app.all('/graphql/v1', handler)
+
+    async function ask(
+      query: string
+    ): Promise<{ data?: { posts: { data: Array<{ legacyTitle?: string }> } }; errors?: unknown[] }> {
+      const res = await app.request('/graphql/v1', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ query }),
+      })
+      return res.json() as Promise<{
+        data?: { posts: { data: Array<{ legacyTitle?: string }> } }
+        errors?: unknown[]
+      }>
+    }
+
+    const ok = await ask('{ posts { data { legacyTitle } } }')
+    expect(ok.errors).toBeUndefined()
+    expect(ok.data!.posts.data[0]!.legacyTitle).toBe('Hello')
+
+    // current's name must not resolve on v1's schema.
+    const rejected = await ask('{ posts { data { blogTitle } } }')
+    expect(rejected.errors).toBeDefined()
+  })
 })

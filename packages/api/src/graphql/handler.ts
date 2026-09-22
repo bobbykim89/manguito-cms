@@ -1,11 +1,12 @@
 import { createYoga, maskError } from 'graphql-yoga'
 import type { Handler } from 'hono'
-import type { SchemaRegistry, ContentRepository } from '@bobbykim/manguito-cms-core'
+import type { SchemaRegistry, ContentRepository, VersionProjection } from '@bobbykim/manguito-cms-core'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import type { ProgrammaticResolver } from '../programmatic/resolve.js'
 import type { FieldKeyMap } from '../field-keys.js'
 import type { GraphQLContext } from './context.js'
 import { buildGraphQLSchema } from './schema.js'
+import { buildVersionView } from './version-view.js'
 import { createRelationLoaders } from './dataloaders.js'
 import { buildArmorPlugin, introspectionPlugin } from './security.js'
 
@@ -45,9 +46,27 @@ export function createGraphQLHandler(
   fieldKeyMaps: Record<string, FieldKeyMap>,
   resolver: ProgrammaticResolver,
   db: DrizzlePostgresInstance,
-  options: ResolvedGraphQLOptions
+  options: ResolvedGraphQLOptions,
+  // The view is built HERE, not in app.ts: the `.` entry must keep no static
+  // import of anything under graphql/ (ADR api/0006), so app.ts passes the
+  // plain projection data it already imports as types from core.
+  versioning: {
+    endpoint?: string
+    projection?: VersionProjection
+    currentProjection?: VersionProjection
+    currentVersion?: string
+  } = {}
 ): Handler {
-  const schema = buildGraphQLSchema(registry, fieldKeyMaps)
+  const view =
+    versioning.projection !== undefined
+      ? buildVersionView({
+          registry,
+          projection: versioning.projection,
+          currentProjection: versioning.currentProjection,
+          currentVersion: versioning.currentVersion ?? '',
+        })
+      : undefined
+  const schema = buildGraphQLSchema(registry, fieldKeyMaps, view)
   const { plugins } = buildArmorPlugin({
     maxDepth: options.maxDepth,
     maxComplexity: options.maxComplexity,
@@ -55,7 +74,7 @@ export function createGraphQLHandler(
 
   const yoga = createYoga<Record<string, never>, GraphQLContext>({
     schema,
-    graphqlEndpoint: '/graphql',
+    graphqlEndpoint: versioning.endpoint ?? '/graphql',
     graphiql: options.graphiql,
     landingPage: false,
     maskedErrors: {
