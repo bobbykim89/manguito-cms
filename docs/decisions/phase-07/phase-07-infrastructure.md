@@ -84,13 +84,13 @@ Write tests (any test that creates, updates, or deletes records) are responsible
 
 ## Environment Configuration
 
-Test DB connection uses `.env.test` loaded via `dotenv-cli`:
+Test DB connection uses a single repo-root `.env.test`, loaded via `dotenv-cli` (each package's test script reads `../../.env.test`, so the file exists once rather than per package):
 
 ```
-DB_URL=postgres://localhost:5435/manguito_test
+DB_URL=postgresql://postgres:postgres@localhost:5435/manguito_test
 ```
 
-`.env.test` is **not** committed — `.gitignore` excludes `.env.*` (only `.env.example*` is negated), so each developer creates their own. It holds no real credentials, only safe local test values, so copy the line above verbatim. The port must match `docker-compose.yml`'s host-side mapping for `manguito-test-db` (**5435** — deliberately not 5432, which a natively installed Postgres commonly occupies). The `pnpm test` script in each package passes this file via `dotenv -e .env.test -- vitest run`.
+`.env.test` is **not** committed — `.gitignore` excludes `.env.*` — so each developer creates their own from the committed `.env.test.example` (`cp .env.test.example .env.test`). It holds no real credentials, only a throwaway container's. Note the credentials are required: the image sets `POSTGRES_USER` and `POSTGRES_PASSWORD` to `postgres`, so a URL omitting them fails with `SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string` rather than a connection error. The port must match `docker-compose.yml`'s host-side mapping for `manguito-test-db` (**5435** — deliberately not 5432, which a natively installed Postgres commonly occupies). The `pnpm test` script in each package passes this file via `dotenv -e ../../.env.test -- vitest run`.
 
 ---
 
