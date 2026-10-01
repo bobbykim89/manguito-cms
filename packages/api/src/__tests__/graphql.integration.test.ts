@@ -12,6 +12,7 @@ import type {
 } from '@bobbykim/manguito-cms-core'
 import { createCmsApp } from '../app'
 import { createLocalAdapter } from '../storage/adapters/local'
+import type { BakedVersionModel } from '../versions'
 
 const DB_URL = process.env['DB_URL']
 if (!DB_URL) throw new Error('DB_URL must be set in .env.test')
@@ -82,6 +83,60 @@ const POST: ParsedContentType = {
   api: { default_base_path: 'gqlpost', http_methods: ['GET'], item_path: '/gqlpost/:slug' },
 }
 
+// content--gqlpost's `blog_title` field NAME equals its column. That used to
+// make a projection unable to diverge on it: createFieldKeyMapFromProjection's
+// collision check walked EVERY field's own registry name and rejected any name
+// that equalled a column mapped to a DIFFERENT label — a field's OWN column
+// included, once some projection renamed it — so remapping `blog_title` to
+// anything else made createCmsApp throw at startup for every version at once.
+// Task 7b fixed that false positive (field-keys.ts:133 skips the same-field
+// case), so the landmine is gone: both live projections below now project
+// `blog_title` and `hero` too, each under its own (unchanged) name, alongside
+// `author_id` — proving the fix empirically, since a fixture that still only
+// projected `author_id` would never exercise the case that used to crash.
+//
+// `author` (name `author`, column `author_id`) is kept as the one field that
+// diverges per version — it already diverges at the registry level, which is
+// what makes it useful here: v1 keeps the registry's own label, v3 (current)
+// renames it to `writer`, mirroring how `versioned-routes.integration.test`
+// exercises this (current's projection matches the registry name; an older
+// version carries the legacy one). `blog_title` and `hero` are projected
+// identically in both versions, so their tests probe presence/shape rather
+// than a label rename. v2 is deliberately absent from `live` so Task 8 has a
+// retired version to probe.
+const GQLPOST = 'content--gqlpost'
+
+const TWO_LIVE_MODEL: BakedVersionModel = {
+  current: 'v3',
+  live: ['v1', 'v3'],
+  projections: {
+    v1: {
+      version: 'v1',
+      types: {
+        [GQLPOST]: {
+          fields: [
+            { column_name: 'blog_title', exposed_as: 'blog_title', required: true },
+            { column_name: 'author_id', exposed_as: 'author', required: false },
+            { column_name: 'hero', exposed_as: 'hero', required: false },
+          ],
+        },
+      },
+    },
+    v3: {
+      version: 'v3',
+      types: {
+        [GQLPOST]: {
+          fields: [
+            { column_name: 'blog_title', exposed_as: 'blog_title', required: true },
+            { column_name: 'author_id', exposed_as: 'writer', required: false },
+            { column_name: 'hero', exposed_as: 'hero', required: false },
+          ],
+        },
+      },
+    },
+  },
+}
+
 const resolvers: Map<string, ProgrammaticFieldDefinition> = new Map([
   [
     'content--gqlpost::reading_time',
@@ -128,6 +183,20 @@ const registry: SchemaRegistry = {
 const pgAdapter = createPostgresAdapter({ url: DB_URL })
 let db: DrizzlePostgresInstance
 let app: { fetch: (r: Request) => Response | Promise<Response> }
+
+// `resolvers` is required: the registry carries a programmatic field, and
+// createCmsApp's validateResolverBindings throws at startup without it.
+function makeGraphqlApp(model: BakedVersionModel | undefined) {
+  const built = createCmsApp({
+    registry,
+    db,
+    storage: createLocalAdapter(),
+    graphql: { enabled: true, maxDepth: 8, maxComplexity: 1000, graphiql: false, introspection: true },
+    resolvers,
+    ...(model !== undefined && { versions: model }),
+  })
+  return built.app
+}
 
 beforeAll(async () => {
   await pgAdapter.connect()
@@ -399,13 +468,14 @@ describe('graphql integration', () => {
 
 // A GraphQL type-name collision (two schemas whose machine-name segments both
 // map to the same PascalCase GraphQL type name) makes `buildGraphQLSchema`
-// throw synchronously. That throw happens inside the `.then()` callback of the
-// dynamic `import('./graphql/handler.js')` in app.ts, so it rejects the shared
-// `ready` promise. Without a `.catch` there, that's an unhandled rejection —
-// Node terminates the whole process at startup, taking every REST route down
-// with it, independent of whether any client ever hits /graphql. This suite
-// proves the failure is instead contained: the process survives and /graphql
-// answers with a 500 envelope.
+// throw synchronously. app.ts builds each mounted version's schema inside its
+// own try/catch, so that throw is caught right there and turned into a 500 for
+// just that mount — it never reaches (let alone rejects) the shared `ready`
+// promise from the dynamic `import('./graphql/handler.js')`. Node's process
+// survival therefore doesn't depend on this suite's registry having only one
+// version: with a single unversioned pass (no `versions` option here), this
+// proves the same per-mount containment collapses to the original guarantee —
+// the process survives and /graphql answers with a 500 envelope.
 describe('graphql schema-init failure', () => {
   const DUP_CONTENT: ParsedContentType = {
     ...POST,
@@ -490,5 +560,305 @@ describe('graphql schema-init failure', () => {
     expect(diagnostic).toContain('GraphQL schema failed to initialize')
     expect(diagnostic).toContain('content--dup')
     expect(diagnostic).toContain('taxonomy--dup')
+  })
+})
+
+// The suite above proves a schema-build failure survives the process with a
+// SINGLE unversioned pass (no `versions` option) — which the comment on that
+// describe block admits "collapses to the original guarantee." It says
+// nothing about containment ACROSS live versions, which is the actual spec
+// requirement: "One version's schema failing to build leaves the others
+// serving." This suite exercises that directly, with a version model where
+// only v1's projection is broken.
+describe('graphql — a broken version does not take the others down', () => {
+  // `2legit` is not a valid GraphQL name (leading digit) — toCamelCase leaves
+  // it untouched, so buildGraphQLSchema throws while building v1's schema
+  // specifically. v3's projection is otherwise identical to TWO_LIVE_MODEL's.
+  const BROKEN_V1_MODEL: BakedVersionModel = {
+    current: 'v3',
+    live: ['v1', 'v3'],
+    projections: {
+      v1: {
+        version: 'v1',
+        types: {
+          [GQLPOST]: {
+            fields: [
+              { column_name: 'blog_title', exposed_as: '2legit', required: true },
+              { column_name: 'author_id', exposed_as: 'author', required: false },
+              { column_name: 'hero', exposed_as: 'hero', required: false },
+            ],
+          },
+        },
+      },
+      v3: {
+        version: 'v3',
+        types: {
+          [GQLPOST]: {
+            fields: [
+              { column_name: 'blog_title', exposed_as: 'blog_title', required: true },
+              { column_name: 'author_id', exposed_as: 'writer', required: false },
+              { column_name: 'hero', exposed_as: 'hero', required: false },
+            ],
+          },
+        },
+      },
+    },
+  }
+
+  it("one version's schema failing to build leaves the others serving", async () => {
+    // createCmsApp writes a per-mount diagnostic to stderr for the broken
+    // version. Captured for the same reason as the suite above: an
+    // unexplained "✗ GraphQL schema failed to initialize" in a green run
+    // reads as a broken suite.
+    const stderrWrites: string[] = []
+    const writeSpy = vi
+      .spyOn(process.stderr, 'write')
+      .mockImplementation((chunk: unknown) => {
+        stderrWrites.push(String(chunk))
+        return true
+      })
+
+    let brokenRes: Response
+    let liveRes: Response
+    let unversionedRes: Response
+    try {
+      const app = makeGraphqlApp(BROKEN_V1_MODEL)
+      brokenRes = await gqlPost(app, '/graphql/v1')
+      liveRes = await gqlPost(app, '/graphql/v3')
+      unversionedRes = await gqlPost(app, '/graphql')
+    } finally {
+      writeSpy.mockRestore()
+    }
+
+    // The broken version's OWN endpoint answers 500, in the REST-style
+    // envelope this early-init failure uses (not the GraphQL error shape —
+    // there is no schema to run a GraphQL error through yet).
+    expect(brokenRes.status).toBe(500)
+    const brokenBody = (await brokenRes.json()) as { ok: boolean; error: { code: string } }
+    expect(brokenBody.ok).toBe(false)
+    expect(brokenBody.error.code).toBe('GRAPHQL_INIT_FAILED')
+
+    // Another live version, and the unversioned pass, still serve — the
+    // per-mount try/catch in app.ts must not let v1's throw reject the
+    // shared `ready` promise every mount awaits.
+    expect(liveRes.status).toBe(200)
+    const liveBody = (await liveRes.json()) as { data?: { __typename?: string } }
+    expect(liveBody.data?.__typename).toBe('Query')
+
+    expect(unversionedRes.status).toBe(200)
+    const unversionedBody = (await unversionedRes.json()) as { data?: { __typename?: string } }
+    expect(unversionedBody.data?.__typename).toBe('Query')
+
+    // The operator still has to be told WHICH mount is dead.
+    const diagnostic = stderrWrites.join('')
+    expect(diagnostic).toContain('GraphQL schema failed to initialize')
+    expect(diagnostic).toContain('/graphql/v1')
+  })
+})
+
+describe('graphql — one endpoint per live version', () => {
+  it('serves /graphql/v1 and /graphql/v3 when a version model is configured', async () => {
+    const app = makeGraphqlApp(TWO_LIVE_MODEL)
+
+    for (const path of ['/graphql/v1', '/graphql/v3', '/graphql']) {
+      const res = await app.fetch(new Request(`http://local${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ query: '{ __typename }' }),
+      }))
+      expect(res.status, path).toBe(200)
+      const body = (await res.json()) as { data?: { __typename?: string } }
+      expect(body.data?.__typename, path).toBe('Query')
+    }
+  })
+
+  // `{ __typename }` above only pins ROUTING — it says nothing about which
+  // projection each mount actually built from. An implementation that reads
+  // `model.projections[model.current]` on every pass (always serving
+  // current's schema, regardless of which endpoint was hit) would satisfy
+  // every assertion above while defeating the entire point of this task, so
+  // this test reads each endpoint's OWN schema via introspection instead.
+  it("serves each endpoint's OWN projection, not current's on every mount", async () => {
+    const app = makeGraphqlApp(TWO_LIVE_MODEL)
+
+    type IntrospectedField = { name: string; deprecationReason: string | null }
+    async function fieldsOf(path: string): Promise<IntrospectedField[]> {
+      const res = await app.fetch(new Request(`http://local${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          query: '{ __type(name: "Gqlpost") { fields(includeDeprecated: true) { name deprecationReason } } }',
+        }),
+      }))
+      const body = (await res.json()) as { data?: { __type?: { fields?: IntrospectedField[] } } }
+      return body.data?.__type?.fields ?? []
+    }
+
+    // v1's projection exposes `author_id` under its OLD label 'author' — a
+    // regular (non-deprecated) query would never even see it, since
+    // buildVersionView marks it deprecated. `includeDeprecated: true` is what
+    // makes it visible here.
+    const v1Fields = await fieldsOf('/graphql/v1')
+    const v1Author = v1Fields.find((f) => f.name === 'author')
+    expect(v1Author?.deprecationReason).toBe("Renamed to 'writer' in v3.")
+    expect(v1Fields.some((f) => f.name === 'writer')).toBe(false)
+
+    // v3 (current) and the unversioned pass both build at
+    // `projectionVersion: model.current` — same projection, same schema — so
+    // both must show the RENAMED label and no trace of v1's, proving the
+    // divergence above came from /graphql/v1 reading its OWN projection
+    // rather than every mount reading current's.
+    for (const path of ['/graphql/v3', '/graphql']) {
+      const fields = await fieldsOf(path)
+      const writer = fields.find((f) => f.name === 'writer')
+      // `writer` must actually be PRESENT here — asserting only
+      // `?? null` on a possibly-absent field would also pass if the mount
+      // exposed neither `writer` nor `author`, which proves nothing about the
+      // rename actually taking effect on this mount.
+      expect(writer, path).toBeDefined()
+      expect(writer?.deprecationReason ?? null, path).toBeNull()
+      expect(fields.some((f) => f.name === 'author'), path).toBe(false)
+    }
+  })
+
+  it('registers no version segments when no version model is configured', async () => {
+    const app = makeGraphqlApp(undefined)
+
+    const res = await app.fetch(new Request('http://local/graphql/v1', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query: '{ __typename }' }),
+    }))
+    // No versioned endpoint and no catch-all — the app simply has no route.
+    expect(res.status).toBe(404)
+
+    const unversioned = await app.fetch(new Request('http://local/graphql', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query: '{ __typename }' }),
+    }))
+    expect(unversioned.status).toBe(200)
+  })
+
+  it('relaxes the CSP on a versioned endpoint too, when graphiql is enabled', async () => {
+    const built = createCmsApp({
+      registry,
+      db,
+      storage: createLocalAdapter(),
+      versions: TWO_LIVE_MODEL,
+      graphql: { enabled: true, maxDepth: 8, maxComplexity: 1000, graphiql: true, introspection: true },
+      resolvers,
+    })
+
+    const res = await built.app.fetch(new Request('http://local/graphql/v1', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query: '{ __typename }' }),
+    }))
+
+    // Assert the strong `script-src` directive, not just `'unsafe-inline'` —
+    // the STRICT policy's own `style-src` already contains `'unsafe-inline'`
+    // (security-headers.ts's `csp`), so a bare `toContain("'unsafe-inline'")`
+    // would pass even under the old exact-path comparison this test exists to
+    // guard against. Mirrors the existing GraphiQL CSP test in this file
+    // (`graphql.integration.test.ts:415`), rather than inventing a new bar.
+    expect(res.headers.get('content-security-policy')).toContain(
+      "script-src 'self' 'unsafe-inline' https://unpkg.com"
+    )
+  })
+})
+
+async function gqlPost(app: ReturnType<typeof makeGraphqlApp>, path: string) {
+  return app.fetch(new Request(`http://local${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ query: '{ __typename }' }),
+  }))
+}
+
+describe('graphql — non-live versions', () => {
+  it('reports a retired version as a GraphQL error', async () => {
+    // v2 was cut and later retired: it is below current and absent from live.
+    const res = await gqlPost(makeGraphqlApp(TWO_LIVE_MODEL), '/graphql/v2')
+    const body = await res.json()
+
+    // 200, not REST's 410: a GraphQL client surfaces `errors` from a 200 as
+    // readable GraphQL errors but a 4xx as an opaque network error — the
+    // deliberate divergence this task exists to lock in.
+    expect(res.status).toBe(200)
+    expect(body.errors).toBeDefined()
+    expect(body.errors[0].extensions.code).toBe('VERSION_RETIRED')
+    expect(body.errors[0].message).toContain('v2')
+    expect(body.errors[0].message).toContain('v1, v3')
+    expect(body.errors[0].extensions.current).toBe('v3')
+    expect(body.errors[0].extensions.live).toEqual(['v1', 'v3'])
+    // No `ok` envelope — a GraphQL client would not parse it.
+    expect(body.ok).toBeUndefined()
+  })
+
+  it('reports a version that was never cut as unknown', async () => {
+    const res = await gqlPost(makeGraphqlApp(TWO_LIVE_MODEL), '/graphql/v9')
+    const body = await res.json()
+
+    // Same 200-not-4xx divergence as the retired case above.
+    expect(res.status).toBe(200)
+    expect(body.errors[0].extensions.code).toBe('VERSION_UNKNOWN')
+  })
+
+  it('falls through for a segment that is not version-shaped', async () => {
+    // Nothing else lives under /graphql today, but the guard must not claim a
+    // non-version segment — the same order-independence the REST catch-all
+    // gives /api/media/:id.
+    const res = await gqlPost(makeGraphqlApp(TWO_LIVE_MODEL), '/graphql/playground')
+    expect(res.status).toBe(404)
+    const text = await res.text()
+    expect(text).not.toContain('VERSION_UNKNOWN')
+    expect(text).not.toContain('VERSION_RETIRED')
+  })
+})
+
+describe('graphql — deprecation headers', () => {
+  it('marks an older live version deprecated and names its successor', async () => {
+    const res = await gqlPost(makeGraphqlApp(TWO_LIVE_MODEL), '/graphql/v1')
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('deprecation')).toBe('true')
+    expect(res.headers.get('link')).toBe('</graphql/v3>; rel="successor-version"')
+  })
+
+  it("sends no deprecation headers on the current version's own endpoint", async () => {
+    const res = await gqlPost(makeGraphqlApp(TWO_LIVE_MODEL), '/graphql/v3')
+    expect(res.headers.get('deprecation')).toBeNull()
+  })
+
+  it('warns that the unversioned endpoint floats, once more than one version is live', async () => {
+    const res = await gqlPost(makeGraphqlApp(TWO_LIVE_MODEL), '/graphql')
+    expect(res.headers.get('deprecation')).toBe('true')
+    expect(res.headers.get('warning')).toContain('Pin a version')
+  })
+
+  it('stays silent on the unversioned endpoint for a project with one live version', async () => {
+    const oneLive: BakedVersionModel = {
+      current: 'v1',
+      live: ['v1'],
+      projections: {
+        v1: {
+          version: 'v1',
+          types: {
+            // Divergence must sit on author_id/author, NOT blog_title. A
+            // projection that exposes column `blog_title` under any label
+            // other than `blog_title` trips buildFieldKeyMap's collision
+            // check, because content--gqlpost's field NAME equals that column
+            // — see the ledger's Task 7 ruling. author_id never collides,
+            // since the registry names that field `author`.
+            [GQLPOST]: {
+              fields: [{ column_name: 'author_id', exposed_as: 'author', required: false }],
+            },
+          },
+        },
+      },
+    }
+    const res = await gqlPost(makeGraphqlApp(oneLive), '/graphql')
+    expect(res.headers.get('deprecation')).toBeNull()
   })
 })

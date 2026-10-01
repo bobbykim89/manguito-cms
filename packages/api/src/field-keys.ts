@@ -40,6 +40,13 @@ export type FieldKeyMap = {
 }
 
 /**
+ * One field's place in the label space: the label it is known by, plus the
+ * storage column it owns. `ownColumn` is ABSENT — never present-and-undefined,
+ * per exactOptionalPropertyTypes — for a field with no column of its own.
+ */
+type LabelEntry = { label: string; ownColumn?: string }
+
+/**
  * The shared core: given a label↔column mapping and the FULL label space to
  * check against, produce a FieldKeyMap. Both `createFieldKeyMap` and
  * `createFieldKeyMapFromProjection` are thin adapters over this — the
@@ -63,6 +70,12 @@ export type FieldKeyMap = {
  * that column's value and then be renamed onto the other field's label.
  * Both constructors must pass the complete set.
  *
+ * Each entry carries `ownColumn` — the column that field itself is backed by,
+ * absent for a paragraph, many-to-many or programmatic field. The collision
+ * check below needs it: a label that equals a column is a collision only when
+ * the column belongs to a DIFFERENT field, and strings alone cannot tell the
+ * two apart.
+ *
  * `droppedKeys` also drives `remap`: it must actively remove a key from a
  * mapped object rather than merely leave it unmapped, because `remap` passes
  * an unmapped key through unchanged — a retained-but-unexposed column would
@@ -70,7 +83,7 @@ export type FieldKeyMap = {
  */
 function buildFieldKeyMap(
   pairs: Array<{ label: string; column: string }>,
-  allLabels: string[],
+  allLabels: LabelEntry[],
   droppedKeys: Set<string>
 ): FieldKeyMap {
   const labelToColumn = new Map<string, string>()
@@ -103,7 +116,21 @@ function buildFieldKeyMap(
   // declare its own `column`, so this is no longer structurally impossible —
   // but core rejects it with `DUPLICATE_COLUMN` at parse time, so it is still
   // unreachable here.
-  for (const label of allLabels) {
+  for (const { label, ownColumn } of allLabels) {
+    // The label is this field's OWN column, exposed by this version under a
+    // different name. That is not an ambiguity — it is one field seen twice,
+    // under current's name and under the label this version uses — and there
+    // is still exactly one column holding exactly one value. It happens when a
+    // field is renamed away and then renamed BACK onto its column's name while
+    // the intermediate version is still live. Without this skip the map refuses
+    // to build and createCmsApp throws at startup for every version at once.
+    //
+    // Only the SAME field is exempted: `ownColumn` is absent for a field with
+    // no column of its own (a paragraph, many-to-many or programmatic field's
+    // label named after some other field's column is precisely the ambiguity
+    // this check exists for), and differs from `label` when the name belongs to
+    // one field while the column belongs to another.
+    if (ownColumn === label) continue
     const columnOwner = columnToLabel.get(label)
     if (columnOwner !== undefined && columnOwner !== label) {
       throw new Error(
@@ -197,9 +224,19 @@ export function createFieldKeyMap(fields: ParsedField[]): FieldKeyMap {
     }
   }
 
+  // `ownColumn` is a strict no-op on this path and is passed only so the two
+  // constructors share one core: here a label IS a field's name, so a field
+  // whose own column equals its name already maps that column back to itself
+  // (`columnOwner === label`) and never reached the throw. It matters only for
+  // a projection, which can expose a column under some other label.
   return buildFieldKeyMap(
     pairs,
-    fields.map((f) => f.name),
+    fields.map((f) => ({
+      label: f.name,
+      // Conditional spread, not a plain assignment — exactOptionalPropertyTypes
+      // forbids present-and-undefined.
+      ...(isColumnBacked(f) && { ownColumn: f.db_column.column_name }),
+    })),
     droppedKeys
   )
 }
@@ -241,7 +278,13 @@ export function createFieldKeyMapFromProjection(
 
   return buildFieldKeyMap(
     pairs,
-    allFields.map((f) => f.name),
+    allFields.map((f) => ({
+      label: f.name,
+      // See buildFieldKeyMap's collision check: this is what lets it tell a
+      // version exposing a field's own column under a new label (fine) from a
+      // label that reuses another field's column (not fine).
+      ...(isColumnBacked(f) && { ownColumn: f.db_column.column_name }),
+    })),
     dropped
   )
 }

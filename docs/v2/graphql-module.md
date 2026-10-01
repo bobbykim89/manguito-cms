@@ -80,7 +80,13 @@ Every item in the case against is contained by the design:
 
 **In scope**
 
-- A single `/graphql` endpoint on the **public** API (`/api/*` surface).
+- A `/graphql` endpoint on the **public** API, plus one per live schema
+  version at `/graphql/<version>`. `/graphql` floats to the current version; a
+  pinned endpoint serves a frozen contract. A project that has never cut a
+  version still gets `/graphql/v1` as an alias of `/graphql` — both serve the
+  same, single live version — mirroring how the REST surface already aliases
+  an unversioned project onto `v1`. See
+  [the 2e design](../superpowers/specs/2026-09-21-graphql-versioning-design.md).
 - **Queries only** — the public API is a read surface; all writes stay on the
   authenticated admin REST API.
 - Per content type and taxonomy type: a list query and a single-item query,
@@ -113,6 +119,7 @@ Every item in the case against is contained by the design:
 | Published / auth | Reuses `publicRepos` — inherits ADR api/0002 guarantee |
 | Damage control | Depth + complexity + alias limits, route rate limit, dev-only introspection/GraphiQL |
 | Breaking changes | None — additive & opt-in; core touched only by one additive optional `APIAdapter.graphql?` field (see [decisions D7](./graphql-decisions.md)) |
+| Schema versioning | One schema per live version at `/graphql/<version>`; superseded names carry `@deprecated`. Not a single union schema — see the 2e design |
 
 See [graphql-decisions.md](./graphql-decisions.md) for the reasoning behind each,
 including rejected alternatives.

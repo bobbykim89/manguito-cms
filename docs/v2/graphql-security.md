@@ -75,10 +75,13 @@ opts in via `graphql.graphiql`. Yoga makes both toggleable.
 fetched from that CDN off `blob:` URLs — all blocked by the app-wide strict
 policy. When (and only when) `graphiql` is enabled, `createCmsApp` passes
 `graphiqlPath: '/graphql'` to the security-headers middleware, which relaxes
-`script-src`/`style-src`/`connect-src`/`worker-src` **for that single path**.
-Every other route — the admin SPA, the REST API, and GraphQL `POST` queries —
-keeps the strict policy. Because `graphiql` defaults off in production, the
-exception does not exist there unless deliberately enabled. Recorded in
+`script-src`/`style-src`/`connect-src`/`worker-src` for that path **and its
+subtree** (`/graphql/v1`, …), so the explorer also boots on every versioned
+GraphQL endpoint. A same-prefix sibling that is not actually under it (e.g.
+`/graphqlfoo`) keeps the strict policy. Every route outside that subtree — the
+admin SPA and the REST API — keeps the strict policy too. Because `graphiql`
+defaults off in production, the exception does not exist there unless
+deliberately enabled. Recorded in
 [ADR api/0010](../adr/api/0010-config-driven-csp.md).
 
 ---
@@ -140,3 +143,22 @@ complexity-bounded, rate-limited, and introspection-closed in production. The on
 genuinely new risk relative to REST — unbounded query cost — is addressed by
 mandatory, on-by-default limits. If the module is not enabled, none of this
 surface exists.
+
+---
+
+## Non-live versions
+
+`/graphql/<version>` for a version that is retired or was never cut answers
+with GraphQL's own error shape — `errors[]` carrying `VERSION_RETIRED` or
+`VERSION_UNKNOWN` in `extensions.code`, alongside `current` and `live` — and
+HTTP 200, not the `{ ok, error }` envelope and not the REST surface's 410/404.
+
+A GraphQL client surfaces `errors` from a 200 as readable GraphQL errors but a
+4xx as an opaque network error, so the REST codes would hide the one message a
+pinned consumer needs. A segment that is not version-shaped falls through
+rather than being claimed.
+
+The error **code string** also differs from REST for the same "never cut"
+condition: REST answers `VERSION_NOT_FOUND`, GraphQL answers `VERSION_UNKNOWN`.
+Deliberate — no shared error-code contract is asserted between the two
+surfaces — but worth stating so it is not mistaken for drift.

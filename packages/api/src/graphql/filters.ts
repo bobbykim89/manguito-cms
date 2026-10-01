@@ -12,6 +12,7 @@ import {
 import type {
   ParsedContentType,
   ParsedTaxonomyType,
+  ParsedField,
   FilterValue,
   FilterOperator,
   FieldType,
@@ -19,6 +20,8 @@ import type {
 import { graphqlTypeName, buildFieldNameMap } from './naming.js'
 import { scalarOutputType } from './type-mapping.js'
 import { DateTimeScalar } from './scalars.js'
+import type { FieldKeyMap } from '../field-keys.js'
+import type { ViewField } from './version-view.js'
 
 export const SortOrderEnum = new GraphQLEnumType({
   name: 'SortOrder',
@@ -38,10 +41,31 @@ const SORTABLE: Array<{ gql: string; value: string }> = [
   { gql: 'updatedAt', value: 'updated_at' },
 ]
 
-export function buildSortFieldEnum(typeName: string): GraphQLEnumType {
+/**
+ * `fieldKeys` is THIS version's map. `title` in SORTABLE is a schema field's
+ * LABEL, not a column, so a version that has no field with that label cannot
+ * resolve it — and offering it anyway hands the repository a label that maps
+ * to nothing, which surfaces as a 500 from SQL rather than a rejected query.
+ * Mirrors `sortableColumnsFor` in versions.ts.
+ *
+ * `createdAt`/`updatedAt` are real system columns on every content type, so
+ * they are always offered and the enum can never end up empty — which
+ * GraphQL rejects.
+ *
+ * With no map, every value is kept: callers that have not threaded a
+ * FieldKeyMap through behave exactly as before.
+ */
+export function buildSortFieldEnum(typeName: string, fieldKeys?: FieldKeyMap): GraphQLEnumType {
+  const resolvable = SORTABLE.filter(
+    (s) =>
+      s.gql === 'createdAt' ||
+      s.gql === 'updatedAt' ||
+      fieldKeys === undefined ||
+      fieldKeys.columnFor(s.value) !== undefined
+  )
   return new GraphQLEnumType({
     name: `${typeName}SortField`,
-    values: Object.fromEntries(SORTABLE.map((s) => [s.gql, { value: s.value }])),
+    values: Object.fromEntries(resolvable.map((s) => [s.gql, { value: s.value }])),
   })
 }
 
@@ -95,7 +119,8 @@ function filterInputForField(fieldType: FieldType): GraphQLInputObjectType | nul
 
 // Build the <Type>Filter input. Programmatic fields are excluded (no column).
 export function buildFilterInputType(
-  type: ParsedContentType | ParsedTaxonomyType
+  type: ParsedContentType | ParsedTaxonomyType,
+  viewFields?: ViewField[]
 ): GraphQLInputObjectType | null {
   const fields: Record<string, { type: GraphQLInputObjectType }> = {}
 
@@ -106,11 +131,18 @@ export function buildFilterInputType(
   fields['updatedAt'] = { type: DateTimeFilter }
   if (type.schema_type === 'content-type') fields['slug'] = { type: StringFilter }
 
-  for (const f of type.fields) {
+  // A view states the label THIS version exposes each field under; without
+  // one, fall back to the field's own name minus tombstones (Task 2's rule).
+  const entries: Array<{ field: ParsedField; exposedAs: string }> =
+    viewFields !== undefined
+      ? viewFields.map((v) => ({ field: v.field, exposedAs: v.exposedAs }))
+      : type.fields.filter((f) => f.removed !== true).map((f) => ({ field: f, exposedAs: f.name }))
+
+  for (const { field: f, exposedAs } of entries) {
     if (f.field_type === 'programmatic' || f.field_type === 'paragraph') continue
     if (f.field_type === 'image' || f.field_type === 'video' || f.field_type === 'file') continue
     const input = filterInputForField(f.field_type)
-    if (input) fields[buildFieldNameMap([f.name]).toGraphql(f.name)] = { type: input }
+    if (input) fields[buildFieldNameMap([exposedAs]).toGraphql(exposedAs)] = { type: input }
   }
 
   if (Object.keys(fields).length === 0) return null

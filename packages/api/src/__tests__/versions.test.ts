@@ -97,11 +97,11 @@ const SURFACE_MODEL: BakedVersionModel = {
   projections: {
     // v1 exposed the column under its own name.
     v1: { version: 'v1', types: { 'content--post': { fields: [
-      { column_name: 'blog_title', exposed_as: 'blog_title' },
+      { column_name: 'blog_title', exposed_as: 'blog_title', required: false },
     ] } } },
     // v2 exposes the same column under the new name.
     v2: { version: 'v2', types: { 'content--post': { fields: [
-      { column_name: 'blog_title', exposed_as: 'title' },
+      { column_name: 'blog_title', exposed_as: 'title', required: false },
     ] } } },
   },
 }

@@ -98,8 +98,8 @@ describe('the zero-config case', () => {
     expect(result.value.union).toBe(current)
     // Identity: every column exposed under its own name, no fallbacks.
     expect(result.value.projections['v1']!.types['content--blog_post']!.fields).toEqual([
-      { column_name: 'title', exposed_as: 'title' },
-      { column_name: 'body', exposed_as: 'body' },
+      { column_name: 'title', exposed_as: 'title', required: false },
+      { column_name: 'body', exposed_as: 'body', required: false },
     ])
   })
 })

@@ -18,10 +18,10 @@ describe('buildProjections — a renamed field', () => {
     const projections = buildProjections({ current, currentVersion: 'v2', snapshots: [v1] })
 
     expect(projections['v1']!.types['content--blog_post']!.fields).toEqual([
-      { column_name: 'blog_title', exposed_as: 'blog_title' },
+      { column_name: 'blog_title', exposed_as: 'blog_title', required: false },
     ])
     expect(projections['v2']!.types['content--blog_post']!.fields).toEqual([
-      { column_name: 'blog_title', exposed_as: 'title' },
+      { column_name: 'blog_title', exposed_as: 'title', required: false },
     ])
   })
 })
@@ -75,7 +75,7 @@ describe('buildProjections — a tombstone', () => {
 
     const v1Desc = projections['v1']!.types['content--blog_post']!.fields
       .find((f) => f.column_name === 'blog_desc')
-    expect(v1Desc).toEqual({ column_name: 'blog_desc', exposed_as: 'blog_desc', fallback: '' })
+    expect(v1Desc).toEqual({ column_name: 'blog_desc', exposed_as: 'blog_desc', required: false, fallback: '' })
   })
 
   it('keys the fallback by column, so a field renamed and then removed still matches', () => {
@@ -95,7 +95,7 @@ describe('buildProjections — a tombstone', () => {
     const projections = buildProjections({ current, currentVersion: 'v2', snapshots: [v1] })
 
     expect(projections['v1']!.types['content--blog_post']!.fields).toEqual([
-      { column_name: 'description', exposed_as: 'description', fallback: 'gone' },
+      { column_name: 'description', exposed_as: 'description', required: false, fallback: 'gone' },
     ])
   })
 })
@@ -107,7 +107,7 @@ describe('buildProjections — shape', () => {
     const current = makeRegistry([makeContentType('content--blog_post', [{ name: 'title' }])])
     const projections = buildProjections({ current, currentVersion: 'v1', snapshots: [] })
     expect(projections['v1']!.types['content--blog_post']!.fields).toEqual([
-      { column_name: 'title', exposed_as: 'title' },
+      { column_name: 'title', exposed_as: 'title', required: false },
     ])
   })
 
@@ -129,5 +129,57 @@ describe('buildProjections — shape', () => {
     ])
     const projections = buildProjections({ current, currentVersion: 'v1', snapshots: [] })
     expect(projections['v1']!.types['content--blog_post']!.fields.map((f) => f.exposed_as)).toEqual(['title'])
+  })
+})
+
+describe('buildProjections — requiredness', () => {
+  it("takes each version's own requiredness, not current's", () => {
+    // v1 allowed nulls; current tightened the SAME column to required. A
+    // GraphQL schema built for v1 from current's flag would emit String! over
+    // rows that hold nulls, and non-null propagation would null out the whole
+    // parent object. A fixture where both versions agree cannot catch that.
+    const v1 = {
+      version: 'v1',
+      registry: makeRegistry([
+        makeContentType('content--blog_post', [{ name: 'blog_title', required: false }]),
+      ]),
+    }
+    const current = makeRegistry([
+      makeContentType('content--blog_post', [
+        { name: 'title', column: 'blog_title', required: true },
+      ]),
+    ])
+
+    const projections = buildProjections({ current, currentVersion: 'v2', snapshots: [v1] })
+
+    expect(projections['v1']!.types['content--blog_post']!.fields).toEqual([
+      { column_name: 'blog_title', exposed_as: 'blog_title', required: false },
+    ])
+    expect(projections['v2']!.types['content--blog_post']!.fields).toEqual([
+      { column_name: 'blog_title', exposed_as: 'title', required: true },
+    ])
+  })
+
+  it('carries requiredness alongside a fallback without disturbing it', () => {
+    // `required` must be added to the same object literal the fallback lands
+    // on, and the no-fallback case must still omit `fallback` entirely rather
+    // than setting it undefined.
+    const v1 = {
+      version: 'v1',
+      registry: makeRegistry([
+        makeContentType('content--blog_post', [{ name: 'blog_desc', type: 'text/rich', required: true }]),
+      ]),
+    }
+    const current = makeRegistry([
+      makeContentType('content--blog_post', [
+        { name: 'blog_desc', type: 'text/rich', removed: true, fallback: '' },
+      ]),
+    ])
+
+    const projections = buildProjections({ current, currentVersion: 'v2', snapshots: [v1] })
+
+    expect(projections['v1']!.types['content--blog_post']!.fields).toEqual([
+      { column_name: 'blog_desc', exposed_as: 'blog_desc', required: true, fallback: '' },
+    ])
   })
 })

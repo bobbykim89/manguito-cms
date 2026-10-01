@@ -20,7 +20,7 @@ function model(projections: VersionModel['projections']): VersionModel {
 }
 
 const SIMPLE = { v1: { version: 'v1', types: { 'content--post': { fields: [
-  { column_name: 'blog_title', exposed_as: 'blog_title' },
+  { column_name: 'blog_title', exposed_as: 'blog_title', required: false },
 ] } } } }
 
 describe('generateVersionModel', () => {
@@ -51,10 +51,10 @@ describe('generateVersionModel', () => {
     // themselves — if any became null, the projector would substitute over a
     // legitimate stored value at runtime.
     const withFallbacks = { v1: { version: 'v1', types: { 'content--post': { fields: [
-      { column_name: 'a', exposed_as: 'a', fallback: '' },
-      { column_name: 'b', exposed_as: 'b', fallback: 0 },
-      { column_name: 'c', exposed_as: 'c', fallback: false },
-      { column_name: 'd', exposed_as: 'd', fallback: null },
+      { column_name: 'a', exposed_as: 'a', required: false, fallback: '' },
+      { column_name: 'b', exposed_as: 'b', required: false, fallback: 0 },
+      { column_name: 'c', exposed_as: 'c', required: false, fallback: false },
+      { column_name: 'd', exposed_as: 'd', required: false, fallback: null },
     ] } } } }
     await generateVersionModel(model(withFallbacks as never), dir)
     const src = fs.readFileSync(path.join(dir, 'version-model.ts'), 'utf8')

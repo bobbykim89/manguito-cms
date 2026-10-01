@@ -45,7 +45,7 @@ export type CreateCmsAppOptions = {
   cors?: CorsConfig
   /** Programmatic field resolvers, keyed `${schema}::${field}`. */
   resolvers?: ResolverMap
-  /** GraphQL module config (resolved). When enabled, mounts POST /graphql. */
+  /** GraphQL module config (resolved). When enabled, mounts `/graphql` (and one `/graphql/<version>` per live version) via `app.all`. */
   graphql?: ResolvedGraphQLConfig
   /**
    * The baked version model — what `manguito build` writes into
@@ -128,7 +128,8 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
   // browser→storage directly, so that host must be allowlisted.
   // The GraphiQL explorer (dev-only by default) boots from a CDN bundle plus
   // inline scripts, which the strict script-src blocks — so when it is enabled
-  // the /graphql path alone gets a relaxed CSP (ADR api/0010).
+  // the /graphql subtree (the unversioned endpoint plus every /graphql/vN
+  // mount below) gets a relaxed CSP (ADR api/0010).
   const uploadOrigins = storage.getUploadOrigins?.() ?? []
   const graphiqlEnabled = options.graphql?.enabled === true && options.graphql.graphiql === true
   app.use(
@@ -271,39 +272,6 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
       sortableColumns,
     })
   }
-
-  // ── GraphQL repos ───────────────────────────────────────────────────────────
-  //
-  // GraphQL resolves relations lazily, per selected field, through its own
-  // request-scoped dataloaders — so its repos must NOT resolve relations
-  // eagerly. Reusing `publicRepos` here is actively wrong: their eager pass
-  // overwrites a media field's column (the FK column and the field share a
-  // name) with the resolved media object, and the dataloader then reads that
-  // object back where a UUID is expected. It also pays for resolving every
-  // relation on every query, including the ones the client never selected.
-  //
-  // These are still public reads: every GraphQL resolver passes
-  // `published_only: true`, and the dataloaders filter relation targets by
-  // published (ADR api/0002). Built separately from the admin `repos` so a
-  // future change there can never silently widen the public surface.
-  //
-  // They do take `sortableColumns`, like every other repo here: the GraphQL
-  // sort enum's `title` value is a schema field's LABEL, which
-  // `collectionResolver` maps to a column before calling findMany.
-  const graphqlRepos = Object.fromEntries([
-    ...Object.entries(registry.content_types).map(([typeName, ct]) => [
-      typeName,
-      createDrizzleContentRepository(db, (ct as ParsedContentType).db.table_name, {
-        sortableColumns: sortableColumnsFor(typeName),
-      }),
-    ]),
-    ...Object.entries(registry.taxonomy_types).map(([typeName, tt]) => [
-      typeName,
-      createDrizzleContentRepository(db, (tt as ParsedTaxonomyType).db.table_name, {
-        sortableColumns: sortableColumnsFor(typeName),
-      }),
-    ]),
-  ])
 
   // ── Auth routes registered directly on app BEFORE the blanket use() calls ───────
   //
@@ -463,42 +431,206 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
   // there's a single shared `ready` promise, never a re-import per request.
   // Unauthenticated by design: it sits alongside /api/*, not behind the
   // /admin/api/* auth middleware registered above, and only ever reads through
-  // `publicRepos` (published-only, same as the REST public routes).
+  // `makeGraphqlRepo` (published-only, same as the REST public routes).
   //
   // `buildGraphQLSchema` can throw synchronously (e.g. a GraphQL type-name
-  // collision between a content type and a taxonomy type) — since that throw
-  // happens inside a `.then()` callback, it rejects `ready`. A `.catch` is
-  // attached below so that rejection is HANDLED: an unhandled rejection here
-  // would otherwise crash the entire Node process at startup, taking down all
-  // REST routes with it, regardless of whether any client ever hits /graphql.
-  // Init failure is instead contained to a 500 on /graphql itself.
+  // collision between a content type and a taxonomy type) for any ONE
+  // version's schema. Each version below builds inside its own try/catch, so
+  // that throw is contained to that version's mount returning a 500 — it
+  // does not take any other live version's endpoint down with it, and does
+  // NOT reject the shared `ready` promise (the try/catch swallows it first).
+  // The outer `.catch` attached to `ready` covers a narrower failure: the
+  // dynamic `import()` itself rejecting (e.g. the graphql/ module failing to
+  // load at all) — a case no per-version try/catch can reach, since it
+  // happens before any version's schema-building code even runs. Either way
+  // the rejection is HANDLED here: an unhandled one would otherwise crash the
+  // entire Node process at startup, taking down all REST routes with it,
+  // regardless of whether any client ever hits /graphql.
   if (options.graphql?.enabled) {
     const gqlOptions = options.graphql
-    let gqlHandler: Handler | null = null
-    let initError: unknown = null
+
+    // GraphQL resolves relations lazily, per selected field, through its own
+    // request-scoped dataloaders — so its repos must NOT resolve relations
+    // eagerly the way `makeRepo` does. Reusing that factory is actively wrong:
+    // its eager pass overwrites a media field's column (the FK column and the
+    // field share a name) with the resolved media object, and the dataloader
+    // then reads that object back where a UUID is expected.
+    //
+    // Still public reads: every GraphQL resolver passes `published_only: true`
+    // and the dataloaders filter relation targets by published (ADR api/0002).
+    // Kept a separate factory from the admin `repos` so a future change there
+    // can never silently widen the public surface.
+    //
+    // They do take `sortableColumns`, like every other repo here: the GraphQL
+    // sort enum's values are a schema field's LABELS, which `collectionResolver`
+    // maps to columns before calling findMany — and this commit makes that
+    // mapping per-version, since `sortableColumnsFor` (via `buildVersionSurface`)
+    // now reads each version's OWN field-key map, not just current's.
+    const makeGraphqlRepo = (_typeName: string, tableName: string, sortableColumns: Set<string>) =>
+      createDrizzleContentRepository(db, tableName, { sortableColumns })
+
+    // The same pass list the REST loop uses: one per live version when
+    // versioning is configured, then the unversioned pass at current.
+    const gqlPasses: Array<{ version: string | null; projectionVersion: string }> = [
+      ...(options.versions !== undefined
+        ? model.live.map((v) => ({ version: v, projectionVersion: v }))
+        : []),
+      { version: null, projectionVersion: model.current },
+    ]
+
+    type GqlMount = { path: string; version: string | null; handler: Handler | null; error: unknown }
+    const mounts: GqlMount[] = gqlPasses.map((pass) => ({
+      path: pass.version === null ? '/graphql' : `/graphql/${pass.version}`,
+      version: pass.version,
+      handler: null,
+      error: null,
+    }))
+
+    // Loaded via a DYNAMIC import so `graphql`/`graphql-yoga` never load unless
+    // a consumer opts in — the `.` entry must stay free of a static dependency
+    // on the graphql/ subpath (ADR api/0006). One shared `ready` promise, never
+    // a re-import per request.
     const ready = import('./graphql/handler.js')
       .then(({ createGraphQLHandler }) => {
-        gqlHandler = createGraphQLHandler(registry, graphqlRepos, fieldKeyMaps, programmaticResolver, db, gqlOptions)
+        gqlPasses.forEach((pass, i) => {
+          const mount = mounts[i]!
+          // Each version builds inside its OWN try/catch. A synchronous throw
+          // from one version's schema (e.g. a type-name collision) must not
+          // reject the shared promise and take every other version's endpoint
+          // down with it.
+          try {
+            const surface = buildVersionSurface<unknown>({
+              ...pass,
+              prefix,
+              registry,
+              model,
+              makeRepo: makeGraphqlRepo,
+            })
+            // Hoisted into locals and spread under their own guards.
+            // `noUncheckedIndexedAccess` makes each index
+            // `VersionProjection | undefined`, and
+            // `exactOptionalPropertyTypes` then rejects assigning that to an
+            // optional property — a present-and-undefined key. This is also
+            // why no `options.versions` check is needed: with versioning off
+            // `model.projections` is `{}`, so both are absent and the handler
+            // builds from the registry, exactly the pre-versioning behaviour.
+            const projection = model.projections[pass.projectionVersion]
+            const currentProjection = model.projections[model.current]
+
+            mount.handler = createGraphQLHandler(
+              registry,
+              surface.repos,
+              surface.fieldKeyMaps,
+              programmaticResolver,
+              db,
+              gqlOptions,
+              {
+                endpoint: mount.path,
+                currentVersion: model.current,
+                ...(projection !== undefined && { projection }),
+                ...(currentProjection !== undefined && { currentProjection }),
+              }
+            )
+          } catch (err) {
+            mount.error = err
+            const message = err instanceof Error ? err.message : String(err)
+            process.stderr.write(
+              `✗ GraphQL schema failed to initialize for ${mount.path}; it will return 500. ${message}\n`
+            )
+          }
+        })
       })
       .catch((err: unknown) => {
-        initError = err
+        // The import itself failed, so nothing can serve. Caught so the
+        // rejection is HANDLED: an unhandled one would crash the whole process
+        // at startup, taking every REST route with it.
+        for (const m of mounts) m.error = err
         const message = err instanceof Error ? err.message : String(err)
-        process.stderr.write(`✗ GraphQL schema failed to initialize; /graphql will return 500. ${message}\n`)
+        const paths = mounts.map((m) => m.path).join(', ')
+        process.stderr.write(`✗ GraphQL module failed to load; ${paths} will return 500. ${message}\n`)
       })
-    const invokeGraphQL: Handler = async (c) => {
-      if (!gqlHandler && !initError) await ready
-      if (!gqlHandler) {
-        return c.json(
-          { ok: false, error: { code: 'GRAPHQL_INIT_FAILED', message: 'GraphQL schema failed to initialize' } },
-          500
-        )
+
+    const invokeFor =
+      (mount: GqlMount): Handler =>
+      async (c) => {
+        if (!mount.handler && !mount.error) await ready
+        if (!mount.handler) {
+          return c.json(
+            { ok: false, error: { code: 'GRAPHQL_INIT_FAILED', message: 'GraphQL schema failed to initialize' } },
+            500
+          )
+        }
+        return mount.handler(c, async () => {})
       }
-      return gqlHandler(c, async () => {})
+
+    // Reuses the REST helper, so the two surfaces stay diagnosable the same
+    // way — including its decision not to nag a project that never opted into
+    // versioning. Registered BEFORE the route handlers below: Hono matches in
+    // registration order and a handler terminates the chain, so middleware
+    // added afterwards would never run.
+    for (const mount of mounts) {
+      const headers = deprecationHeaders({
+        requested: mount.version,
+        model,
+        successor: `/graphql/${model.current}`,
+      })
+      if (headers === null) continue
+      const attach: MiddlewareHandler = async (c, next) => {
+        await next()
+        for (const [key, value] of Object.entries(headers)) c.res.headers.set(key, value)
+      }
+      app.use(mount.path, attach)
     }
-    if (listRateLimit) {
-      app.all('/graphql', listRateLimit, invokeGraphQL)
-    } else {
-      app.all('/graphql', invokeGraphQL)
+
+    // Concrete paths registered before the catch-all below, but unlike the
+    // REST surface this ordering is NOT load-bearing here: the catch-all
+    // `return next()`s for any live version, so Hono falls through to the
+    // mount handler regardless of which was registered first (confirmed by
+    // moving the catch-all before this loop — every test stayed green). What
+    // IS load-bearing, and is tested, is the deprecation-header middleware's
+    // ordering above: it must run before the mount handlers so it can attach
+    // headers to the response they produce.
+    for (const mount of mounts) {
+      if (listRateLimit) app.all(mount.path, listRateLimit, invokeFor(mount))
+      else app.all(mount.path, invokeFor(mount))
+    }
+
+    // Registered last, so it is only reached by a request that matched no live
+    // version's endpoint above. `not-a-version` falls through, which keeps the
+    // guard from claiming any non-version segment under /graphql.
+    if (options.versions !== undefined) {
+      app.all('/graphql/:version', async (c, next) => {
+        const segment = c.req.param('version')
+        const kind = classifyVersion(segment, model)
+        if (kind === 'not-a-version' || kind === 'live') return next()
+
+        const live = model.live.join(', ')
+        // GraphQL's own error shape, not the { ok, error } envelope: the caller
+        // is a GraphQL client, and Apollo or urql handed a body they do not
+        // recognise reports "unexpected response" — hiding the one message a
+        // pinned consumer actually needs to read.
+        //
+        // Status 200, unlike REST's 410/404 for the same conditions. A
+        // GraphQL client surfaces `errors` from a 200 as readable GraphQL
+        // errors but a 4xx as an opaque network error, which would defeat the
+        // point of choosing this shape. The divergence is deliberate and
+        // recorded in the 2e design's residuals.
+        return c.json({
+          errors: [
+            {
+              message:
+                kind === 'retired'
+                  ? `Version ${segment} is no longer served. Live versions: ${live}.`
+                  : `Version ${segment} does not exist. Live versions: ${live}.`,
+              extensions: {
+                code: kind === 'retired' ? 'VERSION_RETIRED' : 'VERSION_UNKNOWN',
+                current: model.current,
+                live: model.live,
+              },
+            },
+          ],
+        })
+      })
     }
   }
 
