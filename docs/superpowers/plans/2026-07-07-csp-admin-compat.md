@@ -259,7 +259,7 @@ status: accepted
 The security-headers middleware sets a strict CSP (`default-src 'self'`,
 `script-src 'self'`, no `'unsafe-inline'` for scripts). Presigned uploads,
 however, go directly from the browser to the storage backend
-([ADR api/0004](./0004-presigned-first-storage.md)), whose origin is
+([ADR api/0004](../../adr/api/0004-presigned-first-storage.md)), whose origin is
 per-deployment configuration — S3 `https://<bucket>.s3.<region>.amazonaws.com`,
 Cloudinary `https://api.cloudinary.com`. A hardcoded CSP therefore blocked the
 upload `connect-src`. The storage adapter exposes `getUploadOrigins()`, and
