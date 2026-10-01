@@ -5,6 +5,7 @@
 Self-hosted schema-driven headless CMS.
 Read docs/phase-XX.md for v1/MVP context; for v2 feature work, read the relevant design in docs/v2/ before making changes.
 Architectural decisions are recorded as ADRs in docs/adr/ (cross-cutting at the root, per-package in subfolders); see CONTEXT-MAP.md for the package map and per-package CONTEXT.md glossaries.
+Before writing a design spec or implementation plan under docs/superpowers/, read docs/superpowers/PLAN-QUALITY.md and run `pnpm lint:plans <file>`.
 
 ## Current phase
 
