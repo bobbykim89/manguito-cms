@@ -30,7 +30,7 @@
   "scripts": {
     "build": "vue-tsc && vite build && tsup",
     "dev": "vite",
-    "test": "dotenv -e .env.test -- vitest run",
+    "test": "dotenv -e ../../.env.test -- vitest run",
     "lint": "eslint src"
   },
   "dependencies": {

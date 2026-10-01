@@ -430,6 +430,41 @@ manguito-cms/
 
 This project is in active early development. If you're interested in collaborating, read through the phase docs in `/docs` to understand where things currently stand before diving in.
 
+### Local development
+
+From a fresh clone, in this order:
+
+```bash
+pnpm install
+pnpm build:packages              # see note below — required before anything else
+cp .env.test.example .env.test   # gitignored; a throwaway container's URL
+pnpm db:test:up                  # Postgres 16 on host port 5435
+pnpm test
+```
+
+**`pnpm build:packages` is not optional on a fresh clone.** `apps/sandbox` runs the
+`manguito` CLI by name, and pnpm can only link that bin once `packages/cli/dist`
+exists — which it does not in a clone. `build:packages` builds the five packages in
+dependency order and then re-runs `pnpm install` to link the bins. Skip it and
+`pnpm build` fails with `sh: 1: manguito: not found`.
+
+The integration suites read `DB_URL` from the repo-root `.env.test`, which is
+gitignored, so a fresh clone must create it from the committed example. Port 5435 is
+deliberate: 5432 is commonly taken by a natively installed Postgres.
+
+Other gates, none of which run in CI today: `pnpm typecheck`, `pnpm lint`, and
+`pnpm lint:plans <file>` for anything under `docs/superpowers/`.
+
+`pnpm build` additionally builds `apps/sandbox`, the demo app, which needs real
+storage credentials — `cp apps/sandbox/.env.example apps/sandbox/.env` leaves
+`AWS_REGION` empty and `manguito build` then fails with `Region is missing`. For
+package development use `pnpm build:packages`, which is self-contained.
+
+`pnpm install` warns about a cyclic workspace dependency between `packages/api` and
+`packages/test-utils` — `api` uses `test-utils` for its tests while `test-utils` uses
+`api` for its request helpers. It is why `build:packages` orders the builds explicitly
+rather than leaving it to Turborepo. Harmless today, worth untangling eventually.
+
 Releases are cut with Changesets — see [RELEASE.md](./RELEASE.md) for the step-by-step process.
 
 ---

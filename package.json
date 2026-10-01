@@ -37,6 +37,7 @@
     "@changesets/cli": "latest",
     "@eslint/js": "^10.0.1",
     "dotenv-cli": "latest",
+    "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.45.2",
     "eslint": "^10.6.0",
     "turbo": "latest",

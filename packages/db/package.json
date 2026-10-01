@@ -28,7 +28,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "test": "dotenv -e .env.test -- vitest run",
+    "test": "dotenv -e ../../.env.test -- vitest run",
     "lint": "eslint src"
   },
   "dependencies": {

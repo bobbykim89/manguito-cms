@@ -33,11 +33,16 @@ export async function setup(): Promise<void> {
 
   // ── Step 1 — Preflight DB connection check ───────────────────────────────────
 
+  // A missing DB_URL and an unreachable database are different problems with
+  // different fixes, and conflating them sends a reader to repair something
+  // that is not broken. `.env.test` is gitignored, so a FRESH CLONE always
+  // lands here — its container is not stopped, it has no env file at all.
   if (!dbUrl) {
     console.error(
-      `✖ Integration tests require a running Postgres instance.\n` +
-        `\n  Could not connect to: (DB_URL not set in .env.test)\n` +
-        `\n  Start the test database with:\n    docker compose up -d\n` +
+      `✖ Integration tests need DB_URL, and no .env.test was found.\n` +
+        `\n  .env.test is gitignored, so a fresh clone has none. Create it from\n` +
+        `  the committed example:\n    cp .env.test.example .env.test\n` +
+        `\n  Start the test database:\n    pnpm db:test:up\n` +
         `\n  Then re-run tests:\n    pnpm test`,
     )
     process.exit(1)
