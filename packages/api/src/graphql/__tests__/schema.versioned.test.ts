@@ -316,17 +316,11 @@ describe('buildGraphQLSchema — a renamed media field resolves under its real r
         load: async (_type: string, field: string, row: Record<string, unknown>) => {
           loaded.push(field)
           if (field !== 'hero') return null
-          // Deliberately NOT written to the storage column: this test builds
-          // its schema with no FieldKeyMap (heroSchema(), below), so there is
-          // no toLabels/relabelMedia step to carry a column-keyed value back
-          // onto the label `summary`'s resolver reads (`hero`). What this test
-          // isolates is that ctx.loaders.load is asked for the field's real
-          // registry name, never the versioned label — orthogonal to where
-          // resolveRelationField writes, which the sibling "reaches the
-          // programmatic record under this version's label" tests below cover
-          // (those DO supply a FieldKeyMap and write under the column).
-          row['hero'] = { id: 'm1' }
-          return row['hero']
+          // This test pins the NAMES handed to the loader, not the record's
+          // contents (heroSchema has no FieldKeyMap, so the record stays
+          // column-keyed).
+          row['blog_hero_image'] = { id: 'm1' }
+          return row['blog_hero_image']
         },
       },
       programmaticMemo: new WeakMap(),
@@ -346,8 +340,10 @@ describe('buildGraphQLSchema — a renamed media field resolves under its real r
       categories: { data: Array<{ legacyHero: { id: string } | null; summary: string }> }
     }
     expect(data.categories.data[0]!.legacyHero).toEqual({ id: 'm1' })
-    expect(data.categories.data[0]!.summary).toBe('{"id":"m1"}')
-    expect(loaded.length).toBeGreaterThan(0)
+    // One call from relationFieldResolver (legacyHero), one from the
+    // programmatic enrichment step (summary's mediaFields) — both must ask
+    // for 'hero', never 'legacyHero' or 'legacy_hero'.
+    expect(loaded.length).toBeGreaterThanOrEqual(2)
     expect(loaded.every((name) => name === 'hero')).toBe(true)
   })
 })
