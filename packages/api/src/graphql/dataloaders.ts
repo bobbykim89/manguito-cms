@@ -51,7 +51,12 @@ export function createRelationLoaders(
           // GraphQL is public-only (see app.ts) — always filter relation targets
           // to published rows, mirroring the REST public repos' publishedRelations.
           await resolveRelationField(db, rows, fieldName, rel, cache, true)
-          return rows.map((r) => r[fieldName])
+          // Column-backed relations resolve in place under their storage
+          // column. Paragraph and junction relations have no column, so they
+          // resolve under the field's name.
+          // Not named `key`: loaderFor already declares one, for the cache.
+          const resultKey = rel.type === 'reference' || rel.type === 'media' ? rel.fk_column : fieldName
+          return rows.map((r) => r[resultKey])
         },
         // Batch within a tick; do not memoize by parent identity (rows are mutated
         // and may recur across nesting levels).

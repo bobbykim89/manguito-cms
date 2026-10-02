@@ -316,9 +316,17 @@ describe('buildGraphQLSchema — a renamed media field resolves under its real r
         load: async (_type: string, field: string, row: Record<string, unknown>) => {
           loaded.push(field)
           if (field !== 'hero') return null
+          // Deliberately NOT written to the storage column: this test builds
+          // its schema with no FieldKeyMap (heroSchema(), below), so there is
+          // no toLabels/relabelMedia step to carry a column-keyed value back
+          // onto the label `summary`'s resolver reads (`hero`). What this test
+          // isolates is that ctx.loaders.load is asked for the field's real
+          // registry name, never the versioned label — orthogonal to where
+          // resolveRelationField writes, which the sibling "reaches the
+          // programmatic record under this version's label" tests below cover
+          // (those DO supply a FieldKeyMap and write under the column).
           row['hero'] = { id: 'm1' }
-          delete row['blog_hero_image']
-          return { id: 'm1' }
+          return row['hero']
         },
       },
       programmaticMemo: new WeakMap(),
@@ -401,14 +409,12 @@ describe("buildGraphQLSchema — a renamed media field reaches the programmatic 
       repos: { 'content--category': repo },
       resolver: createProgrammaticResolver(resolvers),
       loaders: {
-        // resolveRelationField's media branch, exactly: the resolved object
-        // lands on the field's REGISTRY name, and the raw FK column is deleted
-        // outright because that name differs from the column.
+        // resolveRelationField's media branch, exactly: the resolved object is
+        // written IN PLACE under the storage column.
         load: async (_type: string, field: string, row: Record<string, unknown>) => {
           if (field !== 'hero') return null
-          row['hero'] = { id: 'm1', mime_type: 'image/png' }
-          delete row['blog_hero_image']
-          return row['hero']
+          row['blog_hero_image'] = { id: 'm1', mime_type: 'image/png' }
+          return row['blog_hero_image']
         },
       },
       programmaticMemo: new WeakMap(),
@@ -452,9 +458,8 @@ describe("buildGraphQLSchema — a renamed media field reaches the programmatic 
       loaders: {
         load: async (_type: string, field: string, row: Record<string, unknown>) => {
           if (field !== 'hero') return null
-          row['hero'] = { id: 'm1', mime_type: 'image/png' }
-          delete row['blog_hero_image']
-          return row['hero']
+          row['blog_hero_image'] = { id: 'm1', mime_type: 'image/png' }
+          return row['blog_hero_image']
         },
       },
       programmaticMemo: new WeakMap(),
