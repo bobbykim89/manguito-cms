@@ -43,7 +43,6 @@ import {
   singletonResolver,
   taxonomySingleResolver,
 } from './resolvers.js'
-import type { MediaFieldKey } from './resolvers.js'
 
 const PAGE_META = new GraphQLObjectType({
   name: 'PageMeta',
@@ -75,7 +74,11 @@ const MEDIA = new GraphQLObjectType({
 export function buildGraphQLSchema(
   registry: SchemaRegistry,
   fieldKeyMaps: Record<string, FieldKeyMap> = {},
-  view?: VersionView
+  view?: VersionView,
+  // The maps a programmatic resolver's record is built with: current's, on
+  // every version. Defaults to `fieldKeyMaps`, which is right when they ARE
+  // current's (no view, or the current version's own endpoint).
+  programmaticKeyMaps: Record<string, FieldKeyMap> = fieldKeyMaps
 ): GraphQLSchema {
   const objectTypes = new Map<string, GraphQLObjectType>() // machineName → type
   const enumTypes = new Map<string, GraphQLEnumType>() // enum machineName → type (only when valid)
@@ -173,22 +176,18 @@ export function buildGraphQLSchema(
   ): GraphQLObjectType {
     const visible = viewFieldsFor(machineName, type)
 
-    // Handed to the programmatic resolvers so they can present the same record
-    // shape REST does, where media fields are resolved objects (see resolvers.ts).
-    //
-    // BOTH names, because that record straddles two key spaces. `name` is the
-    // field's REAL name — it goes straight to ctx.loaders.load(typeName, name,
-    // row), which looks the field up in the registry, and is therefore the key
-    // the resolved object lands on. `exposedAs` is the label this version
-    // serves, which is where `ctx.get()` looks for it. A version that renames a
-    // media field makes them differ, and passing only one of the two loses the
-    // resolved object (see relabelMedia in resolvers.ts).
-    const mediaFields: MediaFieldKey[] = visible
+    // Every live media field the type has NOW, by registry name. That is the
+    // key ctx.loaders.load looks a field up by. The set is current's, not this
+    // version's visible one: the programmatic record speaks current's labels,
+    // and REST resolves every media field in the registry for it too.
+    // Tombstones are excluded; current's map drops their column regardless.
+    const mediaFieldNames = type.fields
       .filter(
-        (v) =>
-          v.field.field_type === 'image' || v.field.field_type === 'video' || v.field.field_type === 'file'
+        (f) =>
+          f.removed !== true &&
+          (f.field_type === 'image' || f.field_type === 'video' || f.field_type === 'file')
       )
-      .map((v) => ({ name: v.field.name, exposedAs: v.exposedAs }))
+      .map((f) => f.name)
 
     return new GraphQLObjectType({
       name: graphqlTypeName(machineName),
@@ -211,7 +210,7 @@ export function buildGraphQLSchema(
           const outType = outputTypeForField(field, vf.required)
           let resolve: GraphQLFieldConfig<Record<string, unknown>, GraphQLContext>['resolve']
           if (field.field_type === 'programmatic') {
-            resolve = programmaticFieldResolver(machineName, field.name, mediaFields, fieldKeyMaps[machineName])
+            resolve = programmaticFieldResolver(machineName, field.name, mediaFieldNames, programmaticKeyMaps[machineName])
           } else if (
             field.field_type === 'reference' ||
             field.field_type === 'paragraph' ||

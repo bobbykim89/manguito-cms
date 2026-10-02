@@ -372,7 +372,9 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
         app.use(path, attachDeprecationHeaders)
       }
     }
-    registerPublicContentRoutes(app, registry, surface.repos, surface.projectors, surface.paths, listRateLimit, programmaticResolver)
+    // The top-level `projectors` are current's (built from the registry), and
+    // are what a programmatic resolver reads on every version.
+    registerPublicContentRoutes(app, registry, surface.repos, surface.projectors, surface.paths, listRateLimit, programmaticResolver, projectors)
   }
 
   // Registered last. Only ever reached by a request that matched no live
@@ -529,6 +531,7 @@ export function createCmsApp(options: CreateCmsAppOptions): ManguitoCmsAPIAdapte
                 currentVersion: model.current,
                 ...(projection !== undefined && { projection }),
                 ...(currentProjection !== undefined && { currentProjection }),
+                currentFieldKeyMaps: fieldKeyMaps,
               }
             )
           } catch (err) {

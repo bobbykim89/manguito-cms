@@ -9,7 +9,7 @@ import type {
 } from '@bobbykim/manguito-cms-core'
 import { registerPublicContentRoutes } from '../content'
 import { createProgrammaticResolver, resolverKey } from '../../programmatic/resolve'
-import { createFieldKeyMap } from '../../field-keys'
+import { createFieldKeyMap, createFieldKeyMapFromProjection } from '../../field-keys'
 import { buildProjectors } from '../../projector'
 import { createVersionedPaths } from '../../paths'
 
@@ -278,5 +278,54 @@ describe('programmatic resolution with a divergent field label', () => {
     expect(body.data[0]?.['live']).toBe('L:Hi')
     expect(body.data[0]?.['title']).toBe('Hi')
     expect(body.data[0]).not.toHaveProperty('blog_title')
+  })
+})
+
+describe('programmatic resolution on an older version (#4)', () => {
+  // v1 exposes column blog_title as `legacy_title`; current calls it `title`.
+  // The resolver is written against current, as every resolver is.
+  const V1_PROJECTORS = buildProjectors(DIVERGENT_REGISTRY, {
+    'content--blog_post': createFieldKeyMapFromProjection(
+      { fields: [{ column_name: 'blog_title', exposed_as: 'legacy_title' }] },
+      DIVERGENT_BLOG.fields
+    ),
+  })
+  const rows = [{ id: '1', slug: 'a', blog_title: 'Hi', published: true }]
+
+  function v1App(): Hono {
+    const app = new Hono()
+    registerPublicContentRoutes(
+      app,
+      DIVERGENT_REGISTRY,
+      { 'content--blog_post': repoWith(rows) },
+      V1_PROJECTORS,
+      createVersionedPaths('/api', 'v1'),
+      undefined,
+      divergentResolverFor(),
+      DIVERGENT_PROJECTORS
+    )
+    return app
+  }
+
+  it("hands the resolver current's labels while the response speaks v1's (detail)", async () => {
+    // MUTATION: pass V1_PROJECTORS as the resolver's projectors. The resolver
+    // then reads a v1-labelled record and returns 'S:undefined'.
+    // A second MUTATION: merge the whole resolved record rather than only its
+    // programmatic keys. Current's `title` then leaks into v1's response, and
+    // the exact toEqual catches it.
+    const res = await v1App().request('/api/v1/blog/a')
+    const body = (await res.json()) as { data: Record<string, unknown> }
+
+    expect(body.data).toEqual({
+      id: '1', slug: 'a', published: true, legacy_title: 'Hi', summary: 'S:Hi', live: 'L:Hi',
+    })
+  })
+
+  it("hands the resolver current's labels on the list route too", async () => {
+    // The list path has its own call site. MUTATION: convert only the item sites.
+    const res = await v1App().request('/api/v1/blog')
+    const body = (await res.json()) as { data: Record<string, unknown>[] }
+
+    expect(body.data[0]).toEqual({ id: '1', slug: 'a', published: true, legacy_title: 'Hi', live: 'L:Hi' })
   })
 })

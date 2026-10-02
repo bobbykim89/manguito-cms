@@ -55,6 +55,9 @@ export function createGraphQLHandler(
     projection?: VersionProjection
     currentProjection?: VersionProjection
     currentVersion?: string
+    // Current's field-key maps. A programmatic resolver reads its record in
+    // current's labels on every version; omitted, it reads `fieldKeyMaps`.
+    currentFieldKeyMaps?: Record<string, FieldKeyMap>
   } = {}
 ): Handler {
   let view: VersionView | undefined
@@ -72,7 +75,7 @@ export function createGraphQLHandler(
       currentVersion: versioning.currentVersion,
     })
   }
-  const schema = buildGraphQLSchema(registry, fieldKeyMaps, view)
+  const schema = buildGraphQLSchema(registry, fieldKeyMaps, view, versioning.currentFieldKeyMaps ?? fieldKeyMaps)
   const { plugins } = buildArmorPlugin({
     maxDepth: options.maxDepth,
     maxComplexity: options.maxComplexity,

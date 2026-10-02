@@ -44,27 +44,16 @@ export function relationFieldResolver(typeName: string, schemaFieldName: string)
     ctx.loaders.load(typeName, schemaFieldName, parent)
 }
 
-/**
- * A media field, in both key spaces the programmatic record straddles.
- *
- * `name` is the field's REGISTRY name — the only key `ctx.loaders.load` can
- * look a field up by, and therefore the key the resolved object lands on.
- * `exposedAs` is the label the version being served uses, which is where
- * `ctx.get()` will look for it. They differ exactly when this version renames
- * the field, and that is the whole reason both are needed.
- */
-export type MediaFieldKey = { name: string; exposedAs: string }
-
 export function programmaticFieldResolver(
   typeName: string,
   schemaFieldName: string,
-  mediaFields: readonly MediaFieldKey[] = [],
+  mediaFieldNames: readonly string[] = [],
   fieldKeys?: FieldKeyMap
 ) {
   return async (parent: Row, _args: unknown, ctx: GraphQLContext): Promise<unknown> => {
     let p = ctx.programmaticMemo.get(parent)
     if (!p) {
-      p = resolveProgrammaticRow(typeName, parent, ctx, mediaFields, fieldKeys)
+      p = resolveProgrammaticRow(typeName, parent, ctx, mediaFieldNames, fieldKeys)
       ctx.programmaticMemo.set(parent, p)
     }
     return (await p)[schemaFieldName]
@@ -84,55 +73,28 @@ export function programmaticFieldResolver(
 // the first place. Copies still batch — one media query per request, not per row.
 //
 // `ctx.get(fieldName)` takes the schema field name (the LABEL), so the record is
-// projected to labels before the resolver runs — the same order REST uses (see
-// "Response projection order" in routes/content.ts). GraphQL has no route-level
+// projected to CURRENT's labels (the caller passes current's map on every
+// version) before the resolver runs — the same order REST uses (see "Response
+// projection order" in routes/content.ts). GraphQL has no route-level
 // projection to double up with: every other field resolves per field by column
 // (resolveFieldValue), so this copy is the only mapped row, and it is mapped
 // strictly after the media loaders have run.
-//
-// The loaders write onto a field's REGISTRY name, but `toLabels` speaks the
-// served version's labels, and a version that renames a media field agrees with
-// neither: createFieldKeyMapFromProjection un-drops only a projected COLUMN or
-// LABEL, so the registry name of a renamed field stays in the drop-set and
-// `remap` deletes the resolved object outright (and the raw FK column is
-// already gone — resolveRelationField deletes it whenever the field's name
-// differs from its column). Re-attaching each resolved value under this
-// version's own label AFTER the remap is what closes that gap. Done by explicit
-// assignment rather than by letting `remap` carry the key, because the raw
-// column and the resolved object can map onto the same label and key order must
-// not decide which one wins: the resolved object always does.
 async function resolveProgrammaticRow(
   typeName: string,
   parent: Row,
   ctx: GraphQLContext,
-  mediaFields: readonly MediaFieldKey[],
+  mediaFieldNames: readonly string[],
   fieldKeys?: FieldKeyMap
 ): Promise<Record<string, unknown>> {
   const toLabels = (row: Row): Row => (fieldKeys ? fieldKeys.toLabels(row) : row)
 
-  if (mediaFields.length === 0) return ctx.resolver.resolveItem(typeName, toLabels(parent))
+  if (mediaFieldNames.length === 0) return ctx.resolver.resolveItem(typeName, toLabels(parent))
 
   const enriched: Row = { ...parent }
-  await Promise.all(mediaFields.map((m) => ctx.loaders.load(typeName, m.name, enriched)))
-  return ctx.resolver.resolveItem(typeName, relabelMedia(toLabels(enriched), enriched, mediaFields))
-}
-
-/**
- * `record` (already label-keyed) with each resolved media value restored under
- * the label this version exposes it as. Writes only into `record` — either the
- * fresh object `remap` just returned, or, with no FieldKeyMap, the `enriched`
- * copy itself. Never the caller's row, which must keep its raw FK ids.
- *
- * A field the loaders never wrote is skipped rather than written as undefined —
- * `resolveRelationField` returns early when no row needs FK resolution, and a
- * present-but-undefined key is not the same record shape REST produces.
- */
-function relabelMedia(record: Row, enriched: Row, mediaFields: readonly MediaFieldKey[]): Row {
-  for (const { name, exposedAs } of mediaFields) {
-    if (!(name in enriched)) continue
-    record[exposedAs] = enriched[name]
-  }
-  return record
+  await Promise.all(mediaFieldNames.map((name) => ctx.loaders.load(typeName, name, enriched)))
+  // The loaders resolve each media object IN PLACE under its storage column,
+  // so toLabels carries it to its label like any scalar.
+  return ctx.resolver.resolveItem(typeName, toLabels(enriched))
 }
 
 type CollectionArgs = {

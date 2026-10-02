@@ -25,7 +25,11 @@ export type ContentRepos = Record<string, ContentRepository<unknown>>
 // after:
 //   - a programmatic resolver reads its record through `ctx.get(fieldName)`,
 //     documented (docs/programmatic-fields.md) as the schema field name — the
-//     LABEL — so the row handed to it must already speak labels;
+//     LABEL — and since `ctx.get(fieldName)` takes the field's CURRENT name on
+//     every version, the record handed to the resolver is projected with
+//     CURRENT's projectors, not the served version's. The response itself is
+//     still projected with the served version's own projectors; only the
+//     resolver's programmatic keys cross from one record to the other;
 //   - programmatic fields are not column-backed, so their output keys are labels
 //     already; mapping afterwards would be a no-op on them.
 // Relations are resolved inside the repository, upstream of both, so the mapping
@@ -42,8 +46,55 @@ export function registerPublicContentRoutes(
   projectors: Projectors,
   paths: VersionedPaths,
   listRateLimit?: MiddlewareHandler,
-  resolver?: ProgrammaticResolver
+  resolver?: ProgrammaticResolver,
+  // Current's projectors, for the record a programmatic resolver reads. Omitted
+  // when the routes being registered ARE current's, which is the default.
+  resolverProjectors?: Projectors
 ): void {
+  // A programmatic resolver is written once, against the schema as it is now,
+  // so on every version it reads a record in CURRENT's labels. The response
+  // still speaks the served version's labels. Only the resolver's computed
+  // values are merged across, and programmatic fields are never versioned, so
+  // their names are the same in both. (A computed field that reuses a live
+  // version's field name is an authoring mistake; see the 2f spec's Residuals.)
+  const forResolver = resolverProjectors ?? projectors
+
+  function pickProgrammatic(
+    resolved: Record<string, unknown>,
+    names: readonly string[]
+  ): Record<string, unknown> {
+    const out: Record<string, unknown> = {}
+    // `in`, not `!== undefined`: resolveList sets only on_list fields, and a
+    // field it skipped must stay absent rather than become a present undefined.
+    for (const name of names) if (name in resolved) out[name] = resolved[name]
+    return out
+  }
+
+  async function respondItem(
+    row: Record<string, unknown>,
+    typeName: string,
+    programmatic: readonly string[]
+  ): Promise<Record<string, unknown>> {
+    const data = projectRow(row, typeName, projectors)
+    if (!resolver?.hasSchema(typeName)) return data
+    const resolved = await resolver.resolveItem(typeName, projectRow(row, typeName, forResolver))
+    return { ...data, ...pickProgrammatic(resolved, programmatic) }
+  }
+
+  async function respondList(
+    rows: Record<string, unknown>[],
+    typeName: string,
+    programmatic: readonly string[]
+  ): Promise<Record<string, unknown>[]> {
+    const data = rows.map((row) => projectRow(row, typeName, projectors))
+    if (!resolver?.hasSchema(typeName)) return data
+    const resolved = await resolver.resolveList(
+      typeName,
+      rows.map((row) => projectRow(row, typeName, forResolver))
+    )
+    return data.map((d, i) => ({ ...d, ...pickProgrammatic(resolved[i]!, programmatic) }))
+  }
+
   // ── Meta-endpoints: list available schema types ───────────────────────────
   // Registered before the dynamic per-type routes to avoid path conflicts.
 
@@ -83,6 +134,10 @@ export function registerPublicContentRoutes(
     // the caller (versions.ts/app.ts), so this is what lets the boundary
     // below speak THIS version's labels rather than current's.
     const fieldKeys = projectors[typeName]!.map
+
+    const programmatic = contentType.fields
+      .filter((f) => f.field_type === 'programmatic')
+      .map((f) => f.name)
 
     // Relation fields a consumer may `?include=`, keyed by the name THIS
     // version speaks and mapped to the registry name the repository speaks.
@@ -144,8 +199,11 @@ export function registerPublicContentRoutes(
           )
         }
         // Outbound boundary (see "Response projection order" above).
-        let data = projectRow(result.data[0] as Record<string, unknown>, typeName, projectors)
-        if (resolver?.hasSchema(typeName)) data = await resolver.resolveItem(typeName, data)
+        const data = await respondItem(
+          result.data[0] as Record<string, unknown>,
+          typeName,
+          programmatic
+        )
         return c.json({ ok: true, data })
       })
     } else {
@@ -244,12 +302,7 @@ export function registerPublicContentRoutes(
         })
 
         // Outbound boundary (see "Response projection order" above).
-        const labeled = (result.data as Record<string, unknown>[]).map((row) =>
-          projectRow(row, typeName, projectors)
-        )
-        const data = resolver?.hasSchema(typeName)
-          ? await resolver.resolveList(typeName, labeled)
-          : labeled
+        const data = await respondList(result.data as Record<string, unknown>[], typeName, programmatic)
         return c.json({ ...result, data })
       })
 
@@ -287,16 +340,19 @@ export function registerPublicContentRoutes(
         }
 
         // Outbound boundary (see "Response projection order" above).
-        let data = projectRow(item as Record<string, unknown>, typeName, projectors)
-        if (resolver?.hasSchema(typeName)) data = await resolver.resolveItem(typeName, data)
+        const data = await respondItem(item as Record<string, unknown>, typeName, programmatic)
         return c.json({ ok: true, data })
       })
     }
   }
 
-  for (const [typeName] of Object.entries(registry.taxonomy_types)) {
+  for (const [typeName, taxonomyType] of Object.entries(registry.taxonomy_types)) {
     const repo = repos[typeName]
     if (!repo) continue
+
+    const programmatic = taxonomyType.fields
+      .filter((f) => f.field_type === 'programmatic')
+      .map((f) => f.name)
 
     registerListRoute(paths.taxonomyCollection(typeName), async (c) => {
       const pagination = parsePagination(c.req.query('page'), c.req.query('per_page'))
@@ -320,12 +376,7 @@ export function registerPublicContentRoutes(
       })
 
       // Outbound boundary (see "Response projection order" above).
-      const labeled = (result.data as Record<string, unknown>[]).map((row) =>
-        projectRow(row, typeName, projectors)
-      )
-      const data = resolver?.hasSchema(typeName)
-        ? await resolver.resolveList(typeName, labeled)
-        : labeled
+      const data = await respondList(result.data as Record<string, unknown>[], typeName, programmatic)
       return c.json({ ...result, data })
     })
 
@@ -345,8 +396,7 @@ export function registerPublicContentRoutes(
       }
 
       // Outbound boundary (see "Response projection order" above).
-      let data = projectRow(item as Record<string, unknown>, typeName, projectors)
-      if (resolver?.hasSchema(typeName)) data = await resolver.resolveItem(typeName, data)
+      const data = await respondItem(item as Record<string, unknown>, typeName, programmatic)
       return c.json({ ok: true, data })
     })
   }
