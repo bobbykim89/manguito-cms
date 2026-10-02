@@ -280,11 +280,16 @@ describe("column as identity — programmatic resolvers read current's labels (#
   })
 
   it('GraphQL: selecting the media field and a resolver that reads it, in either order', async () => {
-    // Review Focus #5. The parent row is resolved IN PLACE by the media field's
-    // own resolver, while the programmatic path loads into a copy. Whichever runs
-    // first, the other must still find the resolved object.
+    // Review Focus #5. This does not actually vary which resolver runs first:
+    // graphql-js calls sibling resolvers synchronously, and resolveProgrammaticRow
+    // takes its copy before its first await, so in both selection orders the copy
+    // holds the raw id. What this pins is that both selection orders resolve both
+    // fields correctly against the real loader. The already-resolved-parent case
+    // (the programmatic copy handed an object instead of a raw id) is covered by
+    // the idempotency test in relations.test.ts.
     // MUTATION: in dataloaders.ts, read `r[fieldName]` again rather than the
-    // column. legacyHero then comes back null in both orders.
+    // column. legacyHero then comes back null in both orders. (Verified: this
+    // mutation does fail the test.)
     for (const source of [
       '{ colidBlogs { data { legacyHero { url } heroUrl } } }',
       '{ colidBlogs { data { heroUrl legacyHero { url } } } }',

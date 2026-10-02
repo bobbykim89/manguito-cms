@@ -313,18 +313,17 @@ function groupBy<T extends Record<string, unknown>>(
   return result
 }
 
-// A reference/media pass is DESTRUCTIVE: the resolved object replaces the raw FK
-// value, and when the field's label differs from its FK column (a renamed field)
-// the raw FK key is deleted outright — otherwise the response would carry both
-// the column name and the label.
+// A reference/media pass resolves the FK IN PLACE: the resolved object replaces
+// the raw id under the same storage column. Nothing is deleted — a field whose
+// label differs from its storage column still keeps that column name; toLabels
+// applies the label downstream, after resolution.
 //
-// That makes a second pass over the same row object dangerous: the FK the first
-// pass consumed is gone, so the row would be nulled out. And the same object
-// really does recur — reference/junction targets are cached by `table:id`, so two
-// parents receive ONE shared object, and the GraphQL dataloaders deliberately do
-// not memoize by parent identity ("rows are mutated and may recur across nesting
-// levels", dataloaders.ts). So a row that already holds a resolved value is
-// skipped, which makes the pass idempotent.
+// The same row object really does recur: reference/junction targets are cached by
+// `table:id`, so two parents can receive ONE shared object, and the GraphQL
+// dataloaders deliberately do not memoize by parent identity ("rows are mutated and
+// may recur across nesting levels", dataloaders.ts). So a row that already holds a
+// resolved object under the column is skipped, which makes the pass idempotent —
+// see needsFkResolution below.
 function needsFkResolution(row: Record<string, unknown>, fkColumn: string): boolean {
   // Resolved IN PLACE: the object sits under the column where the raw id was,
   // so an object (never a bare id) means this row is already done. A null
@@ -357,9 +356,10 @@ export async function resolveRelationField(
   if (rows.length === 0) return
 
   // Deduped by object identity: one batch can hold the same row object twice
-  // (see needsFkResolution above), and without this a single batch would
-  // resolve the same row object twice. The caller's array is left untouched —
-  // the GraphQL dataloader maps over it to build its results.
+  // (see needsFkResolution above). Resolving it twice would be harmless —
+  // resolution is idempotent — but redundant, so this dedupe just avoids that
+  // repeat work. The caller's array is left untouched — the GraphQL dataloader
+  // maps over it to build its results.
   const batch = [...new Set(rows)]
 
   if (rel.type === 'paragraph') {

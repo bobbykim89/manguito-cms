@@ -20,20 +20,21 @@ export type ContentRepos = Record<string, ContentRepository<unknown>>
 
 // ─── Response projection order ────────────────────────────────────────────────
 //
-// Every read response maps storage keys → labels exactly ONCE, and that mapping
-// runs BEFORE the programmatic resolver. Two reasons it sits there rather than
-// after:
+// Every read response is projected from the raw row exactly once, with the served
+// version's projectors (storage keys → labels). A programmatic resolver reads a
+// second, independent projection of the same raw row, made with CURRENT's
+// projectors — not the served version's:
 //   - a programmatic resolver reads its record through `ctx.get(fieldName)`,
 //     documented (docs/programmatic-fields.md) as the schema field name — the
 //     LABEL — and since `ctx.get(fieldName)` takes the field's CURRENT name on
-//     every version, the record handed to the resolver is projected with
-//     CURRENT's projectors, not the served version's. The response itself is
-//     still projected with the served version's own projectors; only the
-//     resolver's programmatic keys cross from one record to the other;
-//   - programmatic fields are not column-backed, so their output keys are labels
-//     already; mapping afterwards would be a no-op on them.
-// Relations are resolved inside the repository, upstream of both, so the mapping
-// still lands strictly after relation resolution.
+//     every version, the record handed to the resolver must be projected with
+//     CURRENT's projectors, not the served version's;
+//   - only the resolver's programmatic keys cross from that second projection
+//     into the response, and because those keys are fields' names rather than
+//     columns, they read the same on every version — so merging them into the
+//     response projected for the served version is safe.
+// Relations are resolved inside the repository, upstream of both projections, so
+// each one lands strictly after relation resolution.
 
 function isPublished(item: unknown): boolean {
   return (item as Record<string, unknown>)['published'] === true

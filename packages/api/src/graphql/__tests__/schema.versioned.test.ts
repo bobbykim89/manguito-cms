@@ -341,7 +341,7 @@ describe('buildGraphQLSchema — a renamed media field resolves under its real r
     }
     expect(data.categories.data[0]!.legacyHero).toEqual({ id: 'm1' })
     // One call from relationFieldResolver (legacyHero), one from the
-    // programmatic enrichment step (summary's mediaFields) — both must ask
+    // programmatic enrichment step (summary's mediaFieldNames) — both must ask
     // for 'hero', never 'legacyHero' or 'legacy_hero'.
     expect(loaded.length).toBeGreaterThanOrEqual(2)
     expect(loaded.every((name) => name === 'hero')).toBe(true)

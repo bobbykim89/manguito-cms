@@ -77,12 +77,12 @@ The resolver receives a `ctx` and returns the field's value:
 
 | Member | Description |
 | --- | --- |
-| `ctx.get(fieldName)` | The stored value of a sibling field on the same record. Synchronous — the record is already loaded, so there is no database round-trip behind it. `fieldName` is the field's **current** name, on every API version. A media field comes back as its resolved media object, and a reference comes back as its stored id. |
+| `ctx.get(fieldName)` | The stored value of a sibling field on the same record. Synchronous — the record is already loaded, so there is no database round-trip behind it. `fieldName` is the field's **current** name, on every API version. A media field comes back as its resolved media object, and a reference comes back as its stored id, or as the resolved row when a REST request `?include=`s it. |
 | `ctx.record` | The whole record as a read-only object. |
 
-`ctx` is deliberately limited to same-record data in v1: it does not expose the
-request, the authenticated user, or resolved relations. Keeping the resolver a
-pure function of the record is what makes [caching](#caching) sound.
+`ctx` is deliberately limited to same-record data in v1: it still does not expose
+the request or the authenticated user, but media fields are resolved. Keeping the
+resolver a pure function of the record is what makes [caching](#caching) sound.
 
 ## Options
 

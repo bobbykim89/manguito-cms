@@ -66,11 +66,13 @@ export function programmaticFieldResolver(
 // resolve nothing, so without this `ctx.get('hero').url` would work over REST and
 // silently fall back to null over GraphQL.
 //
-// Media is resolved into a COPY, never the row itself: the dataloaders write
-// their results back into the row they are handed, and the real row must keep the
-// raw id so a query that also selects the media field still resolves. Handing an
-// already-resolved object back to the loader is exactly what broke media here in
-// the first place. Copies still batch — one media query per request, not per row.
+// Media is resolved into a COPY, never the row itself: the programmatic record is
+// built from a copy so that projecting it to current's labels (toLabels below)
+// never touches the parent row, which the field resolvers still read by column.
+// The dataloaders resolve relations in place and idempotently now, so handing the
+// parent itself back to the loader would no longer break anything either — the
+// copy is kept to keep this path from mutating the parent, and it is harmless:
+// loaders still batch across the copy, so this costs no extra query.
 //
 // `ctx.get(fieldName)` takes the schema field name (the LABEL), so the record is
 // projected to CURRENT's labels (the caller passes current's map on every
