@@ -100,20 +100,25 @@ The collision check then narrows to the one genuine ambiguity that remains: a **
 
 ### Consequence for existing tests
 
-Two of the four existing collision tests change what they should expect:
+Every collision-related test in `field-keys.test.ts`, by name, with its expectation after this change:
 
-| Test (`field-keys.test.ts`) | Today | After | Why |
+| Test | Today | After | Why |
 |---|---|---|---|
-| a **paragraph** named after another field's column | throws | **still throws** | a paragraph's name is a row key |
-| a **many-to-many** field named after a column | throws | **still throws** | same |
-| a field *named* after another field's column | throws | **maps correctly in both directions** | a column-backed name is no longer a row key |
-| a live label equal to a **tombstone's** column | throws | **maps correctly in both directions** | split sets mean the label no longer hits the tombstone's column |
+| throws when a PARAGRAPH label collides with another field's column name | throws | **still throws** | a paragraph's name is a row key |
+| throws when a many-to-many label collides with another field's column name | throws | **still throws** | same |
+| still throws when a NON-projected field's label collides with a column | throws | **still throws** | same, on the projection path |
+| accepts a paragraph label that collides with nothing | passes | passes | no collision |
+| drops a renamed-then-removed tombstone under BOTH its current name and its retained column | passes | **passes** | proves the split keeps refusing tombstone writes — see above |
+| accepts a version that exposes a field under a label other than its own column | passes | passes | the rename-back case stays accepted, now without the skip |
+| throws when a label collides with another field's column name | throws | **maps correctly in both directions** | a column-backed name is no longer a row key |
+| still throws when a live field's label collides with a tombstone's column | throws | **maps correctly in both directions** | split sets mean the label no longer hits the tombstone's column |
+| still throws when a DIFFERENT field is named after a column this version renames | throws | **maps correctly in both directions** | its premise — that the field's value is written under its own name — is false for a text field even today, and Section 1 makes it false for relations too |
 
-The fourth row is the telling one. With a shared set, `toStorage` silently drops the live field's write — its label matches the tombstone's column, which is in `droppedKeys`. That is what the throw was guarding. With split sets both directions come out right, so the guard is no longer needed for that case.
+The second-to-last row is the telling one. With a shared set, `toStorage` silently drops the live field's write — its label matches the tombstone's column, which is in `droppedKeys`, and the stripping loop then deletes the live field's own `label → column` pair. That is what the throw was guarding. With split sets both directions come out right, so the guard is no longer needed for that case.
 
 This is evidence the design is right rather than a relaxation: the collision check was a guard against the shared key space, and its job shrinks to exactly the case that is still dangerous. The two changed tests will assert correct mapping in **both** directions, not merely the absence of a throw.
 
-Two configurations that refuse to boot today will start working. That is a visible behaviour change, and part of why this is a minor release.
+Two kinds of configuration that refuse to boot today will start working — a column-backed field named after another field's column, and a live label equal to a tombstone's column. That is a visible behaviour change, and part of why this is a minor release.
 
 ## Section 4 — resolvers see current's labels (closes #4)
 
