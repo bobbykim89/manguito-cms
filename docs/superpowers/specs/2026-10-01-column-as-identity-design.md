@@ -158,5 +158,5 @@ Gates on every task: `test`, `typecheck`, `lint`, and `build` (PLAN-QUALITY rule
 
 ## Residuals
 
-- **A programmatic field whose name equals a live version's label for some column.** Section 4 merges programmatic values into the version-labelled response, so on that version the programmatic value would overwrite the column's. Reaching it requires a version to label a column with a name that current has since reused for a programmatic field. Detectable at map-build time, but not handled here.
+- **A computed field reusing a removed field's name, while a version that exposed the old field is still live.** Section 4 merges programmatic values into the version-labelled response, so on that version the computed value would replace the stored one under the shared name. **Deliberately not guarded:** reusing a live version's field name for a computed field is a schema-authoring mistake, not a defect in the projector, and refusing it would add a new startup error for a configuration an author has to construct on purpose. Recorded so the behaviour is known, not as pending work.
 - **The `api` ↔ `test-utils` cyclic workspace dependency** is unchanged; see the README's local-development notes.
