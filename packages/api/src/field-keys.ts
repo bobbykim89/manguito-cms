@@ -57,12 +57,13 @@ type LabelEntry = { label: string; ownColumn?: string }
  * `createFieldKeyMap` passes tombstoned columns in alongside live ones,
  * exactly as the original single-function implementation did, so that the
  * collision check below (which runs against the unfiltered map) still
- * catches a live field's label colliding with a TOMBSTONE's column. Any
- * pair whose label appears in `droppedLabels`, or whose column appears in
- * `droppedColumns`, is stripped from `labelToColumn`/`columnToLabel`
- * respectively, immediately after the check, before `diverges` and `labels`
- * are computed — so the caller does not need to pre-filter `pairs` itself,
- * only tell this function what to drop in each key space.
+ * catches a paragraph/junction/programmatic field's label colliding with a
+ * TOMBSTONE's column. Any pair whose label appears in `droppedLabels`, or
+ * whose column appears in `droppedColumns`, is stripped from
+ * `labelToColumn`/`columnToLabel` respectively, immediately after the check,
+ * before `diverges` and `labels` are computed — so the caller does not need
+ * to pre-filter `pairs` itself, only tell this function what to drop in each
+ * key space.
  *
  * `allLabels` is every field's label, including fields with no column of
  * their own. That is not tidiness: a paragraph, many-to-many or programmatic
@@ -73,9 +74,9 @@ type LabelEntry = { label: string; ownColumn?: string }
  *
  * Each entry carries `ownColumn` — the column that field itself is backed by,
  * absent for a paragraph, many-to-many or programmatic field. The collision
- * check below needs it: a label that equals a column is a collision only when
- * the column belongs to a DIFFERENT field, and strings alone cannot tell the
- * two apart.
+ * check below needs it to tell which fields have no column of their own:
+ * only those can collide, since a column-backed field's name is never a row
+ * key.
  *
  * `droppedColumns`/`droppedLabels` also drive `remap`: each must actively
  * remove a key from a mapped object rather than merely leave it unmapped,
@@ -112,11 +113,12 @@ function buildFieldKeyMap(
   // value under the wrong key.
   //
   // Deliberately run BEFORE dropped pairs are stripped from `columnToLabel`
-  // below: a live field's label may collide with a TOMBSTONE's column (the
-  // column still physically exists on the row), and that must keep
-  // throwing. Stripping first would silently pass this configuration, and
-  // the exclusion step afterward would then delete the live field's column
-  // from every response instead of the tombstone's.
+  // below: a paragraph/junction/programmatic field's label may collide with
+  // a TOMBSTONE's column (the column still physically exists on the row),
+  // and that must keep throwing. Stripping first would silently pass this
+  // configuration. A column-backed field's label can no longer collide at
+  // all (the skip below excludes it), live or tombstoned — only a field
+  // with no column of its own is ever checked.
   //
   // Not detected: two fields declaring the SAME column name. A field can now
   // declare its own `column`, so this is no longer structurally impossible —
@@ -155,29 +157,50 @@ function buildFieldKeyMap(
   function remap(
     input: Record<string, unknown>,
     lookup: Map<string, string>,
-    dropped: Set<string>
+    dropped: Set<string>,
+    droppedIfUnmapped?: Set<string>
   ): Record<string, unknown> {
     // Always returns a NEW object, even when nothing diverges. Returning `input`
     // unchanged would make aliasing depend on the schema, so a bug where a
     // caller mutates a row after mapping would reproduce only on renamed
     // fields. A shallow copy per row is not worth that class of bug.
     //
-    // Unknown keys pass through unchanged — which is exactly why a dropped
-    // key must be checked and skipped explicitly here, rather than relying on
-    // its absence from `lookup`: absence alone would let it pass through under
-    // its raw key instead of being dropped.
+    // A key that IS a live label/column is mapped first, unconditionally —
+    // `lookup` itself already excludes anything dropped (the strip loops
+    // above), so a mapped hit can only be a live field. Only once a key is
+    // found UNMAPPED do the drop sets apply, and `toStorage` checks both of
+    // them there: `dropped` (droppedLabels — a tombstone's own name, refusing
+    // a write addressed to it) and `droppedIfUnmapped` (droppedColumns — a
+    // raw, unexposed column supplied directly, such as a tombstone's retained
+    // column). Mapping first is what lets a live label write even when its
+    // text happens to equal a tombstone's column (`description`/`d2` live,
+    // `x`/`description` tombstone: `description` still maps to `d2`) while an
+    // unmapped raw `description` would still be refused if it were itself a
+    // dropped column. `toLabels` passes no `droppedIfUnmapped`, so it is
+    // unaffected: a dropped column was already stripped from `lookup` and so
+    // is always "unmapped", and is refused by `dropped` exactly as before.
+    //
+    // Unknown (and undropped) keys pass through unchanged.
     const out: Record<string, unknown> = {}
     for (const key of Object.keys(input)) {
-      if (dropped.has(key)) continue
-      out[lookup.get(key) ?? key] = input[key]
+      const mapped = lookup.get(key)
+      if (mapped !== undefined) {
+        out[mapped] = input[key]
+        continue
+      }
+      if (dropped.has(key) || droppedIfUnmapped?.has(key)) continue
+      out[key] = input[key]
     }
     return out
   }
 
   return {
-    // toStorage reads LABEL-keyed input, so it consults only droppedLabels;
+    // toStorage reads LABEL-keyed input: a live label maps and writes
+    // regardless of either drop set; an unmapped key is refused if it is
+    // EITHER the tombstone's own name (droppedLabels) or a raw, unexposed
+    // column (droppedColumns) — see remap's comment.
     // toLabels reads COLUMN-keyed input, so it consults only droppedColumns.
-    toStorage: (input) => remap(input, labelToColumn, droppedLabels),
+    toStorage: (input) => remap(input, labelToColumn, droppedLabels, droppedColumns),
     toLabels: (row) => remap(row, columnToLabel, droppedColumns),
     columnFor: (label) => labelToColumn.get(label),
     labelFor: (column) => columnToLabel.get(column),
@@ -226,11 +249,10 @@ export function createFieldKeyMap(fields: ParsedField[]): FieldKeyMap {
     }
   }
 
-  // `ownColumn` is a strict no-op on this path and is passed only so the two
-  // constructors share one core: here a label IS a field's name, so a field
-  // whose own column equals its name already maps that column back to itself
-  // (`columnOwner === label`) and never reached the throw. It matters only for
-  // a projection, which can expose a column under some other label.
+  // `ownColumn` marks every column-backed field here too — a label IS the
+  // field's name on this path — so the collision check skips it exactly as
+  // it does for the projection variant below; only a paragraph, many-to-many
+  // or programmatic field (no `ownColumn`) is ever inspected.
   return buildFieldKeyMap(
     pairs,
     fields.map((f) => ({
@@ -273,9 +295,10 @@ export function createFieldKeyMapFromProjection(
     pairs,
     allFields.map((f) => ({
       label: f.name,
-      // See buildFieldKeyMap's collision check: this is what lets it tell a
-      // version exposing a field's own column under a new label (fine) from a
-      // label that reuses another field's column (not fine).
+      // See buildFieldKeyMap's collision check: `ownColumn` marks every
+      // column-backed field so the check skips it entirely — only a
+      // paragraph/junction/programmatic label (no column of its own) can
+      // still collide.
       ...(isColumnBacked(f) && { ownColumn: f.db_column.column_name }),
     })),
     droppedColumns,

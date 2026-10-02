@@ -283,15 +283,11 @@ describe('createFieldKeyMapFromProjection', () => {
     expect(labelResult).toEqual({ title: 'Hi', summary: 'S' })
     expect(labelResult).not.toHaveProperty('blog_desc')
 
-    // Section 3 (schema versioning 2f): toStorage reads LABEL-keyed input and
-    // consults droppedLabels only, never droppedColumns. 'blog_desc' is a
-    // column, not a label — it is not in droppedLabels, so it is not this
-    // map's business on the write side and passes through unmapped. Only the
-    // tombstone's NAME ('legacy_desc') is refused, because that is a label.
     const body = { title: 'Hi', legacy_desc: 'client-supplied', blog_desc: 'raw-column-supplied' }
     const storageResult = map.toStorage(body)
-    expect(storageResult).toEqual({ blog_title: 'Hi', blog_desc: 'raw-column-supplied' })
+    expect(storageResult).toEqual({ blog_title: 'Hi' })
     expect(storageResult).not.toHaveProperty('legacy_desc')
+    expect(storageResult).not.toHaveProperty('blog_desc')
   })
 
   it('does not drop a tombstone column this projection still exposes', () => {
@@ -418,5 +414,46 @@ describe('split drop-sets', () => {
     expect(m.toLabels({ id: 'p1', category_id: { id: 'c1', name: 'Cat' }, blog_desc: 'retained' }))
       .toEqual({ id: 'p1', category: { id: 'c1', name: 'Cat' } })
     expect(m.toStorage({ category: 'c1', legacy_desc: 'refused' })).toEqual({ category_id: 'c1' })
+  })
+
+  it("refuses a tombstone's raw column on write", () => {
+    // A write body is label-keyed, but nothing stops a caller from supplying
+    // a raw storage column directly. `blog_desc` is renamedTombstoneField's
+    // retained column — unexposed on the current version — and must not
+    // reach the database under its own name.
+    // MUTATION: drop the unmapped-key check against droppedColumns in remap
+    // (toStorage's `droppedIfUnmapped` argument). `blog_desc` then passes
+    // through unmapped and un-refused.
+    const m = createFieldKeyMap([divergentTextField, renamedTombstoneField])
+
+    expect(m.toStorage({ title: 'T', blog_desc: 'x' })).toEqual({ blog_title: 'T' })
+  })
+
+  it('maps a live column equal to a tombstone name correctly in both directions', () => {
+    // The mirror of the earlier collision case: there a live LABEL equalled a
+    // tombstone's COLUMN. Here a live field's COLUMN equals a tombstone's
+    // NAME. tombstone is `foo` over retained column `old_foo`; live is `bar`
+    // over column `foo`.
+    // MUTATION: restore one shared drop-set for both strip loops. The live
+    // field's column `foo` is then also stripped from columnToLabel (since
+    // `foo` is the tombstone's NAME, in the merged set), so toLabels loses it.
+    const tombstone: ParsedField = {
+      ...identityTextField,
+      name: 'foo',
+      db_column: { column_name: 'old_foo', column_type: 'varchar', nullable: true },
+      removed: true,
+    }
+    const live: ParsedField = {
+      ...identityTextField,
+      name: 'bar',
+      db_column: { column_name: 'foo', column_type: 'varchar', nullable: true },
+    }
+    const m = createFieldKeyMap([live, tombstone])
+
+    expect(m.toLabels({ foo: 'v', old_foo: 'r' })).toEqual({ bar: 'v' })
+    // The input key `foo` here is the TOMBSTONE's name and is refused; the
+    // output key `foo` is `bar`'s own column, so `bar`'s value still lands
+    // there under it.
+    expect(m.toStorage({ bar: 'v', foo: 'nope' })).toEqual({ foo: 'v' })
   })
 })
