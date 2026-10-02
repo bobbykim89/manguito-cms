@@ -140,24 +140,17 @@ return type in the schema. Programmatic fields remain **excluded from `filter` a
 
 ### Writing a version-durable resolver
 
-The record a programmatic resolver receives (`ctx.get('someField')`) is
-projected into **the served version's own label space**, not current's.
-A resolver is authored once, against current's field names — so a call like
-`ctx.get('title')` only works as written on `/graphql` and on the current
-version's own pinned endpoint. On an older live version where `title` was
-renamed since (say, exposed there as `legacy_title`), `ctx.get('title')`
-resolves to `undefined`, silently — there is no error, the field is simply
-absent from the label space that version's record was built in.
+A programmatic resolver is written once, against the schema as it is now, and
+it stays correct on every live version. The record it receives is always built
+in **current's** field names. So `ctx.get('title')` returns the title on
+`/graphql`, on `/graphql/<current>`, and on an older `/graphql/v1` that exposes
+the same column as `legacy_title`. REST behaves the same way.
 
-REST resolvers do not have this problem today only because, before per-version
-GraphQL schemas existed, GraphQL had exactly one label space (current's). Now
-that `/graphql/<version>` exists, a resolver that must behave the same way on
-every live version needs to read fields defensively — e.g. by checking a
-renamed field's current *and* known prior labels — rather than assuming
-`ctx.get('<current label>')` is always populated. This is recorded as a known
-residual (see the design spec's Residuals section); it is not fixed by this
-module, since the general fix touches the shared resolver/record-building
-path, not schema mapping.
+The resolver's *output* is merged into each version's response under the
+programmatic field's own name. Programmatic fields are never versioned, so that
+name is the same everywhere. Do not give a computed field the name of a field
+that an older live version still exposes. On that version, the computed value
+would replace the stored one.
 
 ---
 

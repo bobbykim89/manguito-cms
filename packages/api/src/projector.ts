@@ -1,5 +1,5 @@
 import type { ParsedField, SchemaRegistry } from '@bobbykim/manguito-cms-core'
-import type { FieldKeyMap } from './field-keys.js'
+import { isColumnBacked, type FieldKeyMap } from './field-keys.js'
 
 // ─── Recursive outbound projection ────────────────────────────────────────────
 //
@@ -39,7 +39,10 @@ export type Projectors = Record<string, TypeProjector>
 // no schema fields — so there is nothing to project and they stay out of `nested`.
 const MEDIA_FIELD_TYPES = new Set(['image', 'video', 'file'])
 
-function nestedTargets(fields: ParsedField[]): Array<{ label: string; target: string }> {
+function nestedTargets(
+  fields: ParsedField[],
+  map: FieldKeyMap
+): Array<{ label: string; target: string }> {
   const out: Array<{ label: string; target: string }> = []
   for (const f of fields) {
     if (MEDIA_FIELD_TYPES.has(f.field_type)) continue
@@ -47,7 +50,14 @@ function nestedTargets(fields: ParsedField[]): Array<{ label: string; target: st
     // Both kinds name their target the same way.
     const ref = (f.ui_component as { ref?: string }).ref
     if (!ref) continue
-    out.push({ label: f.name, target: ref })
+    // A column-backed reference resolves in place under its column, so after
+    // toLabels it sits under THIS version's label for that column. That can
+    // differ from the field's current name, and is absent entirely when this
+    // version does not expose the column. Paragraph and many-to-many fields have
+    // no column, resolve under the field's name, and are never versioned.
+    const label = isColumnBacked(f) ? map.labelFor(f.db_column.column_name) : f.name
+    if (label === undefined) continue
+    out.push({ label, target: ref })
   }
   return out
 }
@@ -83,7 +93,7 @@ export function buildProjectors(
       const typeFallbacks = fallbacks?.[typeName]
       projectors[typeName] = {
         map,
-        nested: nestedTargets(type.fields),
+        nested: nestedTargets(type.fields, map),
         // Spread rather than assign: with exactOptionalPropertyTypes, an optional
         // property may be ABSENT but not present-and-undefined.
         ...(typeFallbacks !== undefined && { fallbacks: typeFallbacks }),

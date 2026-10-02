@@ -10,7 +10,7 @@ import type {
 import { buildGraphQLSchema } from '../schema'
 import { buildVersionView } from '../version-view'
 import type { GraphQLContext } from '../context'
-import { createFieldKeyMapFromProjection } from '../../field-keys'
+import { createFieldKeyMap, createFieldKeyMapFromProjection } from '../../field-keys'
 import { createProgrammaticResolver, resolverKey } from '../../programmatic/resolve'
 import {
   divergentMediaField,
@@ -316,9 +316,11 @@ describe('buildGraphQLSchema — a renamed media field resolves under its real r
         load: async (_type: string, field: string, row: Record<string, unknown>) => {
           loaded.push(field)
           if (field !== 'hero') return null
-          row['hero'] = { id: 'm1' }
-          delete row['blog_hero_image']
-          return { id: 'm1' }
+          // This test pins the NAMES handed to the loader, not the record's
+          // contents (heroSchema has no FieldKeyMap, so the record stays
+          // column-keyed).
+          row['blog_hero_image'] = { id: 'm1' }
+          return row['blog_hero_image']
         },
       },
       programmaticMemo: new WeakMap(),
@@ -338,27 +340,21 @@ describe('buildGraphQLSchema — a renamed media field resolves under its real r
       categories: { data: Array<{ legacyHero: { id: string } | null; summary: string }> }
     }
     expect(data.categories.data[0]!.legacyHero).toEqual({ id: 'm1' })
-    expect(data.categories.data[0]!.summary).toBe('{"id":"m1"}')
-    expect(loaded.length).toBeGreaterThan(0)
+    // One call from relationFieldResolver (legacyHero), one from the
+    // programmatic enrichment step (summary's mediaFieldNames) — both must ask
+    // for 'hero', never 'legacyHero' or 'legacy_hero'.
+    expect(loaded.length).toBeGreaterThanOrEqual(2)
     expect(loaded.every((name) => name === 'hero')).toBe(true)
   })
 })
 
-// ─── Bug 1: a renamed media field's resolved object must survive toLabels ─────
+
+// ─── Bug 1: the programmatic record is built with CURRENT's map ──────────────
 //
-// The sibling test above deliberately omits the FieldKeyMap. With one present —
-// which is what app.ts now wires into every versioned GraphQL endpoint — the
-// programmatic record is built by `toLabels(enriched)`, and
-// createFieldKeyMapFromProjection's drop-set holds every column-backed field's
-// bare registry NAME unless this version's projection happens to expose the
-// column under exactly that name. 'hero' is HERO_V1's registry name for a
-// column it exposes as 'legacy_hero', so 'hero' stays dropped — and the media
-// loader writes its resolved object under precisely that key (and deletes the
-// raw FK column, since name ≠ column). The resolved media object is therefore
-// discarded and this version's label carries nothing at all.
-//
-// The invariant: the record handed to a programmatic resolver is keyed by THIS
-// version's labels, with media as resolved objects — the shape REST presents.
+// v1 is served. The programmatic record is built with current's map. A
+// resolver written against current reads `title` and `hero` on every version,
+// and the media object arrives resolved because the loader resolves it in
+// place under its column.
 function heroSchemaWithMap() {
   const view = buildVersionView({
     registry: heroRegistry,
@@ -374,20 +370,22 @@ function heroSchemaWithMap() {
         HERO_TYPE.fields
       ),
     },
-    view
+    view,
+    // Current's map for the programmatic record, which is what app.ts wires.
+    { 'content--category': createFieldKeyMap(HERO_TYPE.fields) }
   )
 }
 
-describe("buildGraphQLSchema — a renamed media field reaches the programmatic record under this version's label", () => {
-  it("hands the resolver the resolved media object under the version's label, alongside its other labels", async () => {
+describe("buildGraphQLSchema — the programmatic record on an older version speaks current's labels", () => {
+  it("hands the resolver current's labels, with media resolved, on v1", async () => {
     const resolvers = new Map([
       [
         resolverKey('content--category', 'summary'),
-        // Reads through V1's OWN labels: 'blog_title' for the text column and
-        // 'legacy_hero' for the media one. Asserting both in one string proves
-        // the record is label-keyed AND carries the resolved object.
+        // Reads CURRENT's labels: `title` (v1 calls it blog_title) and `hero`
+        // (v1 calls it legacy_hero). MUTATION: drop heroSchemaWithMap's fourth
+        // argument, so the record falls back to v1's map. This yields 'undefined|null'.
         programmaticField({ schema: 'content--category', field: 'summary' }, (ctx) =>
-          `${String(ctx.get('blog_title'))}|${JSON.stringify(ctx.get('legacy_hero') ?? null)}`
+          `${String(ctx.get('title'))}|${JSON.stringify(ctx.get('hero') ?? null)}`
         ),
       ],
     ])
@@ -401,14 +399,12 @@ describe("buildGraphQLSchema — a renamed media field reaches the programmatic 
       repos: { 'content--category': repo },
       resolver: createProgrammaticResolver(resolvers),
       loaders: {
-        // resolveRelationField's media branch, exactly: the resolved object
-        // lands on the field's REGISTRY name, and the raw FK column is deleted
-        // outright because that name differs from the column.
+        // resolveRelationField's media branch, exactly: the resolved object is
+        // written IN PLACE under the storage column.
         load: async (_type: string, field: string, row: Record<string, unknown>) => {
           if (field !== 'hero') return null
-          row['hero'] = { id: 'm1', mime_type: 'image/png' }
-          delete row['blog_hero_image']
-          return row['hero']
+          row['blog_hero_image'] = { id: 'm1', mime_type: 'image/png' }
+          return row['blog_hero_image']
         },
       },
       programmaticMemo: new WeakMap(),
@@ -425,15 +421,15 @@ describe("buildGraphQLSchema — a renamed media field reaches the programmatic 
     expect(data.categories.data[0]!.summary).toBe('Hello|{"id":"m1","mime_type":"image/png"}')
   })
 
-  it("does not leave the raw FK column or the registry name in the record", async () => {
+  it("does not leave v1's label or the raw FK column in the record", async () => {
     const seen: Array<Record<string, unknown>> = []
     const resolvers = new Map([
       [
         resolverKey('content--category', 'summary'),
         programmaticField({ schema: 'content--category', field: 'summary' }, (ctx) => {
           seen.push({
-            legacy_hero: ctx.get('legacy_hero'),
             hero: ctx.get('hero'),
+            legacy_hero: ctx.get('legacy_hero'),
             blog_hero_image: ctx.get('blog_hero_image'),
           })
           return 'ok'
@@ -452,9 +448,8 @@ describe("buildGraphQLSchema — a renamed media field reaches the programmatic 
       loaders: {
         load: async (_type: string, field: string, row: Record<string, unknown>) => {
           if (field !== 'hero') return null
-          row['hero'] = { id: 'm1', mime_type: 'image/png' }
-          delete row['blog_hero_image']
-          return row['hero']
+          row['blog_hero_image'] = { id: 'm1', mime_type: 'image/png' }
+          return row['blog_hero_image']
         },
       },
       programmaticMemo: new WeakMap(),
@@ -467,9 +462,11 @@ describe("buildGraphQLSchema — a renamed media field reaches the programmatic 
     })
 
     expect(result.errors).toBeUndefined()
+    // MUTATION: drop heroSchemaWithMap's fourth argument. The object then sits
+    // under `legacy_hero`, and `hero` is undefined.
     expect(seen[0]).toEqual({
-      legacy_hero: { id: 'm1', mime_type: 'image/png' },
-      hero: undefined,
+      hero: { id: 'm1', mime_type: 'image/png' },
+      legacy_hero: undefined,
       blog_hero_image: undefined,
     })
   })

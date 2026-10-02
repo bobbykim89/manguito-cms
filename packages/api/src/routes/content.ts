@@ -20,16 +20,21 @@ export type ContentRepos = Record<string, ContentRepository<unknown>>
 
 // ─── Response projection order ────────────────────────────────────────────────
 //
-// Every read response maps storage keys → labels exactly ONCE, and that mapping
-// runs BEFORE the programmatic resolver. Two reasons it sits there rather than
-// after:
+// Every read response is projected from the raw row exactly once, with the served
+// version's projectors (storage keys → labels). A programmatic resolver reads a
+// second, independent projection of the same raw row, made with CURRENT's
+// projectors — not the served version's:
 //   - a programmatic resolver reads its record through `ctx.get(fieldName)`,
 //     documented (docs/programmatic-fields.md) as the schema field name — the
-//     LABEL — so the row handed to it must already speak labels;
-//   - programmatic fields are not column-backed, so their output keys are labels
-//     already; mapping afterwards would be a no-op on them.
-// Relations are resolved inside the repository, upstream of both, so the mapping
-// still lands strictly after relation resolution.
+//     LABEL — and since `ctx.get(fieldName)` takes the field's CURRENT name on
+//     every version, the record handed to the resolver must be projected with
+//     CURRENT's projectors, not the served version's;
+//   - only the resolver's programmatic keys cross from that second projection
+//     into the response, and because those keys are fields' names rather than
+//     columns, they read the same on every version — so merging them into the
+//     response projected for the served version is safe.
+// Relations are resolved inside the repository, upstream of both projections, so
+// each one lands strictly after relation resolution.
 
 function isPublished(item: unknown): boolean {
   return (item as Record<string, unknown>)['published'] === true
@@ -42,8 +47,55 @@ export function registerPublicContentRoutes(
   projectors: Projectors,
   paths: VersionedPaths,
   listRateLimit?: MiddlewareHandler,
-  resolver?: ProgrammaticResolver
+  resolver?: ProgrammaticResolver,
+  // Current's projectors, for the record a programmatic resolver reads. Omitted
+  // when the routes being registered ARE current's, which is the default.
+  resolverProjectors?: Projectors
 ): void {
+  // A programmatic resolver is written once, against the schema as it is now,
+  // so on every version it reads a record in CURRENT's labels. The response
+  // still speaks the served version's labels. Only the resolver's computed
+  // values are merged across, and programmatic fields are never versioned, so
+  // their names are the same in both. (A computed field that reuses a live
+  // version's field name is an authoring mistake; see the 2f spec's Residuals.)
+  const forResolver = resolverProjectors ?? projectors
+
+  function pickProgrammatic(
+    resolved: Record<string, unknown>,
+    names: readonly string[]
+  ): Record<string, unknown> {
+    const out: Record<string, unknown> = {}
+    // `in`, not `!== undefined`: resolveList sets only on_list fields, and a
+    // field it skipped must stay absent rather than become a present undefined.
+    for (const name of names) if (name in resolved) out[name] = resolved[name]
+    return out
+  }
+
+  async function respondItem(
+    row: Record<string, unknown>,
+    typeName: string,
+    programmatic: readonly string[]
+  ): Promise<Record<string, unknown>> {
+    const data = projectRow(row, typeName, projectors)
+    if (!resolver?.hasSchema(typeName)) return data
+    const resolved = await resolver.resolveItem(typeName, projectRow(row, typeName, forResolver))
+    return { ...data, ...pickProgrammatic(resolved, programmatic) }
+  }
+
+  async function respondList(
+    rows: Record<string, unknown>[],
+    typeName: string,
+    programmatic: readonly string[]
+  ): Promise<Record<string, unknown>[]> {
+    const data = rows.map((row) => projectRow(row, typeName, projectors))
+    if (!resolver?.hasSchema(typeName)) return data
+    const resolved = await resolver.resolveList(
+      typeName,
+      rows.map((row) => projectRow(row, typeName, forResolver))
+    )
+    return data.map((d, i) => ({ ...d, ...pickProgrammatic(resolved[i]!, programmatic) }))
+  }
+
   // ── Meta-endpoints: list available schema types ───────────────────────────
   // Registered before the dynamic per-type routes to avoid path conflicts.
 
@@ -84,23 +136,39 @@ export function registerPublicContentRoutes(
     // below speak THIS version's labels rather than current's.
     const fieldKeys = projectors[typeName]!.map
 
-    // Relation fields worth allowing in `?include=`: a column-backed relation
-    // (single reference, image, video, file) diverges the same way an
-    // ordinary field can, so it is validated under THIS version's own label
-    // via `fieldKeys`. Paragraph and many-to-many reference fields have no
-    // column at all — they are outside the label↔column map entirely and
-    // always follow the current schema's field name, by design (see
-    // versions.ts's "nested/related content follows current's shape" note) —
-    // so their name is taken straight from the registry.
-    const relationFieldNames = new Set<string>()
+    const programmatic = contentType.fields
+      .filter((f) => f.field_type === 'programmatic')
+      .map((f) => f.name)
+
+    // Relation fields a consumer may `?include=`, keyed by the name THIS
+    // version speaks and mapped to the registry name the repository speaks.
+    // They differ for a column-backed relation this version renames. The
+    // repository's relation map stays keyed by registry name, because it also
+    // has to cover paragraph and many-to-many fields, which have no column.
+    const includeNames = new Map<string, string>()
     for (const f of contentType.fields) {
       if (!RELATION_FIELD_TYPES.has(f.field_type)) continue
       if (isColumnBacked(f)) {
         const label = fieldKeys.labelFor(f.db_column.column_name)
-        if (label !== undefined) relationFieldNames.add(label)
+        if (label !== undefined) includeNames.set(label, f.name)
       } else {
-        relationFieldNames.add(f.name)
+        includeNames.set(f.name, f.name)
       }
+    }
+
+    // Validates a `?include=` list in this version's vocabulary and translates
+    // it into the repository's. An unknown name is an expected client error, so
+    // it is returned rather than thrown.
+    function translateInclude(
+      requested: string[]
+    ): { ok: true; include: string[] } | { ok: false; field: string } {
+      const include: string[] = []
+      for (const field of requested) {
+        const registryName = includeNames.get(field)
+        if (registryName === undefined) return { ok: false, field }
+        include.push(registryName)
+      }
+      return { ok: true, include }
     }
 
     // This version's own filter/sort surface: the labels THIS version
@@ -132,8 +200,11 @@ export function registerPublicContentRoutes(
           )
         }
         // Outbound boundary (see "Response projection order" above).
-        let data = projectRow(result.data[0] as Record<string, unknown>, typeName, projectors)
-        if (resolver?.hasSchema(typeName)) data = await resolver.resolveItem(typeName, data)
+        const data = await respondItem(
+          result.data[0] as Record<string, unknown>,
+          typeName,
+          programmatic
+        )
         return c.json({ ok: true, data })
       })
     } else {
@@ -195,21 +266,20 @@ export function registerPublicContentRoutes(
           )
         }
 
-        const include = parseInclude(c.req.query('include'))
-        for (const field of include) {
-          if (!relationFieldNames.has(field)) {
-            return c.json(
-              {
-                ok: false,
-                error: {
-                  code: 'INVALID_INCLUDE_FIELD',
-                  message: `'${field}' is not a valid relation field`,
-                },
+        const translated = translateInclude(parseInclude(c.req.query('include')))
+        if (!translated.ok) {
+          return c.json(
+            {
+              ok: false,
+              error: {
+                code: 'INVALID_INCLUDE_FIELD',
+                message: `'${translated.field}' is not a valid relation field`,
               },
-              400
-            )
-          }
+            },
+            400
+          )
         }
+        const include = translated.include
 
         // sortBy is validated above against sortableFieldNames — this
         // version's own labels plus its (version-invariant) system fields —
@@ -233,12 +303,7 @@ export function registerPublicContentRoutes(
         })
 
         // Outbound boundary (see "Response projection order" above).
-        const labeled = (result.data as Record<string, unknown>[]).map((row) =>
-          projectRow(row, typeName, projectors)
-        )
-        const data = resolver?.hasSchema(typeName)
-          ? await resolver.resolveList(typeName, labeled)
-          : labeled
+        const data = await respondList(result.data as Record<string, unknown>[], typeName, programmatic)
         return c.json({ ...result, data })
       })
 
@@ -248,21 +313,20 @@ export function registerPublicContentRoutes(
         // type — so Hono can no longer statically prove the param is present.
         const slug = c.req.param('slug')!
 
-        const include = parseInclude(c.req.query('include'))
-        for (const field of include) {
-          if (!relationFieldNames.has(field)) {
-            return c.json(
-              {
-                ok: false,
-                error: {
-                  code: 'INVALID_INCLUDE_FIELD',
-                  message: `'${field}' is not a valid relation field`,
-                },
+        const translated = translateInclude(parseInclude(c.req.query('include')))
+        if (!translated.ok) {
+          return c.json(
+            {
+              ok: false,
+              error: {
+                code: 'INVALID_INCLUDE_FIELD',
+                message: `'${translated.field}' is not a valid relation field`,
               },
-              400
-            )
-          }
+            },
+            400
+          )
         }
+        const include = translated.include
 
         const item = await repo.findBySlug(slug, include)
 
@@ -277,16 +341,19 @@ export function registerPublicContentRoutes(
         }
 
         // Outbound boundary (see "Response projection order" above).
-        let data = projectRow(item as Record<string, unknown>, typeName, projectors)
-        if (resolver?.hasSchema(typeName)) data = await resolver.resolveItem(typeName, data)
+        const data = await respondItem(item as Record<string, unknown>, typeName, programmatic)
         return c.json({ ok: true, data })
       })
     }
   }
 
-  for (const [typeName] of Object.entries(registry.taxonomy_types)) {
+  for (const [typeName, taxonomyType] of Object.entries(registry.taxonomy_types)) {
     const repo = repos[typeName]
     if (!repo) continue
+
+    const programmatic = taxonomyType.fields
+      .filter((f) => f.field_type === 'programmatic')
+      .map((f) => f.name)
 
     registerListRoute(paths.taxonomyCollection(typeName), async (c) => {
       const pagination = parsePagination(c.req.query('page'), c.req.query('per_page'))
@@ -310,12 +377,7 @@ export function registerPublicContentRoutes(
       })
 
       // Outbound boundary (see "Response projection order" above).
-      const labeled = (result.data as Record<string, unknown>[]).map((row) =>
-        projectRow(row, typeName, projectors)
-      )
-      const data = resolver?.hasSchema(typeName)
-        ? await resolver.resolveList(typeName, labeled)
-        : labeled
+      const data = await respondList(result.data as Record<string, unknown>[], typeName, programmatic)
       return c.json({ ...result, data })
     })
 
@@ -335,8 +397,7 @@ export function registerPublicContentRoutes(
       }
 
       // Outbound boundary (see "Response projection order" above).
-      let data = projectRow(item as Record<string, unknown>, typeName, projectors)
-      if (resolver?.hasSchema(typeName)) data = await resolver.resolveItem(typeName, data)
+      const data = await respondItem(item as Record<string, unknown>, typeName, programmatic)
       return c.json({ ok: true, data })
     })
   }

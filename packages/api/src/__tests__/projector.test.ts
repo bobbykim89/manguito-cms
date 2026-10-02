@@ -1,13 +1,14 @@
 import { describe, it, expect } from 'vitest'
 import { isPlainRow, projectRow, buildProjectors, type Projectors } from '../projector'
-import { createFieldKeyMap } from '../field-keys'
+import { createFieldKeyMap, createFieldKeyMapFromProjection } from '../field-keys'
 import {
   divergentTextField,
   divergentMediaField,
   divergentParagraphType,
+  divergentReferenceField,
   paragraphField,
 } from '../field-keys.test-fixtures'
-import type { SchemaRegistry } from '@bobbykim/manguito-cms-core'
+import type { ParsedField, SchemaRegistry } from '@bobbykim/manguito-cms-core'
 
 // 'post' has a divergent text field plus a media field, and three relation
 // fields whose targets are 'card' (paragraph) and 'category' (reference).
@@ -209,5 +210,75 @@ describe('projectRow — fallbacks', () => {
     // The zero-config path: every existing response must be byte-identical.
     const none: Projectors = { post: { map: createFieldKeyMap([divergentTextField]), nested: [] } }
     expect(projectRow({ id: 'p1', blog_title: null }, 'post', none)).toEqual({ id: 'p1', title: null })
+  })
+})
+
+// The reference's TARGET, with a field whose name and column differ, so a
+// nested projection that runs is distinguishable from one that does not.
+const catNameField: ParsedField = {
+  name: 'name',
+  label: 'Name',
+  field_type: 'text/plain',
+  required: false,
+  nullable: true,
+  order: 0,
+  validation: { required: false },
+  db_column: { column_name: 'cat_name', column_type: 'varchar', nullable: true },
+  ui_component: { component: 'text-input' },
+}
+
+// divergentReferenceField is `category` over `category_id`, ref taxonomy--category.
+const nestedRegistry = {
+  content_types: {
+    'content--post': { schema_type: 'content-type', name: 'content--post', fields: [divergentReferenceField] },
+  },
+  taxonomy_types: {
+    'taxonomy--category': { schema_type: 'taxonomy-type', name: 'taxonomy--category', fields: [catNameField] },
+  },
+  paragraph_types: {},
+  enum_types: {},
+} as unknown as SchemaRegistry
+
+describe('projectRow — relations resolved under their column', () => {
+  it('recurses into a reference under the label this version exposes it as', () => {
+    // v1 labels column category_id as `legacy_cat`. The resolved category sits
+    // under the column, so after toLabels it is under `legacy_cat` — and nested
+    // projection must look there.
+    // MUTATION: restore `label: f.name` in nestedTargets. `nested` then looks
+    // under `category`, finds nothing, skips recursion, and the category keeps
+    // its raw `cat_name` key.
+    const projectors = buildProjectors(nestedRegistry, {
+      'content--post': createFieldKeyMapFromProjection(
+        { fields: [{ column_name: 'category_id', exposed_as: 'legacy_cat' }] },
+        [divergentReferenceField]
+      ),
+      'taxonomy--category': createFieldKeyMap([catNameField]),
+    })
+    const row = { id: 'p1', category_id: { id: 'c1', cat_name: 'Cat One' } }
+
+    expect(projectRow(row, 'content--post', projectors)).toEqual({
+      id: 'p1',
+      legacy_cat: { id: 'c1', name: 'Cat One' },
+    })
+  })
+
+  it('does not expose a relation the version never had, even once resolved', () => {
+    // Review Focus #2: a relation added to current after this version was cut.
+    // It is resolved into the row under its column, and only the drop-set keeps
+    // it out. This must keep passing after Task 3 splits the drop-set.
+    // MUTATION: stop adding unexposed columns to the drop-set in
+    // createFieldKeyMapFromProjection. category_id then passes through remap
+    // under its raw column name.
+    const projectors = buildProjectors(nestedRegistry, {
+      'content--post': createFieldKeyMapFromProjection({ fields: [] }, [divergentReferenceField]),
+      'taxonomy--category': createFieldKeyMap([catNameField]),
+    })
+    const out = projectRow(
+      { id: 'p1', category_id: { id: 'c1', cat_name: 'Cat One' } },
+      'content--post',
+      projectors
+    )
+
+    expect(out).toEqual({ id: 'p1' })
   })
 })

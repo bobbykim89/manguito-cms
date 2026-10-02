@@ -61,17 +61,14 @@ describe('GraphQL programmatic resolution with a divergent label', () => {
     const resolve = programmaticFieldResolver(
       'content--blog_post',
       'summary',
-      // The registry name the loaders key off, and the label this record is
-      // presented under — identical here, since createFieldKeyMap serves
-      // current, where every field's exposed label IS its registry name.
-      [{ name: 'hero', exposedAs: 'hero' }],
+      // The registry name the loaders look the field up by.
+      ['hero'],
       createFieldKeyMap([divergentTextField, divergentMediaField])
     )
-    // Stand in for the media dataloader: it writes the resolved object onto the
-    // LABEL and drops the raw FK column, exactly as resolveRelationField does.
+    // Stand in for the media dataloader: it resolves the object IN PLACE under
+    // the storage column, exactly as resolveRelationField now does.
     const ctx = contextWith((row) => {
-      row['hero'] = { id: 'm1' }
-      delete row['blog_hero_image']
+      row['blog_hero_image'] = { id: 'm1' }
     })
     const parent = { id: 'c1', blog_title: 'Hello', blog_hero_image: 'm1' }
 
