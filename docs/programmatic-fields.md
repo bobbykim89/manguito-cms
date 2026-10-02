@@ -77,7 +77,7 @@ The resolver receives a `ctx` and returns the field's value:
 
 | Member | Description |
 | --- | --- |
-| `ctx.get(fieldName)` | The stored value of a sibling field on the same record. Synchronous — the record is already loaded, so there is no database round-trip behind it. Relations and media come back as their stored ids. |
+| `ctx.get(fieldName)` | The stored value of a sibling field on the same record. Synchronous — the record is already loaded, so there is no database round-trip behind it. `fieldName` is the field's **current** name, on every API version. A media field comes back as its resolved media object, and a reference comes back as its stored id. |
 | `ctx.record` | The whole record as a read-only object. |
 
 `ctx` is deliberately limited to same-record data in v1: it does not expose the
