@@ -84,23 +84,35 @@ export function registerPublicContentRoutes(
     // below speak THIS version's labels rather than current's.
     const fieldKeys = projectors[typeName]!.map
 
-    // Relation fields worth allowing in `?include=`: a column-backed relation
-    // (single reference, image, video, file) diverges the same way an
-    // ordinary field can, so it is validated under THIS version's own label
-    // via `fieldKeys`. Paragraph and many-to-many reference fields have no
-    // column at all — they are outside the label↔column map entirely and
-    // always follow the current schema's field name, by design (see
-    // versions.ts's "nested/related content follows current's shape" note) —
-    // so their name is taken straight from the registry.
-    const relationFieldNames = new Set<string>()
+    // Relation fields a consumer may `?include=`, keyed by the name THIS
+    // version speaks and mapped to the registry name the repository speaks.
+    // They differ for a column-backed relation this version renames. The
+    // repository's relation map stays keyed by registry name, because it also
+    // has to cover paragraph and many-to-many fields, which have no column.
+    const includeNames = new Map<string, string>()
     for (const f of contentType.fields) {
       if (!RELATION_FIELD_TYPES.has(f.field_type)) continue
       if (isColumnBacked(f)) {
         const label = fieldKeys.labelFor(f.db_column.column_name)
-        if (label !== undefined) relationFieldNames.add(label)
+        if (label !== undefined) includeNames.set(label, f.name)
       } else {
-        relationFieldNames.add(f.name)
+        includeNames.set(f.name, f.name)
       }
+    }
+
+    // Validates a `?include=` list in this version's vocabulary and translates
+    // it into the repository's. An unknown name is an expected client error, so
+    // it is returned rather than thrown.
+    function translateInclude(
+      requested: string[]
+    ): { ok: true; include: string[] } | { ok: false; field: string } {
+      const include: string[] = []
+      for (const field of requested) {
+        const registryName = includeNames.get(field)
+        if (registryName === undefined) return { ok: false, field }
+        include.push(registryName)
+      }
+      return { ok: true, include }
     }
 
     // This version's own filter/sort surface: the labels THIS version
@@ -195,21 +207,20 @@ export function registerPublicContentRoutes(
           )
         }
 
-        const include = parseInclude(c.req.query('include'))
-        for (const field of include) {
-          if (!relationFieldNames.has(field)) {
-            return c.json(
-              {
-                ok: false,
-                error: {
-                  code: 'INVALID_INCLUDE_FIELD',
-                  message: `'${field}' is not a valid relation field`,
-                },
+        const translated = translateInclude(parseInclude(c.req.query('include')))
+        if (!translated.ok) {
+          return c.json(
+            {
+              ok: false,
+              error: {
+                code: 'INVALID_INCLUDE_FIELD',
+                message: `'${translated.field}' is not a valid relation field`,
               },
-              400
-            )
-          }
+            },
+            400
+          )
         }
+        const include = translated.include
 
         // sortBy is validated above against sortableFieldNames — this
         // version's own labels plus its (version-invariant) system fields —
@@ -248,21 +259,20 @@ export function registerPublicContentRoutes(
         // type — so Hono can no longer statically prove the param is present.
         const slug = c.req.param('slug')!
 
-        const include = parseInclude(c.req.query('include'))
-        for (const field of include) {
-          if (!relationFieldNames.has(field)) {
-            return c.json(
-              {
-                ok: false,
-                error: {
-                  code: 'INVALID_INCLUDE_FIELD',
-                  message: `'${field}' is not a valid relation field`,
-                },
+        const translated = translateInclude(parseInclude(c.req.query('include')))
+        if (!translated.ok) {
+          return c.json(
+            {
+              ok: false,
+              error: {
+                code: 'INVALID_INCLUDE_FIELD',
+                message: `'${translated.field}' is not a valid relation field`,
               },
-              400
-            )
-          }
+            },
+            400
+          )
         }
+        const include = translated.include
 
         const item = await repo.findBySlug(slug, include)
 

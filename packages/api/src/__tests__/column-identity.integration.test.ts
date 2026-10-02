@@ -151,3 +151,59 @@ describe('column as identity — media on an older version (#1a)', () => {
     expect(row).toHaveProperty('legacy_hero', null)
   })
 })
+
+describe('column as identity — ?include= on an older version (#1b)', () => {
+  it("resolves a renamed reference when included under v1's label", async () => {
+    // MUTATION: pass the requested names straight to the repository instead of
+    // translating them. The repository then throws INVALID_INCLUDE_FIELD for
+    // `legacy_cat`, which surfaces as a 400.
+    const { status, row } = await get(`/api/v1/${TYPE}?include=legacy_cat`)
+
+    expect(status).toBe(200)
+    expect(row!['legacy_cat']).toMatchObject({ id: CAT_ID, name: 'Cat One' })
+    expect(row).not.toHaveProperty('category')
+    expect(row).not.toHaveProperty('category_id')
+  })
+
+  it('resolves it on the item route too', async () => {
+    // The item route has its own copy of the include handling.
+    // MUTATION: translate only in the collection handler.
+    const { status, row } = await get(`/api/v1/${TYPE}/post-1?include=legacy_cat`)
+
+    expect(status).toBe(200)
+    expect(row!['legacy_cat']).toMatchObject({ id: CAT_ID, name: 'Cat One' })
+  })
+
+  it("rejects the registry name on v1, which is not part of v1's contract", async () => {
+    // A v1 consumer speaks v1's labels; `category` is current's name.
+    // MUTATION: validate against registry names instead of this version's
+    // labels. `category` is then accepted.
+    const { status, error } = await get(`/api/v1/${TYPE}?include=category`)
+
+    expect(status).toBe(400)
+    expect(error?.code).toBe('INVALID_INCLUDE_FIELD')
+  })
+
+  it('still resolves the include on current, unchanged', async () => {
+    const { status, row } = await get(`/api/v3/${TYPE}?include=category`)
+
+    expect(status).toBe(200)
+    expect(row!['category']).toMatchObject({ id: CAT_ID, name: 'Cat One' })
+  })
+
+  it('gives every item sharing one category the resolved category, on v1', async () => {
+    // Review Focus #3. The relation cache hands the SAME target object to every
+    // parent, so a per-row bug shows up only once there are several rows.
+    // MUTATION: in resolveRelationField's reference branch, assign the resolved
+    // object to the first pending row only. The second post keeps its bare id.
+    await db.execute(sql.raw(`INSERT INTO "${BLOG}" (slug, published, blog_title, category_id)
+      VALUES ('post-2', true, 'Second', '${CAT_ID}')`))
+    const res = await app().request(`/api/v1/${TYPE}?include=legacy_cat`)
+    const body = (await res.json()) as { data: Row[] }
+
+    expect(body.data).toHaveLength(2)
+    for (const post of body.data) {
+      expect(post['legacy_cat']).toMatchObject({ id: CAT_ID, name: 'Cat One' })
+    }
+  })
+})
