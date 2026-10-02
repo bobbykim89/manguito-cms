@@ -272,8 +272,15 @@ export function buildGraphQLSchema(
     const objType = objectTypes.get(name)!
     const visible = viewFieldsFor(name, ct)
     // The version's own labels: translateFilters maps a GraphQL name back to a
-    // label, and columnFor then takes that label to the storage column.
-    const nameMap = buildFieldNameMap(visible.map((v) => v.exposedAs))
+    // label, and columnFor then takes that label to the storage column. System
+    // fields go in too, because buildFilterInputType advertises createdAt and
+    // updatedAt on every filter. Without them `createdAt` would fall through as
+    // its own column name. columnFor returns nothing for a system field, so
+    // translateFilters falls back to the name itself, which IS its column.
+    const nameMap = buildFieldNameMap([
+      ...visible.map((v) => v.exposedAs),
+      ...ct.system_fields.map((s) => s.name),
+    ])
 
     if (ct.only_one) {
       queryFields[singleQueryName(name)] = { type: objType, resolve: singletonResolver(name) }

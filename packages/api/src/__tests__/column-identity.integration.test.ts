@@ -296,3 +296,21 @@ describe("column as identity — programmatic resolvers read current's labels (#
     }
   })
 })
+
+describe('column as identity — GraphQL filters on system fields (#5)', () => {
+  it('filters by createdAt against the real column, on an older version', async () => {
+    // Two bounds, so a filter that is silently ignored cannot pass: the row is
+    // created now, after the gt bound and after the lt bound.
+    // MUTATION: build nameMap from the visible labels only. Both queries then
+    // return errors.
+    const after = await gql('/graphql/v1',
+      '{ colidBlogs(filter: { createdAt: { gt: "2000-01-01T00:00:00Z" } }) { data { blogTitle } } }')
+    const before = await gql('/graphql/v1',
+      '{ colidBlogs(filter: { createdAt: { lt: "2000-01-01T00:00:00Z" } }) { data { blogTitle } } }')
+
+    expect(after.errors).toBeUndefined()
+    expect(before.errors).toBeUndefined()
+    expect((after.data as { colidBlogs: { data: unknown[] } }).colidBlogs.data).toEqual([{ blogTitle: 'Hello' }])
+    expect((before.data as { colidBlogs: { data: unknown[] } }).colidBlogs.data).toEqual([])
+  })
+})

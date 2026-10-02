@@ -20,18 +20,8 @@ describe('sort enums', () => {
 })
 
 describe('translateFilters', () => {
-  // NOTE: this map is fabricated for the test — `buildFieldNameMap` is never
-  // called with `'created_at'` in production. `schema.ts` builds the real
-  // `nameMap` from a version's schema-field labels only (`visible.map((v) =>
-  // v.exposedAs)`); system fields such as `created_at`/`updated_at` are never
-  // in it. So `createdAt` resolving to `created_at` below is NOT coverage of
-  // the real request path — in production `toSchema('createdAt')` falls
-  // through to `'createdAt'` unchanged, `columnFor` returns undefined, and
-  // `'createdAt'` itself is used as the column, which the repository then
-  // rejects as an invalid identifier (masked by GraphQL Yoga into a 200 with
-  // `INTERNAL_SERVER_ERROR`). See the Residuals section of
-  // docs/superpowers/specs/2026-09-21-graphql-versioning-design.md. This
-  // suite still validates `translateFilters` in isolation, given a map.
+  // schema.ts now includes system fields in the real nameMap; see the "#5"
+  // tests in schema.divergence.test.ts.
   const nameMap = buildFieldNameMap(['created_at', 'blog_title'])
 
   it('translates eq / in / operators to repo filters keyed by column', () => {
