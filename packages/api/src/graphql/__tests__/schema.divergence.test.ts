@@ -203,3 +203,39 @@ describe('GraphQL programmatic field on a paragraph type', () => {
     expect(data.posts.data[0]!.cards[0]!.summary).toBe('S:undefined')
   })
 })
+
+describe('GraphQL filter on a system field (#5)', () => {
+  // As parsed: every content type carries its system fields.
+  const withSystemFields: ParsedContentType = {
+    ...divergentTargetType,
+    system_fields: [
+      { name: 'id', db_type: 'uuid', primary_key: true, nullable: false },
+      { name: 'created_at', db_type: 'timestamp', default: 'now()', nullable: false },
+      { name: 'updated_at', db_type: 'timestamp', default: 'now()', nullable: false },
+    ],
+  }
+  const systemRegistry = {
+    content_types: { 'content--category': withSystemFields },
+    taxonomy_types: {},
+    paragraph_types: {},
+    enum_types: {},
+  } as unknown as SchemaRegistry
+
+  it('filters createdAt on its real column', async () => {
+    // MUTATION: build nameMap from the visible labels only, as before. The
+    // filter then reaches the repository keyed `createdAt`.
+    const schema = buildGraphQLSchema(systemRegistry, {
+      'content--category': createFieldKeyMap(withSystemFields.fields),
+    })
+    const captured: { opts?: Record<string, unknown> } = {}
+
+    const result = await graphql({
+      schema,
+      source: '{ categories(filter: { createdAt: { gt: "2000-01-01T00:00:00Z" } }) { meta { total } } }',
+      contextValue: capturingCtx(captured),
+    })
+
+    expect(result.errors).toBeUndefined()
+    expect(captured.opts?.['filters']).toEqual({ created_at: { gt: '2000-01-01T00:00:00Z' } })
+  })
+})

@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from 'vitest'
 import { createRelationLoaders } from '../dataloaders'
 import type { SchemaRegistry } from '@bobbykim/manguito-cms-core'
 import * as relations from '../../relations'
+import { divergentMediaField } from '../../field-keys.test-fixtures'
+import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 
 // A registry with one content type "post" holding a reference field "author".
 const registry = {
@@ -51,8 +53,10 @@ describe('createRelationLoaders', () => {
   it('batches sibling parents into one resolveRelationField call', async () => {
     const spy = vi
       .spyOn(relations, 'resolveRelationField')
-      .mockImplementation(async (_db, rows, fieldName) => {
-        for (const r of rows as Record<string, unknown>[]) r[fieldName] = { id: r['author_id'] }
+      .mockImplementation(async (_db, rows) => {
+        // Resolved IN PLACE under the storage column, as the real resolver now
+        // does — the loader reads the relation back from `author_id`, not `author`.
+        for (const r of rows as Record<string, unknown>[]) r['author_id'] = { id: r['author_id'] }
       })
 
     const db = {} as never
@@ -76,8 +80,10 @@ describe('createRelationLoaders', () => {
   it('resolves relation fields embedded in paragraph types (not just content/taxonomy)', async () => {
     const spy = vi
       .spyOn(relations, 'resolveRelationField')
-      .mockImplementation(async (_db, rows, fieldName) => {
-        for (const r of rows as Record<string, unknown>[]) r[fieldName] = { id: r['image_id'] }
+      .mockImplementation(async (_db, rows) => {
+        // Resolved IN PLACE under the storage column — the loader reads the
+        // relation back from `image_id`, not `image`.
+        for (const r of rows as Record<string, unknown>[]) r['image_id'] = { id: r['image_id'] }
       })
 
     const db = {} as never
@@ -89,5 +95,36 @@ describe('createRelationLoaders', () => {
     expect(result).toEqual({ id: 'm1' })
     expect(spy).toHaveBeenCalledTimes(1)
     spy.mockRestore()
+  })
+})
+
+describe('createRelationLoaders — column-backed relations', () => {
+  it('returns a media relation from its storage column, not the field name', async () => {
+    // divergentMediaField is `hero` over `blog_hero_image`, so name and column
+    // differ and the test cannot pass under the wrong one.
+    // MUTATION: restore `return rows.map((r) => r[fieldName])` in the loader.
+    // resolveRelationField now writes `blog_hero_image`, so reading `hero`
+    // returns undefined.
+    const registry = {
+      content_types: {
+        'content--post': {
+          schema_type: 'content-type',
+          name: 'content--post',
+          fields: [divergentMediaField],
+          db: { table_name: 'post' },
+        },
+      },
+      taxonomy_types: {},
+      paragraph_types: {},
+      enum_types: {},
+    } as unknown as SchemaRegistry
+    const db = {
+      execute: async () => ({ rows: [{ id: 'm1', url: '/a.png' }] }),
+    } as unknown as DrizzlePostgresInstance
+
+    const loaders = createRelationLoaders(db, registry)
+    const parent = { id: 'p1', blog_hero_image: 'm1' }
+
+    expect(await loaders.load('content--post', 'hero', parent)).toEqual({ id: 'm1', url: '/a.png' })
   })
 })

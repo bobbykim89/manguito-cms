@@ -4,6 +4,7 @@ import { createFieldKeyMap, createFieldKeyMapFromProjection, isColumnBacked } fr
 import {
   divergentTextField,
   divergentMediaField,
+  divergentReferenceField,
   identityTextField,
   paragraphField,
   manyToManyField,
@@ -106,15 +107,22 @@ describe('createFieldKeyMap', () => {
     expect(() => createFieldKeyMap(FIELDS)).not.toThrow()
   })
 
-  it("throws when a label collides with another field's column name", () => {
-    const collidingLabel: ParsedField = {
+  it("maps a field named after another field's column correctly in both directions", () => {
+    // divergentTextField is `title` over `blog_title`; this field is NAMED
+    // `blog_title` but owns `other_col`. A column-backed name is never a row
+    // key, so nothing is ambiguous.
+    // MUTATION: in buildFieldKeyMap's collision check, inspect every field
+    // again rather than only those with no column of their own. The map then
+    // throws on build.
+    const namedAfterAColumn: ParsedField = {
       ...identityTextField,
       name: 'blog_title',
       db_column: { column_name: 'other_col', column_type: 'varchar', nullable: true },
     } as ParsedField
-    expect(() => createFieldKeyMap([divergentTextField, collidingLabel])).toThrow(
-      /collides/i
-    )
+    const m = createFieldKeyMap([divergentTextField, namedAfterAColumn])
+
+    expect(m.toLabels({ blog_title: 'T', other_col: 'O' })).toEqual({ title: 'T', blog_title: 'O' })
+    expect(m.toStorage({ title: 'T', blog_title: 'O' })).toEqual({ blog_title: 'T', other_col: 'O' })
   })
 
   describe('tombstones', () => {
@@ -170,12 +178,19 @@ describe('createFieldKeyMap', () => {
       expect(m.toLabels({ blog_title: 'Hi' })).toEqual({ title: 'Hi' })
     })
 
-    it("still throws when a live field's label collides with a tombstone's column", () => {
-      expect(() =>
-        createFieldKeyMap([collisionLiveField, collisionTombstoneField])
-      ).toThrow(
-        /^Fatal: field key map failed to build — field label "description" collides with the storage column of field "x"/
-      )
+    it("maps a live label equal to a tombstone's column correctly in both directions", () => {
+      // The case that shows why the drop-set must split. collisionLiveField is
+      // `description` over `d2`; collisionTombstoneField is `x` over the
+      // retained column `description`.
+      // MUTATION: restore one shared drop-set for both directions. Its
+      // `description` entry (the tombstone's column) then strips the LIVE
+      // field's `description → d2` pair, and toStorage drops the write.
+      const m = createFieldKeyMap([collisionLiveField, collisionTombstoneField])
+
+      expect(m.toLabels({ d2: 'live', description: 'retained' })).toEqual({ description: 'live' })
+      expect(m.toStorage({ description: 'live' })).toEqual({ d2: 'live' })
+      // The tombstone itself stays refused in both directions.
+      expect(m.toStorage({ x: 'nope' })).toEqual({})
     })
   })
 })
@@ -258,7 +273,7 @@ describe('createFieldKeyMapFromProjection', () => {
     // renamedTombstoneField: name 'legacy_desc', column 'blog_desc', removed.
     // The projection (blog_title/title, summary/summary) never names
     // 'blog_desc' — this version does not retain it — so it must be actively
-    // dropped from both maps. Without the drop, remap would pass the raw
+    // dropped from the READ side. Without the drop, remap would pass the raw
     // 'blog_desc' key straight through toLabels, since a retained column is
     // genuinely present on the database row.
     const map = createFieldKeyMapFromProjection(projection, [renamedTombstoneField])
@@ -308,15 +323,11 @@ describe('createFieldKeyMapFromProjection', () => {
     expect(map.toStorage({ blurb: 'S' })).toEqual({ summary: 'S' })
   })
 
-  it("still throws when a DIFFERENT field is named after a column this version renames", () => {
-    // The true positive the skip above must not swallow. `blog_title` is
-    // divergentTextField's column, exposed here as `heading` — and a second,
-    // column-backed field is NAMED `blog_title` while owning a different column
-    // (`other_col`). Its value is written into the row under its own name, which
-    // is the first field's column, so toLabels would rename it onto `heading`
-    // and serve the wrong value under the wrong key. Two fields, one key: the
-    // ambiguity is real, and `ownColumn` ('other_col') is not the label under
-    // inspection, so the skip does not apply.
+  it('maps a field named after a column this version renames correctly', () => {
+    // This test used to claim the second field's value lands in the row under
+    // its own name. That was false for a text field even before — SELECT *
+    // puts it under its column — and Task 1 made it false for relations too.
+    // MUTATION: inspect every field in the collision check again.
     const renamesSomeoneElsesColumn = {
       fields: [{ column_name: 'blog_title', exposed_as: 'heading', required: false }],
     }
@@ -325,12 +336,14 @@ describe('createFieldKeyMapFromProjection', () => {
       name: 'blog_title',
       db_column: { column_name: 'other_col', column_type: 'varchar', nullable: true },
     }
-    expect(() =>
-      createFieldKeyMapFromProjection(renamesSomeoneElsesColumn, [
-        divergentTextField,
-        namedAfterThatColumn,
-      ])
-    ).toThrow(/^Fatal: field key map failed to build — field label "blog_title" collides with the storage column of field "heading"/)
+    const m = createFieldKeyMapFromProjection(renamesSomeoneElsesColumn, [
+      divergentTextField,
+      namedAfterThatColumn,
+    ])
+
+    // This version exposes only `blog_title`, as `heading`; `other_col` is not exposed.
+    expect(m.toLabels({ blog_title: 'T', other_col: 'O' })).toEqual({ heading: 'T' })
+    expect(m.toStorage({ heading: 'T' })).toEqual({ blog_title: 'T' })
   })
 
   it('drops a LIVE field added after this version was cut, not just a tombstone', () => {
@@ -361,5 +374,86 @@ describe('createFieldKeyMapFromProjection', () => {
     expect(result).toEqual({ title: 'Hi', summary: 'S' })
     expect(result).not.toHaveProperty('blog_sub')
     expect(result).not.toHaveProperty('subtitle')
+  })
+})
+
+describe('split drop-sets', () => {
+  it("does not serve another field's data when a version's label equals a different field's name", () => {
+    // #2. Current has `a` (column a) and `b` (column b). v1 exposes column a
+    // under the label `b`, and never had field b at all.
+    // MUTATION: restore one shared drop-set. Un-dropping the projected label
+    // `b` then also un-drops field b's column `b`, which passes through remap:
+    // v1 receives field b's value and field a's is lost.
+    const a: ParsedField = {
+      ...identityTextField,
+      name: 'a',
+      db_column: { column_name: 'a', column_type: 'varchar', nullable: true },
+    }
+    const b: ParsedField = {
+      ...identityTextField,
+      name: 'b',
+      db_column: { column_name: 'b', column_type: 'varchar', nullable: true },
+    }
+    const m = createFieldKeyMapFromProjection(
+      { fields: [{ column_name: 'a', exposed_as: 'b' }] },
+      [a, b]
+    )
+
+    expect(m.toLabels({ a: 'v1 value', b: 'NEW FIELD value' })).toEqual({ b: 'v1 value' })
+  })
+
+  it('round-trips a renamed relation through the admin read and write paths', () => {
+    // Review Focus #4. The admin panel reads through toLabels and writes
+    // through toStorage, both on current's map. The tombstone makes both drop
+    // sets non-empty, which is what lets this test notice them being crossed.
+    // MUTATION: wire each direction to the OTHER set — toLabels consulting
+    // droppedLabels, toStorage consulting droppedColumns. The tombstone's
+    // retained column `blog_desc` then leaks into the read.
+    const m = createFieldKeyMap([divergentReferenceField, renamedTombstoneField])
+
+    expect(m.toLabels({ id: 'p1', category_id: { id: 'c1', name: 'Cat' }, blog_desc: 'retained' }))
+      .toEqual({ id: 'p1', category: { id: 'c1', name: 'Cat' } })
+    expect(m.toStorage({ category: 'c1', legacy_desc: 'refused' })).toEqual({ category_id: 'c1' })
+  })
+
+  it("refuses a tombstone's raw column on write", () => {
+    // A write body is label-keyed, but nothing stops a caller from supplying
+    // a raw storage column directly. `blog_desc` is renamedTombstoneField's
+    // retained column — unexposed on the current version — and must not
+    // reach the database under its own name.
+    // MUTATION: drop the unmapped-key check against droppedColumns in remap
+    // (toStorage's `droppedIfUnmapped` argument). `blog_desc` then passes
+    // through unmapped and un-refused.
+    const m = createFieldKeyMap([divergentTextField, renamedTombstoneField])
+
+    expect(m.toStorage({ title: 'T', blog_desc: 'x' })).toEqual({ blog_title: 'T' })
+  })
+
+  it('maps a live column equal to a tombstone name correctly in both directions', () => {
+    // The mirror of the earlier collision case: there a live LABEL equalled a
+    // tombstone's COLUMN. Here a live field's COLUMN equals a tombstone's
+    // NAME. tombstone is `foo` over retained column `old_foo`; live is `bar`
+    // over column `foo`.
+    // MUTATION: restore one shared drop-set for both strip loops. The live
+    // field's column `foo` is then also stripped from columnToLabel (since
+    // `foo` is the tombstone's NAME, in the merged set), so toLabels loses it.
+    const tombstone: ParsedField = {
+      ...identityTextField,
+      name: 'foo',
+      db_column: { column_name: 'old_foo', column_type: 'varchar', nullable: true },
+      removed: true,
+    }
+    const live: ParsedField = {
+      ...identityTextField,
+      name: 'bar',
+      db_column: { column_name: 'foo', column_type: 'varchar', nullable: true },
+    }
+    const m = createFieldKeyMap([live, tombstone])
+
+    expect(m.toLabels({ foo: 'v', old_foo: 'r' })).toEqual({ bar: 'v' })
+    // The input key `foo` here is the TOMBSTONE's name and is refused; the
+    // output key `foo` is `bar`'s own column, so `bar`'s value still lands
+    // there under it.
+    expect(m.toStorage({ bar: 'v', foo: 'nope' })).toEqual({ foo: 'v' })
   })
 })

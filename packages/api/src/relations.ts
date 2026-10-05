@@ -313,28 +313,23 @@ function groupBy<T extends Record<string, unknown>>(
   return result
 }
 
-// A reference/media pass is DESTRUCTIVE: the resolved object replaces the raw FK
-// value, and when the field's label differs from its FK column (a renamed field)
-// the raw FK key is deleted outright — otherwise the response would carry both
-// the column name and the label.
+// A reference/media pass resolves the FK IN PLACE: the resolved object replaces
+// the raw id under the same storage column. Nothing is deleted — a field whose
+// label differs from its storage column still keeps that column name; toLabels
+// applies the label downstream, after resolution.
 //
-// That makes a second pass over the same row object dangerous: the FK the first
-// pass consumed is gone, so the row would be nulled out. And the same object
-// really does recur — reference/junction targets are cached by `table:id`, so two
-// parents receive ONE shared object, and the GraphQL dataloaders deliberately do
-// not memoize by parent identity ("rows are mutated and may recur across nesting
-// levels", dataloaders.ts). So a row that already holds a resolved value is
-// skipped, which makes the pass idempotent.
-function needsFkResolution(
-  row: Record<string, unknown>,
-  fkColumn: string,
-  fieldName: string
-): boolean {
-  // Label diverges from the column: a missing FK key means it was already dropped.
-  if (fkColumn !== fieldName && !(fkColumn in row)) return false
-  // Label equals the column: the resolved object sits where the raw id was, so an
-  // object (never a bare id) means this row is already done.
-  const current = row[fieldName]
+// The same row object really does recur: reference/junction targets are cached by
+// `table:id`, so two parents can receive ONE shared object, and the GraphQL
+// dataloaders deliberately do not memoize by parent identity ("rows are mutated and
+// may recur across nesting levels", dataloaders.ts). So a row that already holds a
+// resolved object under the column is skipped, which makes the pass idempotent —
+// see needsFkResolution below.
+function needsFkResolution(row: Record<string, unknown>, fkColumn: string): boolean {
+  // Resolved IN PLACE: the object sits under the column where the raw id was,
+  // so an object (never a bare id) means this row is already done. A null
+  // stays null on a second pass, which costs nothing — an empty FK list issues
+  // no query.
+  const current = row[fkColumn]
   return !(typeof current === 'object' && current !== null)
 }
 
@@ -360,10 +355,11 @@ export async function resolveRelationField(
 ): Promise<void> {
   if (rows.length === 0) return
 
-  // Deduped by object identity: one batch can hold the same row twice (see
-  // needsFkResolution above), and the destructive branches would then read an FK
-  // the first visit already consumed. The caller's array is left untouched — the
-  // GraphQL dataloader maps over it to build its results.
+  // Deduped by object identity: one batch can hold the same row object twice
+  // (see needsFkResolution above). Resolving it twice would be harmless —
+  // resolution is idempotent — but redundant, so this dedupe just avoids that
+  // repeat work. The caller's array is left untouched — the GraphQL dataloader
+  // maps over it to build its results.
   const batch = [...new Set(rows)]
 
   if (rel.type === 'paragraph') {
@@ -380,16 +376,16 @@ export async function resolveRelationField(
       row[fieldName] = byParent[row['id'] as string] ?? []
     }
   } else if (rel.type === 'reference') {
-    const dropFk = rel.fk_column !== fieldName
-    const pending = batch.filter((r) => needsFkResolution(r, rel.fk_column, fieldName))
+    // Resolved IN PLACE, under the storage column. The column is a field's
+    // internal identity, and toLabels applies whichever label the response
+    // speaks. Writing under the field's name instead moved the value out of the
+    // column, so any version labelling that column differently lost it.
+    const pending = batch.filter((r) => needsFkResolution(r, rel.fk_column))
     if (pending.length === 0) return
 
     const fkValues = pending.map((r) => r[rel.fk_column] as string).filter(Boolean)
     if (fkValues.length === 0) {
-      for (const row of pending) {
-        row[fieldName] = null
-        if (dropFk) delete row[rel.fk_column]
-      }
+      for (const row of pending) row[rel.fk_column] = null
       return
     }
     const unique = [...new Set(fkValues)]
@@ -406,8 +402,7 @@ export async function resolveRelationField(
     }
     for (const row of pending) {
       const fkVal = row[rel.fk_column] as string
-      row[fieldName] = fkVal ? (cache.get(`${rel.table}:${fkVal}`) ?? null) : null
-      if (dropFk) delete row[rel.fk_column]
+      row[rel.fk_column] = fkVal ? (cache.get(`${rel.table}:${fkVal}`) ?? null) : null
     }
   } else if (rel.type === 'junction') {
     const parentIds = batch.map((r) => r['id'] as string)
@@ -437,16 +432,14 @@ export async function resolveRelationField(
         .filter(Boolean)
     }
   } else if (rel.type === 'media') {
-    const dropFk = rel.fk_column !== fieldName
-    const pending = batch.filter((r) => needsFkResolution(r, rel.fk_column, fieldName))
+    // Resolved IN PLACE, under the storage column — see the reference branch's
+    // comment above.
+    const pending = batch.filter((r) => needsFkResolution(r, rel.fk_column))
     if (pending.length === 0) return
 
     const fkValues = pending.map((r) => r[rel.fk_column] as string).filter(Boolean)
     if (fkValues.length === 0) {
-      for (const row of pending) {
-        row[fieldName] = null
-        if (dropFk) delete row[rel.fk_column]
-      }
+      for (const row of pending) row[rel.fk_column] = null
       return
     }
     const unique = [...new Set(fkValues)]
@@ -460,8 +453,7 @@ export async function resolveRelationField(
     }
     for (const row of pending) {
       const fkVal = row[rel.fk_column] as string
-      row[fieldName] = fkVal ? (cache.get(`media:${fkVal}`) ?? null) : null
-      if (dropFk) delete row[rel.fk_column]
+      row[rel.fk_column] = fkVal ? (cache.get(`media:${fkVal}`) ?? null) : null
     }
   }
 }
