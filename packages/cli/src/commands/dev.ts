@@ -24,8 +24,6 @@ import {
   buildSchemaRegistry,
   loadSchemaFile,
   hashPassword,
-  loadVersionSnapshots,
-  computeVersionModel,
   type SchemaRegistry,
   type ParsedSchema,
 } from '@bobbykim/manguito-cms-core'
@@ -36,6 +34,7 @@ import { generateForms } from '../codegen/forms.js'
 import { generateNav } from '../codegen/nav.js'
 import { reduceVersionModel } from '../codegen/version-model.js'
 import { loadEnvFile } from '../utils/env.js'
+import { loadProjectVersionModel } from '../utils/project-version-model.js'
 import { shouldBridgeToHono } from './dev-routing.js'
 import { resolveConfig } from '../utils/config.js'
 import { resolveSchemaConfig } from '../utils/schema-config.js'
@@ -162,27 +161,17 @@ export async function runDev(
   await generateNav(registry, manguitoDir)
 
   // 7b. Compute the version model — same pair `manguito build` bakes
-  // (loadVersionSnapshots then computeVersionModel), so `dev` serves the
+  // (snapshots, then the model), so `dev` serves the
   // same versioned routes a build would. A missing/invalid version contract
   // at startup is a structural error, matching how the schema-parse failures
   // above are handled: print a guided error and exit rather than silently
   // starting with versioning disabled.
-  const schemaConfig = resolveSchemaConfig(cwd, config)
-  const snapshotsResult = loadVersionSnapshots(schemaConfig, registry)
-  if (!snapshotsResult.ok) {
-    // `manguito validate` never loads version snapshots — it has no version
-    // function at all — so it would report success while this exits 1 with
-    // no explanation. `version:diff` is the command that actually loads
-    // snapshots and computes the model, so it is what can show these errors.
-    printValidationErrors(snapshotsResult.errors, 'Version snapshot errors', 'manguito version:diff')
+  const versionsResult = loadProjectVersionModel(resolveSchemaConfig(cwd, config), registry)
+  if (!versionsResult.ok) {
+    printValidationErrors(versionsResult.errors, 'Version model errors', 'manguito validate')
     process.exit(1)
   }
-  const versionModelResult = computeVersionModel({ current: registry, snapshots: snapshotsResult.value })
-  if (!versionModelResult.ok) {
-    printValidationErrors(versionModelResult.errors, 'Version model errors', 'manguito version:diff')
-    process.exit(1)
-  }
-  const versionModel = reduceVersionModel(versionModelResult.value)
+  const versionModel = reduceVersionModel(versionsResult.value.model)
 
   // 8. Create Hono app via createCmsApp
   const resolverMap = await loadProgrammaticResolvers(cwd, config.programmatic.dir)
@@ -375,20 +364,13 @@ async function onSchemaFileChange(args: OnSchemaFileChangeArgs): Promise<void> {
   // version contract here means the edited schema is mid-flight, not that
   // the whole watch process should die, so warn and bail out before the DB
   // push and hot-swap, leaving the previous adapter in place.
-  const schemaConfig = resolveSchemaConfig(cwd, config)
-  const snapshotsResult = loadVersionSnapshots(schemaConfig, registry)
-  if (!snapshotsResult.ok) {
-    printValidationErrors(snapshotsResult.errors, 'Version snapshot errors', 'manguito version:diff')
+  const versionsResult = loadProjectVersionModel(resolveSchemaConfig(cwd, config), registry)
+  if (!versionsResult.ok) {
+    printValidationErrors(versionsResult.errors, 'Version model errors', 'manguito validate')
     process.stderr.write('⚠ Changes not applied.\n')
     return
   }
-  const versionModelResult = computeVersionModel({ current: registry, snapshots: snapshotsResult.value })
-  if (!versionModelResult.ok) {
-    printValidationErrors(versionModelResult.errors, 'Version model errors', 'manguito version:diff')
-    process.stderr.write('⚠ Changes not applied.\n')
-    return
-  }
-  const versionModel = reduceVersionModel(versionModelResult.value)
+  const versionModel = reduceVersionModel(versionsResult.value.model)
 
   // Push schema changes to DB
   try {

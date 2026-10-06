@@ -19,6 +19,11 @@ vi.mock('@bobbykim/manguito-cms-core', () => ({
   buildSchemaRegistry: vi.fn().mockReturnValue({}),
   validateCrossReferences: vi.fn().mockReturnValue([]),
   loadSchemaFile: vi.fn().mockReturnValue({ ok: true, value: '{}' }),
+  loadVersionSnapshots: vi.fn().mockReturnValue({ ok: true, value: [] }),
+  computeVersionModel: vi.fn().mockReturnValue({
+    ok: true,
+    value: { current: 'v1', live: ['v1'], union: {}, projections: {} },
+  }),
 }))
 
 import { runValidate } from '../src/commands/validate.js'
@@ -30,6 +35,8 @@ import {
   buildSchemaRegistry,
   loadSchemaFile,
   validateCrossReferences,
+  loadVersionSnapshots,
+  computeVersionModel,
 } from '@bobbykim/manguito-cms-core'
 import { resolveConfig } from '../src/utils/config.js'
 
@@ -53,6 +60,11 @@ describe('runValidate', () => {
     vi.mocked(parseRoutes).mockReturnValue({ ok: true, value: [] } as never)
     vi.mocked(buildSchemaRegistry).mockReturnValue({} as never)
     vi.mocked(validateCrossReferences).mockReturnValue([])
+    vi.mocked(loadVersionSnapshots).mockReturnValue({ ok: true, value: [] })
+    vi.mocked(computeVersionModel).mockReturnValue({
+      ok: true,
+      value: { current: 'v1', live: ['v1'], union: {}, projections: {} },
+    } as never)
     vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
     vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
   })

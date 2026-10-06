@@ -3,7 +3,6 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { Command } from 'commander'
 import {
-  loadVersionSnapshots,
   computeVersionModel,
   describeSchemaChange,
   type SchemaRegistry,
@@ -14,6 +13,7 @@ import {
 } from '@bobbykim/manguito-cms-core'
 import { loadEnvFile } from '../utils/env.js'
 import { resolveConfig } from '../utils/config.js'
+import { loadProjectVersionModel } from '../utils/project-version-model.js'
 import { loadWorkingRegistry } from '../utils/registry.js'
 import { resolveSchemaConfig } from '../utils/schema-config.js'
 import { printValidationErrors, printSuccess, printGuidedError } from '../utils/error.js'
@@ -47,6 +47,8 @@ type VersionContext = {
   registry: SchemaRegistry
   snapshots: VersionSnapshot[]
   model: VersionModel
+  /** `config.api.prefix`, defaulted as `dev` defaults it. */
+  apiPrefix: string
 }
 
 /**
@@ -65,19 +67,20 @@ async function loadVersionContext(
   const schema = resolveSchemaConfig(deps.cwd, config)
   const registry = loadWorkingRegistry(deps.cwd, config, command)
 
-  const snapshots = loadVersionSnapshots(schema, registry)
-  if (!snapshots.ok) {
-    printValidationErrors(snapshots.errors, 'Snapshot errors', command)
+  const versions = loadProjectVersionModel(schema, registry)
+  if (!versions.ok) {
+    printValidationErrors(versions.errors, 'Version model errors', command)
     process.exit(1)
   }
 
-  const model = computeVersionModel({ current: registry, snapshots: snapshots.value })
-  if (!model.ok) {
-    printValidationErrors(model.errors, 'Version model errors', command)
-    process.exit(1)
+  return {
+    schema,
+    registry,
+    snapshots: versions.value.snapshots,
+    model: versions.value.model,
+    // Same default `dev` uses: the prefix the served routes actually carry.
+    apiPrefix: config.api.prefix ?? '/api',
   }
-
-  return { schema, registry, snapshots: snapshots.value, model: model.value }
 }
 
 /**
