@@ -22,16 +22,24 @@ _Avoid_: GraphQL endpoint (when meaning the surface), gql API
 The uniform response shape — `{ ok: true, data, meta? }` on success, `{ ok: false, error: { code, message, details? } }` on failure.
 _Avoid_: wrapper, response object
 
+**Live version**:
+A version currently served: every snapshot under `schemas/versions/vN/` plus the working schema, which is also served at the [[unversioned-path]]. Defined in core's glossary; the api receives the live set baked into the [[baked-version-model]].
+_Avoid_: active version, supported version
+
+**Retained column**:
+A column the working schema no longer exposes but an older live version still serves, kept by a tombstone (see core's glossary). The api drops it from current's reads and refuses it on writes.
+_Avoid_: legacy column
+
 **Versioned surface**:
-Content and taxonomy routes carry a version segment — `/api/v1/blog`, `/api/v3/blog` — serving the same database row under different field names, one prefix per live version. Media and the OpenAPI document never do: `MediaItem` is a fixed shape the schema never touches, so a version segment on it would duplicate byte-identical routes per live version, and one OpenAPI document already describes every live version. `PublicPaths` (fixed) and `VersionedPaths` (schema-driven) are separate types for exactly this reason — the split makes versioning media unexpressible, not merely discouraged.
+Content and taxonomy routes carry a version segment — `/api/v1/blog`, `/api/v3/blog` — serving the same database row under different field names, one prefix per live version. Media and the OpenAPI document never do: `MediaItem` is a fixed shape the schema never touches, so a version segment on it would duplicate byte-identical routes per live version, and the OpenAPI document is not versioned: it lists only the unversioned paths of the working schema. `PublicPaths` (fixed) and `VersionedPaths` (schema-driven) are separate types for exactly this reason — the split makes versioning media unexpressible, not merely discouraged.
 _Avoid_: version prefix, API versioning (unqualified)
 
 **Unversioned path**:
-`/api/*` with no version segment; resolves to the current live version. Once more than one version is live, it carries `Deprecation: true`, a `Link: <...>; rel="successor-version"` naming the current version's root, and a `Warning: 299` explaining that it floats and will move under the consumer when a version is cut. A project that has never cut a version sees none of this — the warning stays silent while only one version is live, since it would nag every unversioned project the moment it rebuilt. An older live version's own path also carries `Deprecation`/`Link`; the current version's own path carries neither, since a header there would train consumers to ignore it.
+`/api/*` with no version segment; resolves to the current live version. Once more than one version is live, it carries `Deprecation: true`, a `Link: <...>; rel="successor-version"` naming the current version's root, and a `Warning: 299` explaining that it floats and will move under the consumer when a version is created. A project that has never created a version sees none of this — the warning stays silent while only one version is live, since it would nag every unversioned project the moment it rebuilt. An older live version's own path also carries `Deprecation`/`Link`; the current version's own path carries neither, since a header there would train consumers to ignore it.
 _Avoid_: default version, latest alias, floating version
 
 **Retired / unknown version**:
-What a requested version outside the live set is classified as — derived from the baked [[baked-version-model]] alone, nothing persisted. A number below `current`'s that is not live was cut and later retired → 410 `VERSION_RETIRED`; a number at or above `current`'s was never cut → 404 `VERSION_NOT_FOUND`. Both use the standard [[envelope]] and name the live versions; a 404 for a retired version would read as "wrong URL" and send a pinned consumer hunting for a typo instead of upgrading.
+What a requested version outside the live set is classified as — derived from the baked [[baked-version-model]] alone, nothing persisted. A number below `current`'s that is not live was created and later retired → 410 `VERSION_RETIRED`; a number at or above `current`'s was never created → 404 `VERSION_NOT_FOUND`. Both use the standard [[envelope]] and name the live versions; a 404 for a retired version would read as "wrong URL" and send a pinned consumer hunting for a typo instead of upgrading.
 _Avoid_: invalid version, unsupported version
 
 ### Data access
