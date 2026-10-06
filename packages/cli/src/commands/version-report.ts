@@ -26,7 +26,7 @@ function formatField(change: FieldChange): string {
 export function formatSchemaChange(change: SchemaChange): string {
   const header =
     change.from === null
-      ? `Working schema — nothing has been cut yet, so ${change.to} would be the first version`
+      ? `Working schema — nothing has been created yet, so ${change.to} would be the first version`
       : `Working schema vs ${change.from} (highest snapshot) — would become ${change.to}`
 
   if (change.identical) {

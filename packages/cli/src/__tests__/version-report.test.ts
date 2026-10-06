@@ -77,5 +77,7 @@ describe('formatSchemaChange', () => {
     // Must not print "vs null".
     expect(out).not.toContain('null')
     expect(out).toContain('v1')
+    // MUTATION: keep the old "nothing has been cut yet" wording.
+    expect(out).toContain('nothing has been created yet')
   })
 })
