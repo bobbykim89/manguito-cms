@@ -27,7 +27,9 @@ copy of your data. Every version reads the same rows; it just presents them
 under the names that version used.
 
 Commit `schemas/versions/`. The snapshots in it *are* the live versions.
-Deleting a directory by hand retires that version just as `version:retire` does.
+Deleting a directory by hand retires that version, except the newest one:
+deleting the newest snapshot renumbers the working schema onto its number,
+which `version:retire` refuses to do.
 
 ## The everyday flow
 
@@ -64,11 +66,12 @@ created before the rename still serves it as `title`.
 > **Always declare `column` when you rename.** Changing `name` alone changes
 > the storage column too. While a version still exposes the old column,
 > `manguito build` refuses it (`VERSION_COLUMN_MISSING`). Before you have
-> created any version, nothing stops it:
-> - `manguito dev` drops the old column and its data immediately.
-> - `manguito migrate` has to ask drizzle-kit whether this is a rename. Run
->   without a terminal (in CI, for example), drizzle-kit cannot ask, writes
->   **no migration**, and still exits successfully.
+> created any version, nothing stops it. drizzle-kit has to ask whether the
+> new column is a rename or a new column, in both `manguito dev` and
+> `manguito migrate`:
+> - Answering "new column" drops the old column and its data.
+> - Run without a terminal (in CI, for example), `manguito migrate` cannot
+>   ask, writes **no migration**, and still exits successfully.
 >
 > Declaring `column` avoids the question entirely.
 
@@ -86,13 +89,14 @@ deleting it:
 - **`required` must be `false`.** Nothing writes a removed field any more
   (`TOMBSTONE_REQUIRED`).
 - **`fallback`** is optional. Older versions serve it in place of `null` for
-  rows created after the removal. It replaces only `null`; `0`, `""` and
+  wherever the stored value is `null`: every row created after the removal, and
+  any older row that was already `null`. It replaces only `null`; `0`, `""` and
   `false` are real values and are served as stored. It is valid only on a removed
   field (`FALLBACK_WITHOUT_TOMBSTONE`).
 
 Older versions keep serving the value each existing row had when you removed
 the field. Nothing writes it any more, so for rows created afterwards they
-serve the `fallback`. A live version is a supported contract, not a
+serve the `fallback` (as they do for any row whose stored value is `null`). A live version is a supported contract, not a
 permanently faithful one.
 
 Once no live version exposes the column (you retired the last one that did),
@@ -112,8 +116,10 @@ These follow the working schema on every version:
 
 A `paragraph`, `programmatic` or many-to-many `reference` field has no storage
 column of its own, so `column` and `removed` are rejected on it
-(`UNRENAMEABLE_FIELD_KIND`). To rename one, retire every version that exposes
-it first.
+(`UNRENAMEABLE_FIELD_KIND`). Renaming such a field is not refused: it silently
+renames the field on every version, because versions project only column-backed
+fields. If older versions must keep the old name, retire every version that
+exposes the field before you rename it.
 
 Changing a field's **type** while a live version exposes it is also refused
 (`FIELD_TYPE_CHANGED_WHILE_LIVE`): one column cannot hold two types. Add a new
@@ -128,8 +134,9 @@ The admin panel always works on the working schema.
 | `/api/vN/<base path>` | version `vN`, for every live `vN` |
 | `/api/<base path>` | the working schema |
 
-The prefix is your configured `api.prefix`. Media routes and the OpenAPI
-document are not versioned; one OpenAPI document describes every live version.
+The prefix is your configured `api.prefix`. Media routes are not versioned. The
+OpenAPI document is not versioned either: it lists only the unversioned paths
+for the working schema's types, and no `/api/vN` paths.
 
 **Headers.**
 - **An older live version** answers with `Deprecation: true` and a
@@ -174,13 +181,16 @@ prints a deprecation notice, and will be removed in a future release.
 `manguito validate` checks every version along with your schema, so run it
 before `build` or in CI.
 
-> **Retiring in development is immediate.** `manguito dev` applies schema
-> changes with `drizzle-kit push`, which drops columns at once. Once a retired
-> version's removed fields are deleted, their columns, and that data, are
-> gone. In production, `manguito migrate` generates a reviewable migration
+> **Development applies changes directly.** `manguito dev` applies schema
+> changes with `drizzle-kit push`, which asks whether a column was renamed,
+> confirms before dropping a column that holds data, and leaves no migration
+> file to review. Once a retired version's removed fields are deleted and you
+> confirm, their columns, and that data, are gone. In production, `manguito migrate` generates a reviewable migration
 > and asks before dropping anything.
 
 ## Validation errors
+
+The CLI prints each error's message; the code names which check fired.
 
 | Code | Meaning |
 | --- | --- |
@@ -197,8 +207,9 @@ before `build` or in CI.
 
 - **Paragraph types are not versioned** (above). `version:diff` still lists
   paragraph field changes, but no version serves them differently.
-- **One OpenAPI document** describes every live version, so a client generated
-  from it sees more than one pinned version exposes.
+- **The OpenAPI document is not versioned.** It describes only the working
+  schema's unversioned paths, so a client generated from it cannot target a
+  pinned version.
 - **No support window.** Nothing limits how many versions are live or for how
   long. `version:list` shows the count; the policy is yours.
 

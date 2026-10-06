@@ -199,7 +199,7 @@ treat them as a budget rather than removing them.
 
 ## Versioned endpoints
 
-When your project has created schema versions, each live version gets its own
+Each live version, starting with v1, has its own
 GraphQL schema at `/graphql/vN`, built from that version's field names.
 `/graphql` serves the working schema. A field a version still exposes, but the
 working schema has renamed or removed, is marked `@deprecated` there. A
