@@ -84,8 +84,8 @@ A column kept in the database for an older live version after the working schema
 _Avoid_: legacy column, orphan column
 
 **Fallback**:
-The value served in place of the real one for a tombstoned column, for versions that no longer write it. Declared on current's tombstone and consumed by the older live versions' projections that still read that column, keyed by column rather than label.
-_Avoid_: default value, null replacement
+The value an older live version serves in place of every `null` in a tombstoned column, for any row, including rows created after the removal and older rows that were already `null`. Non-null values, including `0`, `""` and `false`, are served as stored. Declared on current's tombstone and consumed by the older live versions' projections that still read that column, keyed by column rather than label.
+_Avoid_: default value
 
 **Union registry**:
 The current registry itself — `=== current` by reference, tombstones included. No merging, no column correction, no retention boundary: a field's `db_column.column_name` is exactly what it declares. Feeds db codegen and drift detection.

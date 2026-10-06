@@ -64,4 +64,8 @@ Your API is already versioned: it is served at `/api/v1/...` as well as
 `pnpm exec manguito version:create`. See the
 [schema versioning guide](https://github.com/bobbykim89/manguito-cms/blob/master/docs/schema-versioning.md).
 
+Consumers on the unversioned `/api/...` path follow the working schema and see
+a change as soon as you make it, so move them to a pinned `/api/vN` path before
+you change a field they use.
+
 Full documentation: https://github.com/bobbykim89/manguito-cms#readme

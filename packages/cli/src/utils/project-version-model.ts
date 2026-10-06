@@ -13,7 +13,9 @@ import {
  * them and the working registry. Every command that needs the model comes
  * through here (validate, build, dev and the version:* commands), so no two
  * commands can disagree about which schemas are valid. That disagreement is
- * how validate came to pass schemas build rejected.
+ * how validate came to pass schemas build rejected. The one exception is
+ * `orphanedTombstoneErrors` in version.ts, which deliberately computes a
+ * what-if model with one snapshot removed, something this helper cannot express.
  *
  * Returns errors instead of printing or exiting. validate collects them with
  * every other error it found; build, dev and the version commands print them

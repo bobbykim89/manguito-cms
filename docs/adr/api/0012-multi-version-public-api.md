@@ -4,7 +4,7 @@ status: accepted
 
 # The public API serves every live schema version, with the version in the path
 
-A project's public read API is served once per **live version**: every snapshot under `schemas/versions/` plus the working schema. Content and taxonomy routes carry the version as a path segment (`/api/v1/blog`). The unversioned path (`/api/blog`) resolves to the current version. GraphQL gets one schema per live version at `/graphql/vN`, and `/graphql` serves the current one. Every version reads the same rows; a version differs only in the field names it uses and the fields it exposes, applied once at the response boundary through that version's field-key map ([ADR api/0011](./0011-field-label-vs-storage-key.md)).
+A project's public read API is served once per **live version**: every snapshot under `schemas/versions/` plus the working schema. Content and taxonomy routes carry the version as a path segment (`/api/v1/blog`). The unversioned path (`/api/blog`) resolves to the current version. GraphQL gets one schema per live version at `/graphql/vN`, and `/graphql` serves the current one. Every version reads the same rows; a version differs only in the field names it uses, the fields it exposes and their requiredness, and it serves declared fallbacks for retained columns, applied once at the response boundary through that version's field-key map ([ADR api/0011](./0011-field-label-vs-storage-key.md)).
 
 **Deprecation is signalled on the version a consumer should leave, never on the one they should be on:**
 - An older live version's responses carry `Deprecation: true` and a `Link: <…>; rel="successor-version"` header.

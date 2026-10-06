@@ -135,8 +135,9 @@ export function registerVersion(program: Command): void {
       await runVersionList(options, { cwd: process.cwd() })
     })
 
-  // Deprecated alias of version:create, kept so scripts and CI written against
-  // 0.6 keep working. Hidden from --help; it warns on stderr so its stdout
+  // Deprecated alias of version:create. It keeps the command name and options
+  // that scripts written against 0.6 use, and its output matches
+  // version:create's. Hidden from --help; it warns on stderr so its stdout
   // stays identical to version:create's.
   program
     .command('version:cut', { hidden: true })

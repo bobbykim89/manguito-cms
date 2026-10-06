@@ -48,6 +48,16 @@ Each of these was deliberately left out. Each needs its own design if taken up.
   declare `column`, `drizzle-kit generate` has to ask "rename or create?". With
   no TTY it errors, exits 0, and writes no migration. The user guide tells
   authors to always declare `column`; the tooling does not yet refuse.
+- **The CLI does not normalize `api.prefix` the way the server does.** It reads
+  `config.api.prefix ?? '/api'`, while api uses `normalizePrefix` in
+  `packages/api/src/paths.ts`. A config built without `createAPIAdapter` (for
+  example `prefix: ''`) makes `version:create` and `version:list` print paths
+  the server does not serve.
+- **Core's version-model messages still say "cut".** For example, "newest cut
+  version" in `packages/core/src/versions/validate.ts`, which `validate` and
+  `build` print.
+- **The api's `Warning: 299` header text still says "cut"**
+  (`packages/api/src/versions.ts`).
 - **The OpenAPI document is not versioned.** It lists only the unversioned paths
   of the working schema, so it does not describe an older version's contract.
 - **Public taxonomy collections** ignore filter, sort and include, on both APIs.

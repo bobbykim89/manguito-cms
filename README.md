@@ -269,6 +269,8 @@ Then rename with a declared `column`, so the data stays where it is:
 `/api/v1/...` keeps serving `title`, the working schema serves `heading`, and
 both read the same rows. The same holds on GraphQL at `/graphql/v1`.
 
+Consumers on the unversioned `/api/...` path follow the working schema and see a change as soon as you make it, so move them to a pinned `/api/vN` path before you change a field they use.
+
 → See [docs/schema-versioning.md](docs/schema-versioning.md) for the full guide.
 
 ---

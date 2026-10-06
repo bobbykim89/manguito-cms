@@ -26,6 +26,10 @@ A version is a **contract about field names and which fields exist**, not a
 copy of your data. Every version reads the same rows; it just presents them
 under the names that version used.
 
+Consumers on the unversioned `/api/...` path follow the working schema and see
+a change as soon as you make it, so move them to a pinned `/api/vN` path before
+you change a field they use.
+
 Commit `schemas/versions/`. The snapshots in it *are* the live versions.
 Deleting a directory by hand retires that version, except the newest one:
 deleting the newest snapshot renumbers the working schema onto its number,
@@ -88,16 +92,16 @@ deleting it:
   The working schema, its API and the admin panel stop exposing the field.
 - **`required` must be `false`.** Nothing writes a removed field any more
   (`TOMBSTONE_REQUIRED`).
-- **`fallback`** is optional. Older versions serve it in place of `null` for
-  wherever the stored value is `null`: every row created after the removal, and
-  any older row that was already `null`. It replaces only `null`; `0`, `""` and
-  `false` are real values and are served as stored. It is valid only on a removed
-  field (`FALLBACK_WITHOUT_TOMBSTONE`).
+- **`fallback`** is optional. Older versions serve it in place of every `null`
+  in the retained column: rows created after the removal, and any older row
+  that was already `null`. It replaces only `null`; `0`, `""` and `false` are
+  real values and are served as stored. It is valid only on a removed field
+  (`FALLBACK_WITHOUT_TOMBSTONE`).
 
 Older versions keep serving the value each existing row had when you removed
-the field. Nothing writes it any more, so for rows created afterwards they
-serve the `fallback` (as they do for any row whose stored value is `null`). A live version is a supported contract, not a
-permanently faithful one.
+the field. Nothing writes it any more, so rows created afterwards serve the
+`fallback` if one is declared, and `null` otherwise. A live version is a
+supported contract, not a permanently faithful one.
 
 Once no live version exposes the column (you retired the last one that did),
 delete the field. Until you do, `manguito validate` and `manguito build` fail
@@ -118,8 +122,13 @@ A `paragraph`, `programmatic` or many-to-many `reference` field has no storage
 column of its own, so `column` and `removed` are rejected on it
 (`UNRENAMEABLE_FIELD_KIND`). Renaming such a field is not refused: it silently
 renames the field on every version, because versions project only column-backed
-fields. If older versions must keep the old name, retire every version that
-exposes the field before you rename it.
+fields. But the content stored under the old name is detached. Paragraph rows
+are keyed by the field name, so existing blocks stop being served. A
+many-to-many junction table's name embeds the field name, so a rename forces
+drizzle-kit into a rename-or-create choice that can drop every association.
+Renaming one of these fields therefore amounts to removing it and adding a new
+one, and it is not supported. If older versions must keep the old name, retire
+every version that exposes the field first, and expect to re-create the content.
 
 Changing a field's **type** while a live version exposes it is also refused
 (`FIELD_TYPE_CHANGED_WHILE_LIVE`): one column cannot hold two types. Add a new
@@ -148,8 +157,9 @@ for the working schema's types, and no `/api/vN` paths.
 - **The current version's own path** carries none.
 
 **Versions not being served.**
-- A retired version answers **410** with `VERSION_RETIRED`.
-- A version that never existed answers **404** with `VERSION_NOT_FOUND`.
+- A version number below the current one that is not live answers **410** with
+  `VERSION_RETIRED`; one at or above the current version's answers **404** with
+  `VERSION_NOT_FOUND`.
 - Both name the live versions.
 
 ## GraphQL
@@ -185,8 +195,9 @@ before `build` or in CI.
 > changes with `drizzle-kit push`, which asks whether a column was renamed,
 > confirms before dropping a column that holds data, and leaves no migration
 > file to review. Once a retired version's removed fields are deleted and you
-> confirm, their columns, and that data, are gone. In production, `manguito migrate` generates a reviewable migration
-> and asks before dropping anything.
+> confirm, their columns, and that data, are gone. In production,
+> `manguito migrate` generates a reviewable migration and asks before dropping
+> anything.
 
 ## Validation errors
 

@@ -27,7 +27,7 @@ The production run command that serves `dist/`, after a startup migration-state 
 _Avoid_: serve, run
 
 **validate**:
-The read-only lint command — parses config and all schema/roles/routes files, exits non-zero on any error, writes nothing.
+The read-only lint command — parses config and all schema/roles/routes files, exits non-zero on any error, writes nothing. It also checks the version model and rejects the same version errors as `build`.
 _Avoid_: check, lint, verify
 
 **version:diff**:

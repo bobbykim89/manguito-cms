@@ -4,7 +4,7 @@ status: accepted
 
 # A field's storage column is its identity across versions
 
-A field has three names: its `label` (shown in the admin panel), its `name` (the public API key, which may differ per version), and its **column** (`db_column.column_name`, where the value is stored). The column is the one that never changes. It defaults to `name` and is **declared** by the author with `column` when a field is renamed. Versions are compared, retained and projected by column. Two versions that expose the same column under different names are exposing one field.
+A field has three names: its `label` (shown in the admin panel), its `name` (the public API key, which may differ per version; what [ADR api/0011](../api/0011-field-label-vs-storage-key.md) and the glossaries call the field's *label*), and its **column** (`db_column.column_name`, where the value is stored). The column is the one that never changes. It defaults to `name` and is **declared** by the author with `column` when a field is renamed. Versions are compared, retained and projected by column. Two versions that expose the same column under different names are exposing one field.
 
 A field removed from the working schema while an older version still exposes its column stays in the schema as a **tombstone**: `removed: true`, an optional `fallback`, and `required: false` (a required tombstone is rejected with `TOMBSTONE_REQUIRED`, since nothing writes the column any more). Tombstones are part of the current registry. So the registry db codegen consumes, the "union registry", is simply the current registry: nothing is merged from snapshots, and a column is retained exactly as long as a tombstone declares it.
 
