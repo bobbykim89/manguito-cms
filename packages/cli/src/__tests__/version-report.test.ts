@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatSchemaChange } from '../commands/version-report.js'
+import { formatSchemaChange, formatVersionList } from '../commands/version-report.js'
 import type { SchemaChange } from '@bobbykim/manguito-cms-core'
 
 const BASE: SchemaChange = { from: 'v2', to: 'v3', types: [], identical: true }
@@ -79,5 +79,77 @@ describe('formatSchemaChange', () => {
     expect(out).toContain('v1')
     // MUTATION: keep the old "nothing has been cut yet" wording.
     expect(out).toContain('nothing has been created yet')
+  })
+})
+
+describe('formatVersionList', () => {
+  const change = (fields: SchemaChange['types'][number]['fields']): SchemaChange => ({
+    from: 'v1', to: 'v3', identical: fields.length === 0,
+    types: [{ type: 'content--blog_post', status: 'present', fields }],
+  })
+
+  it('says plainly when no version has been created', () => {
+    // MUTATION: render an empty table instead of the guidance.
+    expect(formatVersionList({ prefix: '/api', current: 'v1', older: [] })).toBe(
+      'No versions created yet. Your working schema is v1, served at /api/v1 and /api.\n' +
+        'Run `manguito version:create` before making a breaking change.'
+    )
+  })
+
+  it('lists live versions oldest first with drift, then current', () => {
+    // MUTATION: count `tombstoned` under "added". The v1 line then reads
+    // "1 renamed, 2 added since".
+    const out = formatVersionList({
+      prefix: '/api',
+      current: 'v3',
+      older: [
+        {
+          version: 'v1',
+          change: change([
+            { kind: 'renamed', column: 'title', from_name: 'title', to_name: 'heading' },
+            { kind: 'tombstoned', column: 'body', name: 'body' },
+            { kind: 'added', column: 'summary', name: 'summary', field_type: 'text/plain' },
+          ]),
+        },
+        { version: 'v2', change: change([]) },
+      ],
+    })
+
+    expect(out).toBe(
+      [
+        'Live versions (3):',
+        '  v1  /api/v1  1 renamed, 1 removed, 1 added since',
+        '  v2  /api/v2  identical to current',
+        '  v3  /api/v3  current — also /api',
+      ].join('\n')
+    )
+  })
+
+  it('counts restored fields and omits zero counts', () => {
+    // MUTATION: print every kind, zeros included.
+    const out = formatVersionList({
+      prefix: '/content',
+      current: 'v2',
+      older: [{ version: 'v1', change: change([{ kind: 'restored', column: 'x', name: 'x' }]) }],
+    })
+
+    expect(out).toContain('  v1  /content/v1  1 restored since')
+    expect(out).toContain('  v2  /content/v2  current — also /content')
+  })
+
+  it('does not call a version identical when only a column-less type was added', () => {
+    // describeSchemaChange reports identical: false for a new type even when
+    // none of its fields has a column. MUTATION: return 'identical to current'
+    // whenever no field counts are non-zero.
+    const out = formatVersionList({
+      prefix: '/api',
+      current: 'v2',
+      older: [{
+        version: 'v1',
+        change: { from: 'v1', to: 'v2', identical: false, types: [{ type: 'content--page', status: 'added', fields: [] }] },
+      }],
+    })
+
+    expect(out).toContain('  v1  /api/v1  1 new type since')
   })
 })

@@ -18,7 +18,7 @@ import { loadWorkingRegistry } from '../utils/registry.js'
 import { resolveSchemaConfig } from '../utils/schema-config.js'
 import { printValidationErrors, printSuccess, printGuidedError } from '../utils/error.js'
 import { createPromptAdapter, type PromptAdapter } from '../utils/prompt.js'
-import { formatSchemaChange } from './version-report.js'
+import { formatSchemaChange, formatVersionList } from './version-report.js'
 import { retireSnapshotDir, writeSnapshotAtomically } from './version-fs.js'
 
 /**
@@ -125,6 +125,14 @@ export function registerVersion(program: Command): void {
     .option('--yes', 'skip the confirmation prompt')
     .action(async (options: { env?: string; yes?: boolean }) => {
       await runVersionCreate(options, { cwd: process.cwd(), prompt: createPromptAdapter() })
+    })
+
+  program
+    .command('version:list')
+    .description('List the versions being served and how far each is behind the working schema')
+    .option('--env <path>', 'path to .env file to load')
+    .action(async (options: { env?: string }) => {
+      await runVersionList(options, { cwd: process.cwd() })
     })
 
   // Deprecated alias of version:create, kept so scripts and CI written against
@@ -254,6 +262,27 @@ export async function runVersionCreate(
 
   printSuccess(`Created ${version} at ${target}`)
   process.stdout.write(`Live: ${liveAfter.join(' ')}.  Working schema is now ${next}.\n`)
+}
+
+export async function runVersionList(
+  options: { env?: string },
+  deps: { cwd: string }
+): Promise<void> {
+  const ctx = await loadVersionContext(options, deps, 'manguito version:list')
+  const current = ctx.model.current
+  const versionNumber = (v: string) => Number.parseInt(v.slice(1), 10)
+
+  // Every snapshot directory is a live version: presence is the truth, so a
+  // retired version is simply absent. Compared with the WORKING schema, which
+  // is what a consumer of that version is behind.
+  const older = [...ctx.snapshots]
+    .sort((a, b) => versionNumber(a.version) - versionNumber(b.version))
+    .map((s) => ({
+      version: s.version,
+      change: describeSchemaChange({ from: s, to: { version: current, registry: ctx.registry } }),
+    }))
+
+  process.stdout.write(`${formatVersionList({ prefix: ctx.apiPrefix, current, older })}\n`)
 }
 
 export async function runVersionRetire(
