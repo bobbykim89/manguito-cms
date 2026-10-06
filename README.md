@@ -15,6 +15,7 @@ Named after Manguito, a pet bird — and a sibling project to the [Manguito Comp
 - [Configuration](#configuration)
 - [Defining Content](#defining-content)
 - [GraphQL API](#graphql-api)
+- [Schema Versioning](#schema-versioning)
 - [CLI Reference](#cli-reference)
 - [Deployment](#deployment)
 - [Auth & Users](#auth--users)
@@ -248,6 +249,30 @@ Only published content is returned, at every level of nesting. Queries are bound
 
 ---
 
+## Schema Versioning
+
+Rename and remove fields without breaking the consumers already reading your
+API. Every project starts as **v1**: its content is served at `/api/v1/...`
+as well as `/api/...`. Before a change an existing consumer would notice, freeze the
+current shape:
+
+```bash
+manguito version:create   # schemas/versions/v1/ — /api/v1 keeps this shape
+```
+
+Then rename with a declared `column`, so the data stays where it is:
+
+```json
+{ "name": "heading", "column": "title", "label": "Heading", "type": "text/plain", "required": true }
+```
+
+`/api/v1/...` keeps serving `title`, the working schema serves `heading`, and
+both read the same rows. The same holds on GraphQL at `/graphql/v1`.
+
+→ See [docs/schema-versioning.md](docs/schema-versioning.md) for the full guide.
+
+---
+
 ## CLI Reference
 
 | Command | Options | Description |
@@ -256,6 +281,10 @@ Only published content is returned, at every level of nesting. Queries are bound
 | `manguito build` | `--env <path>` | Codegen + compile to `dist/` |
 | `manguito start` | `--env <path>` | Run production server from `dist/` |
 | `manguito validate` | `--env <path>` | Parse & validate schemas, config, roles, routes |
+| `manguito version:list` | `--env <path>` | List live API versions and how far each is behind |
+| `manguito version:diff` | `--env <path>` | Show what `version:create` would freeze |
+| `manguito version:create` | `--env`, `--yes` | Freeze the working schema as the next version |
+| `manguito version:retire <version>` | `--env`, `--yes` | Stop serving a version and delete its snapshot |
 | `manguito migrate` | `--env`, `--status`, `--dry-run`, `--force` | Apply pending migrations |
 | `manguito migrate:status` | `--env <path>` | Show migration state (shorthand for `migrate --status`) |
 | `manguito createsuperuser` | `--env <path>` | Create the initial admin user |
@@ -313,11 +342,11 @@ The first admin user is created with `manguito createsuperuser`. Existing users 
 ### Delivered in v2
 
 - Opt-in GraphQL public API (query-only) — see [docs/graphql.md](docs/graphql.md)
+- Schema versioning with multi-version API routes — see [docs/schema-versioning.md](docs/schema-versioning.md)
 
 ### Planned for v2+
 
 - MongoDB adapter
-- Schema versioning with multi-version API routes
 - Draft / publish workflow
 - Webhooks on content change
 - Multi-language / i18n support

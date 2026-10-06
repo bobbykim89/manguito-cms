@@ -39,7 +39,7 @@ Alternatively, run `pnpm migrate` then `pnpm exec manguito createsuperuser` to s
 | `pnpm migrate`    | Apply pending database migrations                     |
 | `pnpm validate`   | Validate all schemas and config                       |
 
-Other CLI commands (run via `pnpm exec manguito <command>`): `createsuperuser`, `users:promote`, `users:demote`, `migrate:status`.
+Other CLI commands (run via `pnpm exec manguito <command>`): `createsuperuser`, `users:promote`, `users:demote`, `migrate:status`, `version:list`, `version:diff`, `version:create`, `version:retire`.
 
 ## Project structure
 
@@ -50,12 +50,18 @@ schemas/
 ├── taxonomy-types/   ← Taxonomy (tag/category) definitions
 ├── enum-types/       ← Enum type definitions
 ├── roles.json        ← Role hierarchy and permissions
-└── routes.json       ← Public API route configuration
+├── routes.json       ← Public API route configuration
+└── versions/         ← API versions, created by `version:create` — commit this
 
 migrations/            ← Generated database migrations
 
 .env.example           ← Environment variable template
 manguito.config.ts     ← CMS configuration
 ```
+
+Your API is already versioned: it is served at `/api/v1/...` as well as
+`/api/...`. Before renaming or removing a field that clients use, run
+`pnpm exec manguito version:create`. See the
+[schema versioning guide](https://github.com/bobbykim89/manguito-cms/blob/master/docs/schema-versioning.md).
 
 Full documentation: https://github.com/bobbykim89/manguito-cms#readme

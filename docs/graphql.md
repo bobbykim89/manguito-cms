@@ -197,6 +197,20 @@ treat them as a budget rather than removing them.
 
 ---
 
+## Versioned endpoints
+
+When your project has created schema versions, each live version gets its own
+GraphQL schema at `/graphql/vN`, built from that version's field names.
+`/graphql` serves the working schema. A field a version still exposes, but the
+working schema has renamed or removed, is marked `@deprecated` there. A
+request for a retired or unknown version answers HTTP 200 with a GraphQL error
+whose `extensions.code` is `VERSION_RETIRED` or `VERSION_UNKNOWN`.
+
+Programmatic resolvers read the current field names on every endpoint. See
+[`schema-versioning.md`](./schema-versioning.md).
+
+---
+
 ## Limitations
 
 - **Queries only** — no mutations or subscriptions. Writes go through the
@@ -218,4 +232,5 @@ treat them as a budget rather than removing them.
 - [docs/configuration.md](./configuration.md) — full configuration reference
 - [docs/programmatic-fields.md](./programmatic-fields.md) — computed fields
 - [docs/schema-authoring.md](./schema-authoring.md) — defining content types
+- [docs/schema-versioning.md](./schema-versioning.md) — versioned endpoints, renaming and removing fields
 - [docs/v2/graphql-module.md](./v2/graphql-module.md) — design and decision record
