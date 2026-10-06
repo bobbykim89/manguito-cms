@@ -53,6 +53,7 @@ There is also no read-only way to see what is being served. The [CLI lifecycle d
   ```
 
   Here `<prefix>` is the configured `api.prefix` (`config.api.prefix ?? '/api'`, the expression `dev` already uses).
+- **The live-set lines are corrected.** Today's cut prints "After cutting, v1 are live" and "Live: v1." on a first cut. Both omit the working schema, which is live too as `v<n+1>`. `version:create` lists every version live after the write: the existing live set minus the working schema's old number, plus the new snapshot, plus the new working schema. For example: "After creating v1, these versions are live: v1 v2."
 
 ### `version:cut`, deprecated
 
@@ -132,8 +133,8 @@ loadProjectVersionModel(
 - **Renaming a field.** Change `name` and declare `column`. The guide must say plainly that renaming `name` without `column` changes the storage column. With no TTY, the migration tool then exits 0 having written nothing, and declaring `column` avoids that.
 - **Removing a field** while an older version serves it: `removed: true` and an optional `fallback`.
 - **What is not versioned.** Paragraph types, programmatic fields, many-to-many references and enums.
-- **REST.** `<prefix>/<version>` paths, the unversioned alias, deprecation headers, and `UNKNOWN_API_VERSION`.
-- **GraphQL.** `/graphql/<version>` and `@deprecated`.
+- **REST.** `<prefix>/<version>` paths, the unversioned alias, deprecation headers (`Deprecation`, `Link: rel="successor-version"`, and `Warning: 299` on the unversioned path once more than one version is live), 410 `VERSION_RETIRED`, and 404 `VERSION_NOT_FOUND`.
+- **GraphQL.** `/graphql/<version>`, `@deprecated`, and the retired or unknown answer: HTTP 200 with a GraphQL error whose code is `VERSION_RETIRED` or `VERSION_UNKNOWN`.
 - **Programmatic resolvers.** They always read current's field names.
 - **The four commands.**
 - **The retirement warning.** `manguito dev` drops retained columns immediately (ADR db/0002).
@@ -160,7 +161,7 @@ Other user-facing changes:
 - **ADR api/0012 (new), "Multi-version public API."**
   - The version goes in the path.
   - The unversioned path resolves to current, with deprecation headers.
-  - `UNKNOWN_API_VERSION` lists the live set.
+  - A version outside the live set answers 410 `VERSION_RETIRED` or 404 `VERSION_NOT_FOUND`, naming the live set. (The umbrella design called this `UNKNOWN_API_VERSION`; the shipped codes are these.)
   - The rate-limit key excludes the version.
   - GraphQL gets one schema per live version.
 - **ADR core/0007 (new), "A field's storage column is its identity across versions."**
@@ -172,14 +173,17 @@ Other user-facing changes:
   - The passage on the programmatic record says it is built with current's field-key map.
   - A bullet records the split `droppedColumns` / `droppedLabels`.
 - **ADR core/0003 amendment: dropped.** It was promised to justify a derived union registry. Under the declarative model none exists (`computeVersionModel`: "The union IS current"), and the design index says so.
-- **Glossaries.** `packages/api/CONTEXT.md` and `packages/core/CONTEXT.md` each gain whichever of *live version*, *union registry*, *retained column*, *create* and *retire* they lack. "Cut" is renamed to "create" in both glossaries and in `packages/cli/CONTEXT.md`.
+- **Glossaries.** Checked against what each file already defines:
+  - `packages/core/CONTEXT.md` already defines *Live version*, *Snapshot*, *Tombstone*, *Fallback* and *Union registry*. Its *Cut* entry becomes *Create (a version)*. It gains *Retire* and *Retained column*. *Tombstone*'s claim that excluding tombstones from the api and admin "is an obligation, not yet implemented" is corrected: both now exclude them.
+  - `packages/api/CONTEXT.md` already defines *Versioned surface*, *Unversioned path* and *Retired / unknown version*. It gains *Live version* and *Retained column*, each pointing to core's definition.
+  - `packages/cli/CONTEXT.md`'s *version:cut* entry becomes *version:create*, noting the deprecated alias. It gains a *version:list* entry.
 
 ## Testing
 
 Following ADR 0004 (coverage by intention), with each test stating the mutation it rejects (PLAN-QUALITY rule 1):
 
 - **`version:create`.**
-  - It writes `schemas/versions/v<n>/` exactly as `version:cut` did; the existing cut tests are renamed, not weakened.
+  - It writes `schemas/versions/v<n>/` exactly as `version:cut` did. The cut handlers have no handler-level tests today, so these are new, run against a real temporary project with real core.
   - The first-run explanation prints only when no snapshot exists.
 - **`version:cut`.** It writes the deprecation line to stderr, produces stdout identical to `version:create`'s, and is absent from `--help`.
 - **`version:list`.**
