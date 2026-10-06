@@ -103,7 +103,28 @@ check_links() {
 
   # Markdown inline links whose target is a local path: skip http(s), mailto,
   # and in-page anchors. A trailing #anchor is stripped before resolving.
-  grep -on '](\([^)]*\))' "$file" 2>/dev/null | while IFS=: read -r ln match; do
+  #
+  # Links inside fenced code blocks are skipped. Markdown renders them as
+  # literal text, not links, and a plan uses fences to quote content destined
+  # for OTHER files, whose relative links resolve from there, not from here.
+  # Fenced lines are blanked rather than dropped, so line numbers stay true. A
+  # fence closes only on the same character repeated at least as many times
+  # (CommonMark), which is what lets a ```` block quote ``` blocks.
+  awk '
+    {
+      line = $0
+      sub(/^[ \t]+/, "", line)
+      if (match(line, /^(```+|~~~+)/)) {
+        run = substr(line, 1, RLENGTH)
+        if (!infence) { infence = 1; fence = run; print ""; next }
+        rest = substr(line, RLENGTH + 1)
+        if (substr(run, 1, 1) == substr(fence, 1, 1) && length(run) >= length(fence) && rest ~ /^[ \t]*$/) {
+          infence = 0; print ""; next
+        }
+      }
+      print (infence ? "" : $0)
+    }
+  ' "$file" | grep -on '](\([^)]*\))' 2>/dev/null | while IFS=: read -r ln match; do
     local target=${match#](}
     target=${target%)}
     case "$target" in
