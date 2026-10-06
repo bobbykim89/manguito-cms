@@ -1,7 +1,7 @@
 # Schema Versioning — Design Index
 
 **Status:** Delivered. Released in `@bobbykim/manguito-cms-core` 0.4–0.6,
-`-db` 0.1.4–0.1.6, `-api` 0.5–0.7 and `-cli` 0.5–0.6; this closeout's own
+`-db` 0.1.4–0.1.6, `-api` 0.4.1–0.7, `-admin` 0.4.1 and `-cli` 0.5–0.6; this closeout's own
 release is `-cli` 0.7. User guide: [`../schema-versioning.md`](../schema-versioning.md).
 
 Versioning lets a schema change without breaking the consumers already reading

@@ -27,7 +27,7 @@ A version currently served: every snapshot under `schemas/versions/vN/` plus the
 _Avoid_: active version, supported version
 
 **Retained column**:
-A column the working schema no longer exposes but an older live version still serves, kept by a tombstone (see core's glossary). The api drops it from current's reads and refuses it on writes.
+A column the working schema no longer exposes but an older live version still serves, kept by a tombstone (see core's glossary). The api drops it from current's reads and drops it from writes.
 _Avoid_: legacy column
 
 **Versioned surface**:
