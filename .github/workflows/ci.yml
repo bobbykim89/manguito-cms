@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+# One run per ref. A newer push to a pull request cancels that pull request's
+# older run. Runs on master are never cancelled, so every merge commit gets its
+# own result.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # `ci` is the check name .github/rulesets/master.json requires. Renaming the
+  # job means renaming it there too, or every pull request waits forever on a
+  # check that never reports.
+  ci:
+    name: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      # Mirrors manguito-test-db in docker-compose.yml. Throwaway: created
+      # fresh for each run, so every run migrates and seeds from empty.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: manguito_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d manguito_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # .env.test is gitignored and absent here. dotenv-cli passes the process
+      # environment through when its file is missing, so every package's
+      # `dotenv -e ../../.env.test -- vitest run` reads this value.
+      DB_URL: postgresql://postgres:postgres@localhost:5432/manguito_test
+    steps:
+      - uses: actions/checkout@v7
+      # No version input: reads `packageManager` from the root package.json.
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: pnpm lint
+      # Filtered: `pnpm build` also runs sandbox's `manguito build --env .env`,
+      # which needs a gitignored .env. The sandbox build is a deploy step.
+      - name: Build packages
+        run: pnpm turbo run build --filter="./packages/*"
+      # After the build: packages resolve each other's types from dist/*.d.ts.
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Test
+        run: pnpm test
+      - name: Smoke
+        run: pnpm smoke
