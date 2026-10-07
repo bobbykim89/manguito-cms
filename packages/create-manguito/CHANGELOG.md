@@ -1,5 +1,12 @@
 # @bobbykim/create-manguito
 
+## 0.1.2
+
+### Patch Changes
+
+- 0cbc34b: The generated README lists the `version:*` commands, shows `schemas/versions/`
+  in the project tree, and explains that a new project's API is already served as v1.
+
 ## 0.1.1
 
 ### Patch Changes
