@@ -478,9 +478,9 @@ This rejects the mutation `RULESET_FILE=".github/rulesets/master.json"`, a path 
 - [ ] **Step 6: Unauthenticated run fails before reporting anything (Review Focus 4)**
 
 Run: `GH_TOKEN=invalid scripts/apply-ruleset.sh --dry-run; echo "exit=$?"`
-Expected: GitHub's `Bad credentials` error from `gh`, then `exit=1` (or any non-zero code). No `dry run:` or `✔` line.
+Expected: GitHub's `Bad credentials` error from `gh` is the **only** error, then `exit=1` (or any non-zero code). No `✖`, `dry run:` or `✔` line follows it.
 
-This rejects dropping `set -e`, or swallowing `gh` failures with `|| true`. Under either mutation, `existing_ids` comes back empty and the script prints `dry run: would POST`, reporting a plan it could never carry out. Verify that. Remove `-e` from `set -euo pipefail`, re-run and see the false `dry run:` line, then restore.
+This rejects dropping `set -e`, or swallowing `gh` failures with `|| true`. Measured during execution: with `-e` removed, the script keeps going after the failed `gh repo view`, queries `repos//rulesets`, captures GitHub's 404 JSON body as `existing_ids`, and prints a misleading `✖ … has more than one ruleset named 'master-protection'` error. It still exits 1, so the exit code alone does not reject this mutation. The "no line follows" condition does. Verify that. Remove `-e` from `set -euo pipefail`, re-run and see the extra `✖` line, then restore.
 
 - [ ] **Step 7: Gates and commit**
 

@@ -78,6 +78,8 @@ Each action is pinned to its current major version, checked against that action'
 @bobbykim/manguito-cms-test-utils#build
 ```
 
+The last entry is a placeholder: `packages/test-utils/package.json` has no `build` script, because the package exports its TypeScript source directly (`"import": "./src/index.ts"`). A real run therefore executes six build tasks, as the turbo summary `Tasks: 6 successful, 6 total` shows. (Corrected during execution, 2026-10-07.)
+
 The admin package's `build` script is `vue-tsc && vite build && tsup`, so this step also type-checks the admin package's Vue components.
 
 ### Why typecheck follows the build
