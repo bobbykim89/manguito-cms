@@ -1,6 +1,6 @@
 # Releasing Manguito CMS
 
-Manguito CMS is a pnpm + Turborepo monorepo versioned with [Changesets](https://github.com/changesets/changesets). Releases are currently **manual** (no CI publish workflow yet).
+Manguito CMS is a pnpm + Turborepo monorepo versioned with [Changesets](https://github.com/changesets/changesets). Publishing is **manual**; CI gates every change to `master` but does not publish.
 
 Six packages are published to npm under the public `@bobbykim` scope:
 
@@ -44,31 +44,41 @@ This writes a markdown file under `.changeset/`. Commit it with your change. Ope
 
 > Docs-only changes to files that are **not** shipped inside a package (e.g. the root `README.md`, `docs/**`) do not need a changeset.
 
-## 2. Version the packages (on `master`)
+## 2. Version the packages (on a release branch)
+
+`master` is protected: it accepts changes only through a pull request whose `ci` check passed ([ADR 0006](docs/adr/0006-protected-master-and-ci-gate.md)). The version bump is no exception.
 
 Once the changesets you want to release are merged:
 
 ```bash
 git checkout master
 git pull
+git checkout -b release/<x.y.z>
 pnpm version          # runs `changeset version`
+pnpm install          # refresh the lockfile for the new versions
 ```
 
-This consumes every pending changeset, bumps `package.json` versions, and updates each package's `CHANGELOG.md`. Review the diff, then commit:
+`pnpm version` consumes every pending changeset, bumps `package.json` versions, and updates each package's `CHANGELOG.md`. Review the diff, then commit and open a pull request:
 
 ```bash
 git add -A
 git commit -m "chore(release): version packages <x.y.z>"
+git push -u origin release/<x.y.z>
+gh pr create --base master --title "chore(release): version packages <x.y.z>" --body "Version Packages"
 ```
 
-> Tip: you can do this on a short-lived `release/` branch and open a "Version Packages" PR if you'd rather review the bumps before they land on `master`.
+Merge it once `ci` passes. CI installs with `--frozen-lockfile`, so a release branch that skipped `pnpm install` fails at its Install step.
 
 ## 3. Pre-publish checks
 
+After the release pull request merges:
+
 ```bash
-pnpm install          # refresh the lockfile for the new versions
-pnpm build            # build all packages in dependency order
-pnpm test             # full test suite must pass
+git checkout master
+git pull
+pnpm install --frozen-lockfile   # the lockfile was refreshed on the release branch
+pnpm build                       # build all packages in dependency order
+pnpm test                        # full test suite must pass
 ```
 
 Do not publish if the build or tests fail.
@@ -89,6 +99,8 @@ If 2FA is enabled, enter the OTP when prompted (once per package).
 git push --follow-tags
 ```
 
+Local `master` equals `origin/master` after step 3's pull, so this pushes only the new tags. The ruleset protects `refs/heads/master` only; tags are not affected.
+
 Then draft a GitHub release from the new tag(s), using the relevant `CHANGELOG.md` entries as the notes.
 
 ## Verifying a release
@@ -104,7 +116,8 @@ npm create @bobbykim/manguito@latest demo      # smoke-test the published scaffo
 - **`E402`/`ENEEDAUTH` from npm** — you're not logged in or the token lacks publish rights; re-run `npm login` or fix `NPM_TOKEN`.
 - **A package didn't publish** — `changeset publish` only publishes versions that aren't already on npm. If a bump was missed, add a changeset and re-run from step 2.
 - **`workspace:*` appeared on npm** — it shouldn't; `changeset publish` (via pnpm) rewrites these to real versions. If you published with plain `npm publish`, unpublish/deprecate and republish with `pnpm release`.
+- **Push to `master` rejected (`GH013: Repository rule violations`)** — you committed on `master` locally. Move the commit to a branch and reset `master`: `git branch release/<x.y.z> && git reset --hard origin/master`, then `git checkout release/<x.y.z>`, push it, and open a pull request.
 
 ## Future: automated releases
 
-There is no CI publish pipeline yet (`.github/workflows/` is absent). A `changesets/action` workflow can automate steps 2–5: it opens a "Version Packages" PR as changesets land, and publishes on merge using an `NPM_TOKEN` secret. Adding it is a good follow-up to make releases a merge-button.
+CI runs on every pull request and push to `master` (`.github/workflows/ci.yml`), but publishing is still manual. A `changesets/action` workflow could automate steps 2–5: it opens a "Version Packages" pull request as changesets land, and publishes on merge. It needs an `NPM_TOKEN` secret or npm trusted publishing, and npm 2FA complicates it.

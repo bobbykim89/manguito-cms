@@ -1,6 +1,6 @@
 # Context Map
 
-Manguito CMS is a pnpm monorepo of five packages, each its own context. Architectural decisions are recorded per package under [docs/adr/](./docs/adr); cross-cutting decisions live at the root of that tree ([0001 throw-vs-Result boundary](./docs/adr/0001-throw-vs-result-boundary.md), [0002 response envelope](./docs/adr/0002-response-envelope.md), [0003 real-Postgres integration tests](./docs/adr/0003-real-postgres-integration-tests.md), [0004 coverage by intention](./docs/adr/0004-coverage-by-intention.md), [0005 smoke-test layer](./docs/adr/0005-smoke-test-layer.md)). Each context owns a `CONTEXT.md` glossary.
+Manguito CMS is a pnpm monorepo of five packages, each its own context. Architectural decisions are recorded per package under [docs/adr/](./docs/adr); cross-cutting decisions live at the root of that tree ([0001 throw-vs-Result boundary](./docs/adr/0001-throw-vs-result-boundary.md), [0002 response envelope](./docs/adr/0002-response-envelope.md), [0003 real-Postgres integration tests](./docs/adr/0003-real-postgres-integration-tests.md), [0004 coverage by intention](./docs/adr/0004-coverage-by-intention.md), [0005 smoke-test layer](./docs/adr/0005-smoke-test-layer.md), [0006 protected master and CI gate](./docs/adr/0006-protected-master-and-ci-gate.md)). Each context owns a `CONTEXT.md` glossary.
 
 ## Contexts
 
