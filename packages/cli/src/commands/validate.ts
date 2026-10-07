@@ -13,6 +13,8 @@ import {
 } from '@bobbykim/manguito-cms-core'
 import { resolveConfig } from '../utils/config.js'
 import { loadEnvFile } from '../utils/env.js'
+import { resolveSchemaConfig } from '../utils/schema-config.js'
+import { loadProjectVersionModel } from '../utils/project-version-model.js'
 import { printSuccess, printValidationErrors } from '../utils/error.js'
 
 export function registerValidate(program: Command): void {
@@ -85,11 +87,22 @@ export async function runValidate(
     }
   }
 
+  let liveVersions: string[] | null = null
+
   // 6. Cross-reference validation — only when all parsing succeeded
   if (allErrors.length === 0 && parsedRoles !== null && parsedRoutesDef !== null) {
     const registry = buildSchemaRegistry(parsedSchemas, parsedRoutesDef, parsedRoles)
     const crossRefErrors = validateCrossReferences(registry, config.api.media?.max_file_size)
     allErrors.push(...crossRefErrors)
+
+    // Version checks run only against a registry that is otherwise sound.
+    // Against a broken one every version error would be noise caused by the
+    // first error, so the author would be fixing the wrong thing.
+    if (crossRefErrors.length === 0) {
+      const versions = loadProjectVersionModel(resolveSchemaConfig(cwd, config), registry)
+      if (versions.ok) liveVersions = versions.value.model.live
+      else allErrors.push(...versions.errors)
+    }
   }
 
   // 7–8. Collect and print all errors
@@ -109,5 +122,6 @@ export async function runValidate(
   )
   printSuccess('roles.json valid')
   printSuccess('routes.json valid')
+  if (liveVersions !== null) printSuccess(`Versions valid (live: ${liveVersions.join(', ')})`)
   process.stdout.write('\nNo errors found.\n')
 }

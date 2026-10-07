@@ -11,8 +11,6 @@ import {
   parseRoutes,
   buildSchemaRegistry,
   loadSchemaFile,
-  loadVersionSnapshots,
-  computeVersionModel,
   type ParseError,
   type ParsedSchema,
 } from '@bobbykim/manguito-cms-core'
@@ -26,6 +24,7 @@ import { generateVersionModel } from '../codegen/version-model.js'
 import { resolveConfig } from '../utils/config.js'
 import { resolveSchemaConfig } from '../utils/schema-config.js'
 import { loadEnvFile } from '../utils/env.js'
+import { loadProjectVersionModel } from '../utils/project-version-model.js'
 import { printGuidedError, printSuccess, printValidationErrors } from '../utils/error.js'
 
 export function registerBuild(program: Command): void {
@@ -107,6 +106,14 @@ export async function runBuild(
     parsedRoles!
   )
 
+  // Checked BEFORE any codegen write: a failed build must leave nothing half
+  // written under dist/generated.
+  const versions = loadProjectVersionModel(resolveSchemaConfig(cwd, config), registry)
+  if (!versions.ok) {
+    printValidationErrors(versions.errors, 'Version model errors', 'manguito build')
+    process.exit(1)
+  }
+
   // 4. Config loaded
   printSuccess('Config loaded')
 
@@ -129,19 +136,8 @@ export async function runBuild(
   await generateRoutes(registry, generatedDir)
   await generateForms(registry, join(generatedDir, 'forms'))
 
-  const schema = resolveSchemaConfig(cwd, config)
-  const snapshots = loadVersionSnapshots(schema, registry)
-  if (!snapshots.ok) {
-    printValidationErrors(snapshots.errors, 'Snapshot errors', 'manguito build')
-    process.exit(1)
-  }
-  const versionModel = computeVersionModel({ current: registry, snapshots: snapshots.value })
-  if (!versionModel.ok) {
-    printValidationErrors(versionModel.errors, 'Version model errors', 'manguito build')
-    process.exit(1)
-  }
-  await generateVersionModel(versionModel.value, generatedDir)
-  printSuccess(`Version model baked (live: ${versionModel.value.live.join(', ')})`)
+  await generateVersionModel(versions.value.model, generatedDir)
+  printSuccess(`Version model baked (live: ${versions.value.model.live.join(', ')})`)
 
   const programmaticDir = resolve(cwd, config.programmatic.dir)
   const resolverFiles = existsSync(programmaticDir)

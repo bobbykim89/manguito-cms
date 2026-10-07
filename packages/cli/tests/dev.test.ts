@@ -255,4 +255,23 @@ describe('runDev', () => {
       expect.objectContaining({ rateLimit: { findAll: '*' } }),
     )
   })
+
+  it('points an invalid version model at `manguito validate`', async () => {
+    // validate now runs the same check, so it is the command that shows these
+    // errors in full. MUTATION: keep 'manguito version:diff' as the command
+    // named in dev's startup error.
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('process.exit') })
+    vi.mocked(connectDb).mockResolvedValue(makeDb([{ rows: [{ count: 1 }] }]) as never)
+    vi.mocked(computeVersionModel).mockReturnValue({
+      ok: false,
+      errors: [{ file: 'schemas/versions/v1', code: 'FIELD_TYPE_CHANGED_WHILE_LIVE', message: 'type changed' }],
+    } as never)
+
+    await expect(runDev({}, { cwd: FAKE_CWD })).rejects.toThrow('process.exit')
+
+    expect(exitSpy).toHaveBeenCalledWith(1)
+    expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining('manguito validate'))
+    expect(process.stderr.write).not.toHaveBeenCalledWith(expect.stringContaining('version:diff'))
+    exitSpy.mockRestore()
+  })
 })

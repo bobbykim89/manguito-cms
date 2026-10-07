@@ -60,24 +60,32 @@ A content field has a public **label** (`ParsedField.name`) and a storage **colu
 _Avoid_: storage key, db name
 
 **Live version**:
-A version currently served — every cut snapshot under `schemas/versions/vN/` plus the current working schema. The current version is always live; its projection is the identity over the union whenever no field declares a `column`.
+A version currently served — every snapshot under `schemas/versions/vN/` plus the current working schema. The current version is always live; its projection is the identity over the union whenever no field declares a `column`.
 _Avoid_: active version, supported version
 
-**Cut**:
-Freezing the current schema as a named version. `version:cut` copies the schema folders into `versions/vN/` and bumps the current version. There is **no sealing step**: nothing is appended anywhere, because renames and retention live on the fields themselves, not on a record of the cut.
-_Avoid_: tag, release, freeze
+**Create (a version)**:
+Freezing the working schema as a named version. `version:create` copies the schema folders into `versions/vN/`, and the working schema becomes `v(N+1)`. There is **no sealing step**: nothing is appended anywhere, because renames and retention live on the fields themselves. Formerly called *cut*; `version:cut` remains as a deprecated alias.
+_Avoid_: cut (retired term), tag, release, freeze
+
+**Retire (a version)**:
+Deleting a version's snapshot so it is no longer served. The author then deletes the tombstones no remaining live version exposes (`ORPHANED_TOMBSTONE` names them), and the next migration drops their columns.
+_Avoid_: delete version, prune, sunset
 
 **Snapshot**:
-A frozen copy of one past version's schema files, stored under `versions/vN/` and never edited after being cut. Read using the current schema's `config.folders`, never hardcoded folder names, so a snapshot cut before a folder rename still loads correctly. Retirement deletes the directory outright, and the author deletes the matching tombstones — which `ORPHANED_TOMBSTONE` requires. Nothing is "never pruned" any more.
+A frozen copy of one past version's schema files, stored under `versions/vN/` and never edited after being created. Read using the current schema's `config.folders`, never hardcoded folder names, so a snapshot created before a folder rename still loads correctly. Retirement deletes the directory outright, and the author deletes the matching tombstones — which `ORPHANED_TOMBSTONE` requires. Nothing is "never pruned" any more.
 _Avoid_: frozen version, archive
 
 **Tombstone**:
-A field marked `removed: true`. Its column is retained for older live versions and this version does not expose it. Included in db codegen, excluded from core's own projections. Excluding it from the api and the admin panel is an obligation, not yet implemented — see the design doc's "Cross-package consequences" (docs/superpowers/specs/2026-09-02-declarative-version-model-design.md).
+A field marked `removed: true`. Its column is retained for older live versions and this version does not expose it. Included in db codegen, excluded from core's own projections. Excluded from the api's responses and writes and from the admin panel's schema.
 _Avoid_: soft delete, retained field
 
+**Retained column**:
+A column kept in the database for an older live version after the working schema stopped exposing it: the column a tombstone declares. Older versions read it; nothing writes it, so rows created after the removal hold null there. A `fallback`, if declared, is served in place of every null in the column, whenever the row was written.
+_Avoid_: legacy column, orphan column
+
 **Fallback**:
-The value served in place of the real one for a tombstoned column, for versions that no longer write it. Declared on current's tombstone and consumed by the older live versions' projections that still read that column, keyed by column rather than label.
-_Avoid_: default value, null replacement
+The value an older live version serves in place of every `null` in a tombstoned column, for any row, including rows created after the removal and older rows that were already `null`. Non-null values, including `0`, `""` and `false`, are served as stored. Declared on current's tombstone and consumed by the older live versions' projections that still read that column, keyed by column rather than label.
+_Avoid_: default value
 
 **Union registry**:
 The current registry itself — `=== current` by reference, tombstones included. No merging, no column correction, no retention boundary: a field's `db_column.column_name` is exactly what it declares. Feeds db codegen and drift detection.
@@ -88,7 +96,7 @@ A read of one live version's own schema files: per type, each column and the lab
 _Avoid_: view, mapping
 
 **Change classification**:
-What `describeSchemaChange` produces: per type, the column-backed fields that differ between an older version and a newer one, keyed by **column** so a rename reads as a rename rather than as a delete plus an add. Scoped to content, taxonomy and paragraph types' column-backed fields only — a field with no storage column (`paragraph`, `programmatic`, a many-to-many reference) and enum type definitions are outside the classification entirely, because neither appears in `VersionProjection` and so neither can differ between two versions' served contracts; `identical: true` means no such column changed, not that the schema is byte-identical. Within that scope, a valid model admits exactly four kinds — `added`, `renamed`, `tombstoned`, `restored`. Two more are unreachable: a column the older version exposes that is missing from the newer one is already `VERSION_COLUMN_MISSING`, and a retype is already `FIELD_TYPE_CHANGED_WHILE_LIVE`. So if the model loads, cutting is always safe.
+What `describeSchemaChange` produces: per type, the column-backed fields that differ between an older version and a newer one, keyed by **column** so a rename reads as a rename rather than as a delete plus an add. Scoped to content, taxonomy and paragraph types' column-backed fields only — a field with no storage column (`paragraph`, `programmatic`, a many-to-many reference) and enum type definitions are outside the classification entirely, because neither appears in `VersionProjection` and so neither can differ between two versions' served contracts; `identical: true` means no such column changed, not that the schema is byte-identical. Within that scope, a valid model admits exactly four kinds — `added`, `renamed`, `tombstoned`, `restored`. Two more are unreachable: a column the older version exposes that is missing from the newer one is already `VERSION_COLUMN_MISSING`, and a retype is already `FIELD_TYPE_CHANGED_WHILE_LIVE`. So if the model loads, creating a version is always safe.
 _Avoid_: diff, delta
 
 ### Routing and identity

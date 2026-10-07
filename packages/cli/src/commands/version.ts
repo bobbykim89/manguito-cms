@@ -1,9 +1,8 @@
-// manguito version:diff / version:cut / version:retire — the schema version lifecycle
+// manguito version:create / version:list / version:diff / version:retire — the schema version lifecycle
 import fs from 'node:fs'
 import path from 'node:path'
 import type { Command } from 'commander'
 import {
-  loadVersionSnapshots,
   computeVersionModel,
   describeSchemaChange,
   type SchemaRegistry,
@@ -14,11 +13,12 @@ import {
 } from '@bobbykim/manguito-cms-core'
 import { loadEnvFile } from '../utils/env.js'
 import { resolveConfig } from '../utils/config.js'
+import { loadProjectVersionModel } from '../utils/project-version-model.js'
 import { loadWorkingRegistry } from '../utils/registry.js'
 import { resolveSchemaConfig } from '../utils/schema-config.js'
 import { printValidationErrors, printSuccess, printGuidedError } from '../utils/error.js'
 import { createPromptAdapter, type PromptAdapter } from '../utils/prompt.js'
-import { formatSchemaChange } from './version-report.js'
+import { formatSchemaChange, formatVersionList } from './version-report.js'
 import { retireSnapshotDir, writeSnapshotAtomically } from './version-fs.js'
 
 /**
@@ -47,13 +47,15 @@ type VersionContext = {
   registry: SchemaRegistry
   snapshots: VersionSnapshot[]
   model: VersionModel
+  /** `config.api.prefix`, defaulted as `dev` defaults it. */
+  apiPrefix: string
 }
 
 /**
  * The preamble every version command shares: env, config, working registry,
  * snapshots, model. Exits 1 with the model's own errors when it is invalid —
- * which is also what makes cutting safe to offer, since a blocker would be
- * failing here rather than appearing after the cut.
+ * which is also what makes creating a version safe to offer, since a blocker would be
+ * failing here rather than appearing after the write.
  */
 async function loadVersionContext(
   options: { env?: string },
@@ -65,19 +67,20 @@ async function loadVersionContext(
   const schema = resolveSchemaConfig(deps.cwd, config)
   const registry = loadWorkingRegistry(deps.cwd, config, command)
 
-  const snapshots = loadVersionSnapshots(schema, registry)
-  if (!snapshots.ok) {
-    printValidationErrors(snapshots.errors, 'Snapshot errors', command)
+  const versions = loadProjectVersionModel(schema, registry)
+  if (!versions.ok) {
+    printValidationErrors(versions.errors, 'Version model errors', command)
     process.exit(1)
   }
 
-  const model = computeVersionModel({ current: registry, snapshots: snapshots.value })
-  if (!model.ok) {
-    printValidationErrors(model.errors, 'Version model errors', command)
-    process.exit(1)
+  return {
+    schema,
+    registry,
+    snapshots: versions.value.snapshots,
+    model: versions.value.model,
+    // Same default `dev` uses: the prefix the served routes actually carry.
+    apiPrefix: config.api.prefix ?? '/api',
   }
-
-  return { schema, registry, snapshots: snapshots.value, model: model.value }
 }
 
 /**
@@ -102,27 +105,52 @@ export function orphanedTombstoneErrors(input: {
   return model.errors.filter((e) => e.code === 'ORPHANED_TOMBSTONE')
 }
 
+/** Written to stderr by the deprecated `version:cut` alias, so its stdout matches `version:create`'s exactly. */
+export const VERSION_CUT_DEPRECATION =
+  '`version:cut` is deprecated — use `version:create`. It will be removed in a future release.\n'
+
 export function registerVersion(program: Command): void {
   program
     .command('version:diff')
-    .description('Show what cutting a new version would freeze')
+    .description('Show what creating a new version would freeze')
     .option('--env <path>', 'path to .env file to load')
     .action(async (options: { env?: string }) => {
       await runVersionDiff(options, { cwd: process.cwd() })
     })
 
   program
-    .command('version:cut')
-    .description('Freeze the working schema as a new version')
+    .command('version:create')
+    .description('Create a version: freeze the working schema so it keeps being served unchanged')
     .option('--env <path>', 'path to .env file to load')
     .option('--yes', 'skip the confirmation prompt')
     .action(async (options: { env?: string; yes?: boolean }) => {
-      await runVersionCut(options, { cwd: process.cwd(), prompt: createPromptAdapter() })
+      await runVersionCreate(options, { cwd: process.cwd(), prompt: createPromptAdapter() })
+    })
+
+  program
+    .command('version:list')
+    .description('List the versions being served and how far each is behind the working schema')
+    .option('--env <path>', 'path to .env file to load')
+    .action(async (options: { env?: string }) => {
+      await runVersionList(options, { cwd: process.cwd() })
+    })
+
+  // Deprecated alias of version:create. It keeps the command name and options
+  // that scripts written against 0.6 use, and its output matches
+  // version:create's. Hidden from --help; it warns on stderr so its stdout
+  // stays identical to version:create's.
+  program
+    .command('version:cut', { hidden: true })
+    .option('--env <path>', 'path to .env file to load')
+    .option('--yes', 'skip the confirmation prompt')
+    .action(async (options: { env?: string; yes?: boolean }) => {
+      process.stderr.write(VERSION_CUT_DEPRECATION)
+      await runVersionCreate(options, { cwd: process.cwd(), prompt: createPromptAdapter() })
     })
 
   program
     .command('version:retire <version>')
-    .description('Stop serving a cut version and delete its snapshot')
+    .description('Stop serving a created version and delete its snapshot')
     .option('--env <path>', 'path to .env file to load')
     .option('--yes', 'skip the confirmation prompt')
     .action(async (version: string, options: { env?: string; yes?: boolean }) => {
@@ -146,18 +174,18 @@ export async function runVersionDiff(
 
   if (change.identical) {
     process.stdout.write(
-      `\nNothing to cut — no column was added, renamed, tombstoned or restored, so ${ctx.model.current} would expose the same contract.\n`
+      `\nNothing to create — no column was added, renamed, tombstoned or restored, so ${ctx.model.current} would expose the same contract.\n`
     )
     return
   }
-  printSuccess(`Cutting now would create ${ctx.schema.base_path}/versions/${ctx.model.current}/`)
+  printSuccess(`Creating a version now would write ${ctx.schema.base_path}/versions/${ctx.model.current}/`)
 }
 
-export async function runVersionCut(
+export async function runVersionCreate(
   options: { env?: string; yes?: boolean },
   deps: { cwd: string; prompt: PromptAdapter }
 ): Promise<void> {
-  const ctx = await loadVersionContext(options, deps, 'manguito version:cut')
+  const ctx = await loadVersionContext(options, deps, 'manguito version:create')
   const from = highestSnapshot(ctx.snapshots)
   const version = ctx.model.current
 
@@ -168,8 +196,8 @@ export async function runVersionCut(
 
   if (change.identical) {
     printGuidedError(
-      `No column was added, renamed, tombstoned or restored since ${from?.version ?? 'the last cut'} — cutting ${version} would freeze an identical contract.`,
-      'Changes to paragraph, programmatic, many-to-many and enum definitions are not versioned and need no new version. A live version commits you to retaining every column it exposes, so cut only when a column actually changed — or run `manguito version:retire <version>` if you meant to shrink the live set.'
+      `No column was added, renamed, tombstoned or restored since ${from?.version ?? 'the working schema began'} — creating ${version} would freeze an identical contract.`,
+      'Changes to paragraph, programmatic, many-to-many and enum definitions are not versioned and need no new version. A live version commits you to retaining every column it exposes, so create one only when a column actually changed — or run `manguito version:retire <version>` if you meant to shrink the live set.'
     )
     process.exit(1)
   }
@@ -184,26 +212,36 @@ export async function runVersionCut(
   if (fs.existsSync(target)) {
     printGuidedError(
       `${target} already exists.`,
-      'A snapshot directory is never overwritten. Remove or rename it, then run version:cut again.'
+      'A snapshot directory is never overwritten. Remove or rename it, then run version:create again.'
     )
     process.exit(1)
   }
 
   process.stdout.write(`${formatSchemaChange(change)}\n\n`)
-  // `model.live` already contains `version` — it is derived as highest + 1,
-  // so `version` is the working schema's own current version and always
-  // live. The filter is defensive against that invariant changing underfoot,
-  // not dead code: without it, a future model that stopped listing `current`
-  // in `live` would silently duplicate `version` in this list instead of
-  // failing loudly.
-  const live = [...ctx.model.live.filter((v) => v !== version), version].join(' ')
+
+  // The working schema is live too, as the version after the one created.
+  // Listing only the snapshots told a first-time author "v1 are live" and
+  // hid that their working schema had just become v2.
+  const next = `v${Number.parseInt(version.slice(1), 10) + 1}`
+  const liveAfter = [...ctx.model.live.filter((v) => v !== version), version, next]
+
+  // A first create is the moment versioning becomes visible, so say what it
+  // does to the URLs. Printed with --yes too: it explains, it does not ask.
+  if (from === null) {
+    const prefix = ctx.apiPrefix
+    process.stdout.write(
+      `This creates ${version} from your working schema. ${prefix}/${version} keeps serving it\n` +
+        `unchanged; your working schema becomes ${next}, served at ${prefix}/${next} and ${prefix}.\n\n`
+    )
+  }
+
   process.stdout.write(
-    `After cutting, ${live} are live. Every column those versions expose must stay in the\n` +
-      `schema — as a live field or a tombstone — until you retire them.\n\n`
+    `After creating ${version}, these versions are live: ${liveAfter.join(' ')}. Every column they\n` +
+      `expose must stay in the schema — as a live field or a tombstone — until you retire them.\n\n`
   )
 
   if (options.yes !== true) {
-    const ok = await deps.prompt.confirm(`Freeze the working schema as ${version}?`)
+    const ok = await deps.prompt.confirm(`Create ${version} from the working schema?`)
     if (!ok) {
       process.stdout.write('Cancelled. Nothing was written.\n')
       return
@@ -223,8 +261,29 @@ export async function runVersionCut(
     process.exit(1)
   }
 
-  printSuccess(`Froze the working schema as ${version} at ${target}`)
-  process.stdout.write(`Live: ${live}.  Working schema is now v${Number.parseInt(version.slice(1), 10) + 1}.\n`)
+  printSuccess(`Created ${version} at ${target}`)
+  process.stdout.write(`Live: ${liveAfter.join(' ')}.  Working schema is now ${next}.\n`)
+}
+
+export async function runVersionList(
+  options: { env?: string },
+  deps: { cwd: string }
+): Promise<void> {
+  const ctx = await loadVersionContext(options, deps, 'manguito version:list')
+  const current = ctx.model.current
+  const versionNumber = (v: string) => Number.parseInt(v.slice(1), 10)
+
+  // Every snapshot directory is a live version: presence is the truth, so a
+  // retired version is simply absent. Compared with the WORKING schema, which
+  // is what a consumer of that version is behind.
+  const older = [...ctx.snapshots]
+    .sort((a, b) => versionNumber(a.version) - versionNumber(b.version))
+    .map((s) => ({
+      version: s.version,
+      change: describeSchemaChange({ from: s, to: { version: current, registry: ctx.registry } }),
+    }))
+
+  process.stdout.write(`${formatVersionList({ prefix: ctx.apiPrefix, current, older })}\n`)
 }
 
 export async function runVersionRetire(
@@ -242,10 +301,10 @@ export async function runVersionRetire(
   if (!ctx.snapshots.some((s) => s.version === version)) {
     const existing = ctx.snapshots.map((s) => s.version).join(', ')
     printGuidedError(
-      `${version} is not a cut version.`,
+      `${version} is not a created version.`,
       existing === ''
-        ? 'No versions have been cut yet — run `manguito version:cut` first.'
-        : `Cut versions: ${existing}.`
+        ? 'No versions have been created yet — run `manguito version:create` first.'
+        : `Created versions: ${existing}.`
     )
     process.exit(1)
   }
@@ -258,8 +317,8 @@ export async function runVersionRetire(
   if (highest !== null && highest.version === version) {
     const target = path.join(ctx.schema.base_path, 'versions', version)
     printGuidedError(
-      `${version} is the newest cut version and cannot be retired.`,
-      `The working schema is ${ctx.model.current} because ${version} is the highest snapshot — retiring it would renumber the working schema back onto ${version}, and anyone pinned to ${version} would get a different contract. Cutting a version with a real contract change makes ${version} retirable. If ${version} was cut in error, delete ${target} by hand — safe only while nothing yet consumes ${version}, since deleting the newest snapshot renumbers the working schema back onto it.`
+      `${version} is the newest created version and cannot be retired.`,
+      `The working schema is ${ctx.model.current} because ${version} is the highest snapshot — retiring it would renumber the working schema back onto ${version}, and anyone pinned to ${version} would get a different contract. Creating a newer version with a real contract change makes ${version} retirable. If ${version} was created in error, delete ${target} by hand — safe only while nothing yet consumes ${version}, since deleting the newest snapshot renumbers the working schema back onto it.`
     )
     process.exit(1)
   }
@@ -280,7 +339,7 @@ export async function runVersionRetire(
       process.stdout.write(`  ${o.file}\n    ${o.message}\n\n`)
     }
     process.stdout.write(
-      'Until you do, `manguito validate` will report ORPHANED_TOMBSTONE. Deleting them\n' +
+      'Until you do, `manguito validate` and `manguito build` will fail. Deleting them\n' +
         'shrinks the union and lets the next migration DROP those columns.\n\n'
     )
   }

@@ -144,6 +144,19 @@ field's `type` determines which extra options it accepts:
 
 That's 13 field types in total.
 
+### Renaming and removing fields
+
+Three optional properties apply to any field that has a storage column. That
+is every type except `paragraph`, `programmatic` and many-to-many `reference`:
+
+| Property | Meaning |
+| --- | --- |
+| `column` | The storage column. Defaults to `name`. Declare it when you rename a field, so the data stays where it is. |
+| `removed` | `true` keeps the column for older API versions while the working schema stops exposing the field. Requires `required: false`. |
+| `fallback` | Served by older versions wherever the stored value is `null`, including rows created after the removal. Only with `removed: true`. |
+
+See [`schema-versioning.md`](./schema-versioning.md) for when and how to use them.
+
 ### The `enum` field's XOR rule
 
 An `enum` field must have **either** `ref` **or** `values` — never both,
@@ -259,3 +272,5 @@ Each entry in `base_paths` has a `name` and a `path` (must start with `/`).
   `manguito.config.ts` blocks, adapter factories, and environment variables.
 - [`programmatic-fields.md`](./programmatic-fields.md) — computed, read-time
   fields backed by TypeScript resolvers.
+- [`schema-versioning.md`](./schema-versioning.md) — renaming and removing
+  fields without breaking existing API consumers.
