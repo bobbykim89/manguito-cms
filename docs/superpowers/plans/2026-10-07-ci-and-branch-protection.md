@@ -685,7 +685,7 @@ Show the maintainer that line and the contents of `.github/rulesets/master.json`
 Run: `scripts/apply-ruleset.sh`
 Expected: `✔ POST repos/bobbykim89/manguito-cms/rulesets`, then an `id:` and a `url:` line. Record the id.
 
-If GitHub answers `403` or `404`, the `gh` token lacks admin rights on the repo. The script exits non-zero and nothing was written. The maintainer refreshes the token's scopes (`gh auth refresh -s admin:repo_hook,repo`, or uses a token with the repo's Administration permission) and re-runs.
+If GitHub answers `403` or `404`, the `gh` token lacks admin rights on the repo. The script exits non-zero and nothing was written. The token needs the `repo` scope and the account needs admin rights on the repo; `admin:repo_hook` (webhooks) is irrelevant to rulesets. The maintainer fixes the token (`gh auth refresh -s repo`, or a fine-grained token with the repo's Administration permission) and re-runs.
 
 - [ ] **Step 3: Confirm the rules apply to `master`**
 

@@ -426,7 +426,7 @@ The **Field Type Registry** is the architectural keystone. Every supported field
 | [Phase 7](./docs/phase-07.md) | Testing — unit, integration, smoke tests                      |
 | [Phase 8](./docs/phase-08.md) | Admin panel — Vue 3, auto-generated forms                     |
 | [Phase 9](./docs/phase-09.md) | CLI — `init`, `dev`, `build`, `start`, `validate` commands    |
-| Phase 10                      | Deployment — Lambda, Neon, CI/CD pipeline (done)               |
+| Phase 10                      | Deployment — Lambda, Neon (done); CI gate added in v2, publishing is manual |
 
 ---
 
@@ -439,17 +439,22 @@ manguito-cms/
 │   ├── db/          # Drizzle module, Postgres adapter, migrations
 │   ├── api/         # Hono app, route generation, storage adapters
 │   ├── admin/       # Vue 3 admin panel
-│   └── cli/         # manguito CLI binary
+│   ├── cli/         # manguito CLI binary
+│   ├── create-manguito/  # `npm create @bobbykim/manguito` scaffolder
+│   └── test-utils/  # Shared test fixtures and helpers — not published
 ├── apps/
 │   └── sandbox/     # Local test harness — not published
+│       └── schemas/ # Example content-, paragraph-, taxonomy- and enum-types
 ├── docs/
 │   ├── phase-01.md
+│   ├── adr/         # Architecture decision records
 │   └── ...
-├── schemas/
-│   ├── content-types/
-│   ├── paragraph-types/
-│   ├── taxonomy-types/
-│   └── enum-types/
+├── .github/
+│   ├── workflows/ci.yml        # The `ci` check
+│   └── rulesets/master.json    # Protection for master
+├── scripts/
+│   ├── apply-ruleset.sh        # Applies rulesets/master.json via gh
+│   └── lint-plan.sh            # `pnpm lint:plans`
 ├── turbo.json
 ├── pnpm-workspace.yaml
 └── package.json
@@ -483,8 +488,32 @@ The integration suites read `DB_URL` from the repo-root `.env.test`, which is
 gitignored, so a fresh clone must create it from the committed example. Port 5435 is
 deliberate: 5432 is commonly taken by a natively installed Postgres.
 
-Other gates, none of which run in CI today: `pnpm typecheck`, `pnpm lint`, and
+Other local gates: `pnpm lint`, `pnpm typecheck`, `pnpm smoke`, and
 `pnpm lint:plans <file>` for anything under `docs/superpowers/`.
+
+### Workflow and CI
+
+`master` is protected: nobody pushes to it directly, the owner included. Every change
+goes through a pull request:
+
+1. Branch from an up-to-date `master` (e.g. `feat/…`, `fix/…`, `docs/…`).
+2. Commit with conventional-commit messages: `type(scope): subject`.
+3. If the change ships inside a published package, add a changeset (`pnpm changeset`).
+4. Open a pull request. It can merge only once the `ci` check passes. No approval is
+   required.
+
+`ci` ([`.github/workflows/ci.yml`](./.github/workflows/ci.yml)) runs on every pull
+request and every push to `master`, against a throwaway Postgres 16. Its steps:
+`pnpm install --frozen-lockfile`, `pnpm lint`,
+`pnpm turbo run build --filter="./packages/*"`, `pnpm typecheck`, `pnpm test`, then
+`pnpm smoke`. Running those locally before you push predicts the result. The ruleset
+lives in [`.github/rulesets/master.json`](./.github/rulesets/master.json); see
+[ADR 0006](./docs/adr/0006-protected-master-and-ci-gate.md) for the reasoning and the
+recovery steps if CI is ever broken from outside.
+
+If a test starts reading a new environment variable, declare it in `turbo.json`'s
+`passThroughEnv` for the `test` task. Turborepo hides undeclared variables from tasks.
+Locally `.env.test` masks this, so the omission shows up only in CI.
 
 `pnpm build` additionally builds `apps/sandbox`, the demo app, which needs real
 storage credentials — `cp apps/sandbox/.env.example apps/sandbox/.env` leaves
@@ -496,7 +525,7 @@ package development use `pnpm build:packages`, which is self-contained.
 `api` for its request helpers. It is why `build:packages` orders the builds explicitly
 rather than leaving it to Turborepo. Harmless today, worth untangling eventually.
 
-Releases are cut with Changesets — see [RELEASE.md](./RELEASE.md) for the step-by-step process.
+Releases are cut with Changesets. The version bump goes through a pull request like any other change, then publishing runs from `master`. See [RELEASE.md](./RELEASE.md) for the step-by-step process.
 
 ---
 
