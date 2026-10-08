@@ -16,3 +16,5 @@ export function isColumnBacked(field: { db_column: DbColumn | null }): boolean {
   const col = field.db_column
   return col !== null && col.column_name !== '' && !col.junction
 }
+
+const ciProbeUnused = 1
