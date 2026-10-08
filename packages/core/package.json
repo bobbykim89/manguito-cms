@@ -38,6 +38,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "is-odd": "3.0.1",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^25.9.5",
     "dotenv-cli": "latest",
