@@ -5,11 +5,13 @@ on:
   push:
     branches: [master]
 
-# One run per ref. A newer push to a pull request cancels that pull request's
-# older run. Runs on master are never cancelled, so every merge commit gets its
-# own result.
+# A pull request shares one group per ref, so a newer push cancels its older
+# run. A push to master gets a group of its own commit: GitHub cancels a
+# *pending* run whenever another is queued in the same group, even with
+# cancel-in-progress false, so a shared master group would drop the middle
+# run of three quick merges. Per-commit groups give every merge its own result.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:

@@ -54,11 +54,11 @@ Once the changesets you want to release are merged:
 git checkout master
 git pull
 git checkout -b release/<x.y.z>
-pnpm version          # runs `changeset version`
+pnpm run version      # runs `changeset version`; plain `pnpm version` is pnpm's built-in bump command
 pnpm install          # refresh the lockfile for the new versions
 ```
 
-`pnpm version` consumes every pending changeset, bumps `package.json` versions, and updates each package's `CHANGELOG.md`. Review the diff, then commit and open a pull request:
+`pnpm run version` consumes every pending changeset, bumps `package.json` versions, and updates each package's `CHANGELOG.md`. Review the diff, then commit and open a pull request:
 
 ```bash
 git add -A
@@ -112,7 +112,7 @@ npm create @bobbykim/manguito@latest demo      # smoke-test the published scaffo
 
 ## Troubleshooting
 
-- **`ERR_PNPM_...` / lockfile mismatch during publish** — run `pnpm install` after `pnpm version` so the lockfile matches the new versions, then commit it.
+- **`ERR_PNPM_...` / lockfile mismatch during publish** — run `pnpm install` after `pnpm run version` so the lockfile matches the new versions, then commit it.
 - **`E402`/`ENEEDAUTH` from npm** — you're not logged in or the token lacks publish rights; re-run `npm login` or fix `NPM_TOKEN`.
 - **A package didn't publish** — `changeset publish` only publishes versions that aren't already on npm. If a bump was missed, add a changeset and re-run from step 2.
 - **`workspace:*` appeared on npm** — it shouldn't; `changeset publish` (via pnpm) rewrites these to real versions. If you published with plain `npm publish`, unpublish/deprecate and republish with `pnpm release`.

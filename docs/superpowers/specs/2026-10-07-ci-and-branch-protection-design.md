@@ -33,7 +33,7 @@ File: `.github/workflows/ci.yml`.
 
 - `pull_request`, all branches.
 - `push` to `master`. This catches anything a merge breaks, which matters because the ruleset does not require branches to be up to date (Section 2).
-- `concurrency`: group by workflow and ref, with `cancel-in-progress: true`. A newer push to the same pull request cancels the older run.
+- `concurrency`: a pull request is grouped by workflow and ref with `cancel-in-progress: true`, so a newer push to the same pull request cancels the older run. A push to `master` is grouped by workflow and commit SHA and is never cancelled. (Corrected during review, 2026-10-07: a shared `master` group with `cancel-in-progress: false` is not enough, because GitHub cancels a *pending* run whenever another is queued in the same group, which drops the middle run of three quick merges.)
 
 ### One job, `ci`
 
