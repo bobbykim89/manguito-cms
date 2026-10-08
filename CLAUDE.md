@@ -3,7 +3,7 @@
 ## Project
 
 Self-hosted schema-driven headless CMS.
-Read docs/phase-XX.md for v1/MVP context; for v2 feature work, read the relevant design in docs/v2/ before making changes.
+Read docs/phase-01.md … phase-09.md for v1/MVP context (phase 10 has no doc); for v2 feature work, read the relevant design in docs/v2/ before making changes.
 Architectural decisions are recorded as ADRs in docs/adr/ (cross-cutting at the root, per-package in subfolders); see CONTEXT-MAP.md for the package map and per-package CONTEXT.md glossaries.
 Before writing a design spec or implementation plan under docs/superpowers/, read docs/superpowers/PLAN-QUALITY.md and run `pnpm lint:plans <file>`.
 
@@ -22,7 +22,7 @@ Phase 6 — Auth module — JWT, roles, route protection
 Phase 7 — Testing — unit, integration, smoke tests
 Phase 8 — Admin panel — Vue 3, auto-generated forms
 Phase 9 — CLI — init, dev, build, start, validate commands
-Phase 10 — Deployment — Lambda, Neon, CI/CD pipeline
+Phase 10 — Deployment — Lambda, Neon (publishing to npm stays manual — RELEASE.md)
 
 ## Packages
 
@@ -31,6 +31,8 @@ Phase 10 — Deployment — Lambda, Neon, CI/CD pipeline
 @bobbykim/manguito-cms-api — hono app, route generation, storage adapters
 @bobbykim/manguito-cms-admin — vue 3 admin panel
 @bobbykim/manguito-cms-cli — manguito CLI binary
+@bobbykim/create-manguito — `npm create @bobbykim/manguito` project scaffolder
+@bobbykim/manguito-cms-test-utils — private shared test fixtures, never published
 
 ## Stack
 
@@ -63,10 +65,23 @@ CLI: commander + @inquirer/prompts
 
 ## Commands
 
-pnpm install — install all packages
-pnpm dev — start all watch processes via Turborepo
-pnpm test — run all tests
-pnpm build — build all packages in dependency order
+Scripts live in the root package.json. The non-obvious ones:
+
+- `pnpm test` needs the test database: `pnpm db:test:up` and a `.env.test` copied from `.env.test.example`.
+- Build packages with `pnpm turbo run build --filter="./packages/*"` (what CI runs). `pnpm build` also builds apps/sandbox, which needs real storage credentials; `pnpm build:packages` skips create-manguito.
+- `pnpm run version` runs `changeset version`; bare `pnpm version` is pnpm's built-in bump and runs nothing.
+
+## Workflow and CI
+
+`master` is protected by a GitHub ruleset with no bypass (docs/adr/0006): every change lands through a pull request whose `ci` check passed.
+
+- Work on a branch (`feat/`, `fix/`, `docs/`, `chore/`, `release/`), then open a PR against master.
+- Commit messages are conventional commits: `type(scope): subject`.
+- Changes that ship inside a published package carry a changeset (`pnpm changeset`); docs, `.github/` and tooling changes do not.
+- Before pushing, run the `ci` steps locally: `pnpm lint`, the filtered build above, `pnpm typecheck`, `pnpm test`, `pnpm smoke`.
+- A test that reads a new environment variable needs it declared in turbo.json `passThroughEnv` for the `test` task: Turborepo hides undeclared variables, and `.env.test` masks the omission locally, so it fails only in CI.
+- The `ci` job name in .github/workflows/ci.yml is the check .github/rulesets/master.json requires; rename both together, and keep the workflow free of `paths` filters.
+- Releases: follow RELEASE.md (the version bump goes through a `release/<x.y.z>` PR; publishing then runs from master).
 
 ## Do not
 
