@@ -11,12 +11,14 @@
       "cache": false
     },
     "test": {
-      "dependsOn": ["^build"]
+      "dependsOn": ["^build"],
+      "passThroughEnv": ["DB_URL"]
     },
     "lint": {},
     "smoke": {
       "dependsOn": ["test"],
-      "cache": false
+      "cache": false,
+      "passThroughEnv": ["DB_URL"]
     }
   }
 }

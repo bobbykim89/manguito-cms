@@ -40,9 +40,10 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      # .env.test is gitignored and absent here. dotenv-cli passes the process
-      # environment through when its file is missing, so every package's
-      # `dotenv -e ../../.env.test -- vitest run` reads this value.
+      # .env.test is gitignored and absent here, so this value reaches the tests
+      # through two hops: turbo.json declares DB_URL in `passThroughEnv` (Turbo's
+      # strict env mode hides undeclared variables from tasks), and dotenv-cli
+      # passes the process environment through when its file is missing.
       DB_URL: postgresql://postgres:postgres@localhost:5432/manguito_test
     steps:
       - uses: actions/checkout@v7

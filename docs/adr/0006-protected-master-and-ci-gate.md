@@ -19,6 +19,7 @@ status: accepted
 - The string `ci` couples `ci.yml` (the job's id and `name`) and `master.json` (the required context). Renaming one without the other leaves every pull request waiting on a check that never reports.
 - The workflow must not gain `paths` or `paths-ignore` filters, for the same reason: a docs-only pull request would never get its required check.
 - The required check is pinned to the GitHub Actions app (`integration_id` 15368), so a commit status named `ci` from any other source does not satisfy it.
+- An environment variable a test reads must be declared in `turbo.json`'s `passThroughEnv` for the `test` task (today: `DB_URL`). Turbo's strict environment mode hides undeclared variables from tasks. Locally `.env.test` masks this, because dotenv loads the file inside the task, so an undeclared variable passes locally and fails only in CI.
 - CI builds `./packages/*` only. The sandbox's `build` script is `manguito build --env .env`, a deploy step that needs a gitignored `.env`.
 - This makes true what [ADR 0003](0003-real-postgres-integration-tests.md) assumed: "CI provisions a fresh Postgres service so every run starts clean."
 - Tags are outside the ruleset (`refs/heads/master` only), so the release's `git push --follow-tags` is unaffected.

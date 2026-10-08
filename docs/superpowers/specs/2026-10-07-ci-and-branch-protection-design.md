@@ -86,7 +86,7 @@ The admin package's `build` script is `vue-tsc && vite build && tsup`, so this s
 
 Packages resolve each other's types through their built output. `packages/core/package.json` exports `"types": "./dist/index.d.ts"`, so `tsc --noEmit` in `api` or `cli` needs `core` and `db` built first.
 
-### Why the test scripts need no CI-specific change
+### How the job's `DB_URL` reaches the tests
 
 Every package test script that needs the database has the form `dotenv -e ../../.env.test -- vitest run`, and `apps/sandbox`'s `smoke` script has the same shape. `.env.test` is gitignored and absent in CI. `dotenv-cli` does not fail on a missing file and passes the process environment through. Verified with:
 
@@ -94,7 +94,18 @@ Every package test script that needs the database has the form `dotenv -e ../../
 DB_URL=from-env npx dotenv -e ../../.env.nonexistent -- node -e "console.log('DB_URL=' + process.env.DB_URL)"
 ```
 
-That prints `DB_URL=from-env` and exits 0. The job-level `DB_URL` therefore reaches `globalSetup.ts`'s `process.env['DB_URL']` read and `packages/test-utils/src/db.ts`'s, unchanged.
+That prints `DB_URL=from-env` and exits 0. That covers the `dotenv` hop only.
+
+**Correction made during execution (2026-10-07).** This section originally concluded that the job-level `DB_URL` reaches `globalSetup.ts` and `packages/test-utils/src/db.ts` unchanged, so no CI-specific change was needed. That was false, and the first CI run failed at Test with `✖ Integration tests need DB_URL, and no .env.test was found.` The traced path skipped a hop: `pnpm test` runs `turbo run test`, and Turborepo 2 (2.10.4 here) runs tasks in strict environment mode, which hides every variable `turbo.json` does not declare. Locally this never showed, because `.env.test` supplies `DB_URL` inside the task, after Turbo has already filtered the environment.
+
+Reproduced locally, with `.env.test` moved aside and `DB_URL` exported: `pnpm turbo run test --filter=@bobbykim/manguito-cms-db --force` fails exactly as CI did, and the same command with `--env-mode=loose` passes (89/89). The fix declares the variable on the two tasks whose scripts read it, in `turbo.json`:
+
+```json
+"test":  { "dependsOn": ["^build"], "passThroughEnv": ["DB_URL"] },
+"smoke": { "dependsOn": ["test"], "cache": false, "passThroughEnv": ["DB_URL"] }
+```
+
+`passThroughEnv` rather than `env`: the database URL differs per machine and does not change what a test produces, so it must not enter the task hash. With it, the strict-mode command passes with or without `.env.test`. `pnpm smoke` runs `pnpm --filter sandbox smoke`, not Turbo, so CI's smoke step never depended on this; `smoke` gets the declaration so `turbo run smoke` behaves the same.
 
 `pnpm test` is `turbo run test --concurrency=1`. Its dry run lists `test` tasks for `create-manguito`, `admin`, `api`, `cli`, `core` and `db`, plus those packages' `build` dependencies (`turbo.json`: `test` depends on `^build`). It schedules no `sandbox` task. The sandbox has no `test` script; it is covered only by step 9.
 
