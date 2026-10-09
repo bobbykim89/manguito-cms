@@ -4,6 +4,8 @@ import type { ParsedField } from '@bobbykim/manguito-cms-core'
 import type { MediaItem } from '@bobbykim/manguito-cms-core'
 import { useUiStore } from '../../stores/ui'
 import MediaSelectModal from '../shared/MediaSelectModal.vue'
+import MediaThumbnail from '../shared/MediaThumbnail.vue'
+import { fileName } from '../../utils/file-kind'
 
 const props = defineProps<{
   field: ParsedField
@@ -56,10 +58,6 @@ function formatSize(bytes: number): string {
   if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`
   if (bytes >= 1_000) return `${(bytes / 1_000).toFixed(0)} KB`
   return `${bytes} B`
-}
-
-function filenameFrom(url: string): string {
-  return url.split('/').pop() ?? url
 }
 
 // ── Upload logic (XMLHttpRequest — not useApiClient) ──────────────────────────
@@ -292,25 +290,13 @@ onMounted(async () => {
       class="mt-1 flex flex-col gap-2 rounded-md border border-gray-200 p-3"
     >
       <div class="flex items-center gap-3">
-        <!-- Image thumbnail -->
-        <img
-          v-if="displayItem.type === 'image'"
-          :src="displayItem.url"
-          :alt="displayItem.alt ?? ''"
-          class="h-16 w-16 rounded object-cover"
-        />
-        <!-- Video / file icon placeholder -->
-        <div
-          v-else
-          class="flex h-16 w-16 items-center justify-center rounded bg-gray-100 text-2xl text-gray-400"
-          aria-hidden="true"
-        >
-          {{ displayItem.type === 'video' ? '▶' : '📄' }}
+        <div class="h-16 w-16 shrink-0 overflow-hidden rounded">
+          <MediaThumbnail :item="displayItem" />
         </div>
 
         <div class="min-w-0 flex-1">
           <p class="truncate text-sm font-medium text-gray-800">
-            {{ filenameFrom(displayItem.url) }}
+            {{ fileName(displayItem.url) }}
           </p>
           <p class="text-xs text-gray-500">{{ formatSize(displayItem.file_size) }}</p>
         </div>

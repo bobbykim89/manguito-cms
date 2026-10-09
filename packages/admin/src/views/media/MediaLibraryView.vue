@@ -10,6 +10,8 @@ import { useMediaStore } from '../../stores/media'
 import { useTabIndicator } from '../../composables/useTabIndicator'
 import Pagination from '../../components/shared/Pagination.vue'
 import ConfirmDialog from '../../components/shared/ConfirmDialog.vue'
+import MediaThumbnail from '../../components/shared/MediaThumbnail.vue'
+import { fileName } from '../../utils/file-kind'
 
 const router = useRouter()
 const api = useApiClient()
@@ -442,31 +444,14 @@ function cancelUpload() {
         <button
           type="button"
           class="h-full w-full overflow-hidden rounded-[14px] border border-card-border shadow-[0_1px_2px_rgba(24,24,48,0.04),0_8px_22px_rgba(24,24,48,0.05)] transition-all hover:-translate-y-[3px] hover:shadow-[0_12px_30px_rgba(24,24,48,0.12)] focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          :aria-label="`View ${item.alt ?? item.url.split('/').pop()}`"
+          :aria-label="`View ${item.alt ?? fileName(item.url)}`"
           @click="goToDetail(item.id)"
         >
-          <!-- Image thumbnail -->
-          <img
-            v-if="item.type === 'image'"
-            :src="item.url"
-            :alt="item.alt ?? ''"
-            class="h-full w-full object-cover"
-            loading="lazy"
+          <MediaThumbnail
+            :item="item"
+            :label="fileName(item.url)"
+            :detail="formatSize(item.file_size)"
           />
-
-          <!-- Video / file icon -->
-          <div
-            v-else
-            class="flex h-full w-full flex-col items-center justify-center gap-1 bg-gray-50 p-1 text-gray-400"
-          >
-            <span class="text-3xl" aria-hidden="true">
-              {{ item.type === 'video' ? '▶' : '📄' }}
-            </span>
-            <span class="max-w-full truncate text-center text-xs">
-              {{ item.url.split('/').pop() }}
-            </span>
-            <span class="text-xs text-gray-300">{{ formatSize(item.file_size) }}</span>
-          </div>
         </button>
       </div>
     </div>

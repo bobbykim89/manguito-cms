@@ -2,6 +2,8 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import type { MediaItem } from '@bobbykim/manguito-cms-core'
 import { useApiClient } from '../../composables/useApiClient'
+import MediaThumbnail from './MediaThumbnail.vue'
+import { fileName } from '../../utils/file-kind'
 
 type MediaType = 'image' | 'video' | 'file'
 
@@ -188,29 +190,10 @@ function confirm() {
                   : 'border-transparent hover:border-gray-300',
               ]"
               :aria-pressed="selectedItem?.id === item.id"
-              :aria-label="`Select ${item.alt ?? item.url.split('/').pop()}`"
+              :aria-label="`Select ${item.alt ?? fileName(item.url)}`"
               @click="selectedItem = item"
             >
-              <!-- Image thumbnail -->
-              <img
-                v-if="item.type === 'image'"
-                :src="item.url"
-                :alt="item.alt ?? ''"
-                class="h-full w-full object-cover"
-                loading="lazy"
-              />
-
-              <!-- Video / file icon -->
-              <div
-                v-else
-                class="flex h-full w-full flex-col items-center justify-center gap-1 bg-gray-50 text-gray-400"
-                aria-hidden="true"
-              >
-                <span class="text-3xl">{{ item.type === 'video' ? '▶' : '📄' }}</span>
-                <span class="max-w-full truncate px-1 text-xs">
-                  {{ item.url.split('/').pop() }}
-                </span>
-              </div>
+              <MediaThumbnail :item="item" :label="fileName(item.url)" />
 
               <!-- Selection overlay tick -->
               <div
