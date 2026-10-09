@@ -137,6 +137,17 @@ describe('writing references', () => {
     expect((await patch(body.data!.id, { title: 'renamed' })).status).toBe(200)
     expect(await countRows(db, fx.tables.tags, `left_id = '${body.data!.id}'`)).toBe(2)
   })
+
+  it('a malformed id in a "many" reference is a 422 that keeps the existing links', async () => {
+    // MUTATION: accept any string array for a 'many' reference. The PATCH then
+    // deletes both links, inserts tagA, fails on 'bogus' (22P02) and 500s,
+    // leaving one link.
+    const { body } = await create({ tags: [tagA, tagB] })
+    const res = await patch(body.data!.id, { tags: [tagA, 'bogus'] })
+    expect(res.status).toBe(422)
+    expect(res.body.error!.code).toBe('VALIDATION_ERROR')
+    expect(await countRows(db, fx.tables.tags, `left_id = '${body.data!.id}'`)).toBe(2)
+  })
 })
 
 describe('taxonomy writes', () => {
