@@ -27,7 +27,9 @@ import {
   deleteParagraphField,
   persistJunctionField,
   oneOrMany,
+  paragraphItems,
 } from '../../relations.js'
+import { checkRelationInput } from '../../relation-input.js'
 import type { createPermissionMiddleware } from '../../middleware/permission.js'
 import type { ContentRepos } from '../content.js'
 import { isColumnBacked } from '../../field-keys.js'
@@ -100,6 +102,22 @@ function checkRequiredFields(
   return fields
     .filter((f) => f.required && isEmpty(data[f.name]))
     .map((f) => ({ field: f.name, message: `${f.label} is required` }))
+}
+
+// 422 when a relation value's shape does not match its cardinality. Runs before
+// any write, so a refused request changes nothing.
+function relationShapeError(
+  c: Context,
+  fields: ParsedField[],
+  body: Record<string, unknown>,
+  registry: SchemaRegistry
+): Response | null {
+  const details = checkRelationInput(fields, body, registry)
+  if (details.length === 0) return null
+  return c.json(
+    { ok: false, error: { code: 'VALIDATION_ERROR', message: 'Relation fields have the wrong shape', details } },
+    422
+  )
 }
 
 // Extract IDs from already-resolved media field values ({ id: string } objects).
@@ -424,6 +442,8 @@ export function registerAdminContentRoutes(
     // pre-checks (slug rules, singleton existence, 404s) stay in the routes.
 
     const writeNewItem = async (c: Context, body: Record<string, unknown>) => {
+        const shapeError = relationShapeError(c, contentType.fields, body, registry)
+        if (shapeError) return shapeError
         // Inbound boundary: the request body arrives label-keyed; everything
         // downstream (insert data, media delta) works in storage keys.
         const storageBody = fieldKeys.toStorage(body)
@@ -502,7 +522,7 @@ export function registerAdminContentRoutes(
             if (comp.component !== 'paragraph-embed' || !comp.ref) continue
             const pType = registry.paragraph_types[comp.ref]
             if (!pType) continue
-            const items = Array.isArray(body[f.name]) ? (body[f.name] as unknown[]) : []
+            const items = paragraphItems(f, body[f.name])
             mediaDeltas.push(await persistParagraphField(db, itemId, contentType.db.table_name, f.name, pType, items, registry))
           }
           for (const f of junctionFields) {
@@ -593,6 +613,8 @@ export function registerAdminContentRoutes(
       existing: Record<string, unknown>,
       body: Record<string, unknown>,
     ) => {
+        const shapeError = relationShapeError(c, contentType.fields, body, registry)
+        if (shapeError) return shapeError
         // Inbound boundary: the request body arrives label-keyed; everything
         // downstream (insert data, media delta) works in storage keys.
         const storageBody = fieldKeys.toStorage(body)
@@ -655,14 +677,16 @@ export function registerAdminContentRoutes(
         // Delete+reinsert paragraph and junction rows
         if (db) {
           for (const f of patchParagraphFields) {
+            if (!(f.name in body)) continue
             const comp = f.ui_component as { component: string; ref?: string }
             if (comp.component !== 'paragraph-embed' || !comp.ref) continue
             const pType = registry.paragraph_types[comp.ref]
             if (!pType) continue
-            const items = Array.isArray(body[f.name]) ? (body[f.name] as unknown[]) : []
+            const items = paragraphItems(f, body[f.name])
             mediaDeltas.push(await persistParagraphField(db, id, contentType.db.table_name, f.name, pType, items, registry))
           }
           for (const f of patchJunctionFields) {
+            if (!(f.name in body)) continue
             const junction = f.db_column!.junction!
             const relatedIds = Array.isArray(body[f.name])
               ? (body[f.name] as unknown[]).filter((v): v is string => typeof v === 'string')
@@ -856,6 +880,8 @@ export function registerAdminContentRoutes(
       requirePermission('content:create'),
       async (c) => {
         const body = (await c.req.json()) as Record<string, unknown>
+        const shapeError = relationShapeError(c, taxonomyType.fields, body, registry)
+        if (shapeError) return shapeError
 
         // Inbound boundary: the request body arrives label-keyed; everything
         // downstream (insert data, media delta) works in storage keys.
@@ -908,7 +934,7 @@ export function registerAdminContentRoutes(
             if (comp.component !== 'paragraph-embed' || !comp.ref) continue
             const pType = registry.paragraph_types[comp.ref]
             if (!pType) continue
-            const items = Array.isArray(body[f.name]) ? (body[f.name] as unknown[]) : []
+            const items = paragraphItems(f, body[f.name])
             mediaDeltas.push(await persistParagraphField(db, taxItemId, taxonomyType.db.table_name, f.name, pType, items, registry))
           }
         }
@@ -941,6 +967,8 @@ export function registerAdminContentRoutes(
             404
           )
         }
+        const shapeError = relationShapeError(c, taxonomyType.fields, body, registry)
+        if (shapeError) return shapeError
 
         if (body['published'] === true) {
           const publishDeny = await requirePermission('content:edit')(c, async () => {})
@@ -995,11 +1023,12 @@ export function registerAdminContentRoutes(
 
         if (db) {
           for (const f of taxPatchParagraphFields) {
+            if (!(f.name in body)) continue
             const comp = f.ui_component as { component: string; ref?: string }
             if (comp.component !== 'paragraph-embed' || !comp.ref) continue
             const pType = registry.paragraph_types[comp.ref]
             if (!pType) continue
-            const items = Array.isArray(body[f.name]) ? (body[f.name] as unknown[]) : []
+            const items = paragraphItems(f, body[f.name])
             mediaDeltas.push(await persistParagraphField(db, id, taxonomyType.db.table_name, f.name, pType, items, registry))
           }
         }

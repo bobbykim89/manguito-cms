@@ -62,15 +62,15 @@ async function fetchParagraphMediaIds(
 function nestedParagraphFields(
   pType: ParsedParagraphType,
   registry?: SchemaRegistry
-): Array<{ fieldName: string; nType: ParsedParagraphType }> {
+): Array<{ fieldName: string; nType: ParsedParagraphType; field: ParsedField }> {
   if (!registry) return []
-  const out: Array<{ fieldName: string; nType: ParsedParagraphType }> = []
+  const out: Array<{ fieldName: string; nType: ParsedParagraphType; field: ParsedField }> = []
   for (const f of pType.fields) {
     if (f.db_column !== null) continue
     const comp = f.ui_component as { component: string; ref?: string }
     if (comp.component !== 'paragraph-embed' || !comp.ref) continue
     const nType = registry.paragraph_types[comp.ref]
-    if (nType) out.push({ fieldName: f.name, nType })
+    if (nType) out.push({ fieldName: f.name, nType, field: f })
   }
   return out
 }
@@ -155,7 +155,7 @@ export async function persistParagraphField(
 
     // Persist this row's nested paragraph items against the row just inserted.
     for (const n of nested) {
-      const nestedItems = Array.isArray(pItem[n.fieldName]) ? (pItem[n.fieldName] as unknown[]) : []
+      const nestedItems = paragraphItems(n.field, pItem[n.fieldName])
       const d = await persistParagraphField(
         db,
         rowId,
@@ -268,6 +268,16 @@ export type RelationDef =
 // rows reads its lowest-order row.
 export function oneOrMany<T>(cardinality: Cardinality, list: T[]): T | T[] | null {
   return cardinality === 'one' ? (list[0] ?? null) : list
+}
+
+// The rows persistParagraphField stores for one paragraph field's request value.
+// A 'one' field carries an object (or null), a 'many' field an array. Callers
+// validate shape first (checkRelationInput), so any other value means "none".
+export function paragraphItems(field: ParsedField, value: unknown): unknown[] {
+  if (relationCardinality(field) === 'one') {
+    return typeof value === 'object' && value !== null && !Array.isArray(value) ? [value] : []
+  }
+  return Array.isArray(value) ? value : []
 }
 
 export function buildRelationsMap(
