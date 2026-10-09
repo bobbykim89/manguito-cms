@@ -7,6 +7,7 @@ import type {
   ParsedField,
   ParsedParagraphType,
 } from '@bobbykim/manguito-cms-core'
+import { relationCardinality } from '@bobbykim/manguito-cms-core'
 import {
   SORTABLE_FIELDS,
   RELATION_FIELD_TYPES,
@@ -25,6 +26,7 @@ import {
   persistParagraphField,
   deleteParagraphField,
   persistJunctionField,
+  oneOrMany,
 } from '../../relations.js'
 import type { createPermissionMiddleware } from '../../middleware/permission.js'
 import type { ContentRepos } from '../content.js'
@@ -61,7 +63,10 @@ async function loadParagraphRows(
     const nType = registry.paragraph_types[comp.ref]
     if (!nType) continue
     for (const row of rows) {
-      row[nf.name] = await loadParagraphRows(db, registry, nType, row['id'] as string, nf.name)
+      row[nf.name] = oneOrMany(
+        relationCardinality(nf) ?? 'many',
+        await loadParagraphRows(db, registry, nType, row['id'] as string, nf.name)
+      )
     }
   }
 
@@ -322,7 +327,7 @@ export function registerAdminContentRoutes(
               if (comp.component !== 'paragraph-embed' || !comp.ref) continue
               const pType = registry.paragraph_types[comp.ref]
               if (!pType) continue
-              row[f.name] = await loadParagraphRows(db, registry, pType, id, f.name)
+              row[f.name] = oneOrMany(relationCardinality(f) ?? 'many', await loadParagraphRows(db, registry, pType, id, f.name))
             } else if (f.db_column.junction) {
               const j = f.db_column.junction
               const r = await db.execute(

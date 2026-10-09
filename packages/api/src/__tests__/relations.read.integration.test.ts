@@ -150,8 +150,8 @@ const POST_RELATIONS = {
     type: 'junction', table: CAT_TABLE, junction_table: JUNC_TABLE,
     left_column: 'left_id', right_column: 'right_id', order_column: false,
   } as const,
-  quotes: { type: 'paragraph', table: PARA_TABLE } as const,
-  epigraphs: { type: 'paragraph', table: PARA_TABLE } as const,
+  quotes: { type: 'paragraph', table: PARA_TABLE, cardinality: 'many' } as const,
+  epigraphs: { type: 'paragraph', table: PARA_TABLE, cardinality: 'many' } as const,
 }
 
 // ─── DB lifecycle ─────────────────────────────────────────────────────────────
