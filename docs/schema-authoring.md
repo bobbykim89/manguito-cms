@@ -222,8 +222,13 @@ API and GraphQL:
 | `reference`, `one-to-one` (and deprecated `one-to-many`) | an id, or the resolved object with `?include=` | `null` |
 | `reference`, `many-to-many` | an array of ids, or of resolved objects with `?include=` | `[]` |
 
-Writes must use the same shapes. A wrong shape is rejected with 422, naming the
-field. An update leaves out relation fields it does not mention.
+Writes must use the same shapes, and reference ids must be UUIDs. A wrong shape
+is rejected with 422, naming the field. An update leaves out relation fields it
+does not mention.
+
+Older admin releases let a `one-to-one` paragraph hold several items; such a
+field reads as its first item and keeps only that one the next time it is
+saved, so change its `rel` to `one-to-many` wherever a list was intended.
 
 **Deleting something a reference points at:**
 
