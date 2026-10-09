@@ -73,4 +73,46 @@ describe('MediaThumbnail', () => {
     const w = mount(MediaThumbnail, { props: { item: pdf } })
     expect(w.text().trim()).toBe('PDF')
   })
+
+  it('shows a video caption over its frame when one is given', () => {
+    // MUTATION: render label/detail only in the file branch. Video tiles in the
+    // library then lose the name and size the old placeholder showed.
+    const w = mount(MediaThumbnail, { props: { item: video, label: 'clip.mp4', detail: '3.4 MB' } })
+    expect(w.find('video').exists()).toBe(true)
+    expect(w.text()).toContain('clip.mp4')
+    expect(w.text()).toContain('3.4 MB')
+  })
+
+  it('tries again when a failed video is replaced by another item', async () => {
+    // MUTATION: never reset `videoFailed`. In the field preview, which keeps
+    // the thumbnail mounted while the selection changes, every later video then
+    // shows the fallback icon.
+    const w = mount(MediaThumbnail, { props: { item: video } })
+    await w.get('video').trigger('error')
+    expect(w.find('video').exists()).toBe(false)
+    await w.setProps({ item: { ...video, url: 'https://cdn.example.com/other.mp4' } })
+    expect(w.get('video').attributes('src')).toBe('https://cdn.example.com/other.mp4#t=0.1')
+  })
+
+  it('starts watching for visibility when the item becomes a video after mount', async () => {
+    // MUTATION: set up the IntersectionObserver only in onMounted. A video
+    // selected after an image then never gets a src: a permanent black box.
+    let fire: ((entries: Array<{ isIntersecting: boolean }>) => void) | undefined
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        constructor(cb: (entries: Array<{ isIntersecting: boolean }>) => void) {
+          fire = cb
+        }
+        observe() {}
+        disconnect() {}
+      }
+    )
+    const w = mount(MediaThumbnail, { props: { item: image } })
+    await w.setProps({ item: video })
+    expect(fire).toBeDefined()
+    fire!([{ isIntersecting: true }])
+    await w.vm.$nextTick()
+    expect(w.get('video').attributes('src')).toBe(`${video.url}#t=0.1`)
+  })
 })

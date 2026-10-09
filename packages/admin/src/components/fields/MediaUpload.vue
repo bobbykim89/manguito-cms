@@ -5,6 +5,7 @@ import type { MediaItem } from '@bobbykim/manguito-cms-core'
 import { useUiStore } from '../../stores/ui'
 import MediaSelectModal from '../shared/MediaSelectModal.vue'
 import MediaThumbnail from '../shared/MediaThumbnail.vue'
+import { fileName } from '../../utils/file-kind'
 
 const props = defineProps<{
   field: ParsedField
@@ -57,10 +58,6 @@ function formatSize(bytes: number): string {
   if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`
   if (bytes >= 1_000) return `${(bytes / 1_000).toFixed(0)} KB`
   return `${bytes} B`
-}
-
-function filenameFrom(url: string): string {
-  return url.split('/').pop() ?? url
 }
 
 // ── Upload logic (XMLHttpRequest — not useApiClient) ──────────────────────────
@@ -299,7 +296,7 @@ onMounted(async () => {
 
         <div class="min-w-0 flex-1">
           <p class="truncate text-sm font-medium text-gray-800">
-            {{ filenameFrom(displayItem.url) }}
+            {{ fileName(displayItem.url) }}
           </p>
           <p class="text-xs text-gray-500">{{ formatSize(displayItem.file_size) }}</p>
         </div>

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { fileKind } from '../file-kind'
+import { fileKind, fileName } from '../file-kind'
 
 describe('fileKind', () => {
   it('labels PDFs', () => {
@@ -68,5 +68,35 @@ describe('fileKind', () => {
     // MUTATION: return an empty label, which renders an empty badge.
     expect(fileKind('application/octet-stream', 'https://cdn.example.com/media/blob').label).toBe('FILE')
     expect(fileKind('application/octet-stream', 'https://cdn.example.com/media/archive.toolongext').label).toBe('FILE')
+  })
+
+  it('ignores MIME parameters such as a charset', () => {
+    // MUTATION: compare the raw stored mime_type. "text/csv; charset=utf-8"
+    // then misses the CSV rule and reads TXT, and a PDF with parameters reads
+    // as its extension or FILE.
+    expect(fileKind('text/csv; charset=utf-8', 'https://cdn.example.com/x').label).toBe('XLS')
+    expect(fileKind('Application/PDF; name="a.pdf"', 'https://cdn.example.com/x').label).toBe('PDF')
+  })
+
+  it('recognises the archive MIME types browsers actually report', () => {
+    // MUTATION: list only application/zip. Chrome on Windows reports .zip as
+    // application/x-zip-compressed, which then reads as FILE.
+    for (const mime of ['application/x-zip-compressed', 'application/x-gzip', 'application/x-rar-compressed', 'application/vnd.rar']) {
+      expect(fileKind(mime, 'https://cdn.example.com/x').label).toBe('ZIP')
+    }
+  })
+})
+
+describe('fileName', () => {
+  it('returns the last path segment without the query string or fragment', () => {
+    // MUTATION: `url.split('/').pop()`. A signed URL's caption then reads
+    // "report.pdf?X-Amz-Signature=…".
+    expect(fileName('https://cdn.example.com/a/report.pdf?X-Amz-Signature=abc')).toBe('report.pdf')
+    expect(fileName('https://cdn.example.com/a/clip.mp4#t=3')).toBe('clip.mp4')
+  })
+
+  it('falls back to the whole URL when there is no path segment', () => {
+    // MUTATION: return '' for a URL ending in "/". The caption would be blank.
+    expect(fileName('https://cdn.example.com/')).toBe('https://cdn.example.com/')
   })
 })

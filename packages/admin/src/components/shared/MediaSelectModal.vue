@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import type { MediaItem } from '@bobbykim/manguito-cms-core'
 import { useApiClient } from '../../composables/useApiClient'
 import MediaThumbnail from './MediaThumbnail.vue'
+import { fileName } from '../../utils/file-kind'
 
 type MediaType = 'image' | 'video' | 'file'
 
@@ -189,10 +190,10 @@ function confirm() {
                   : 'border-transparent hover:border-gray-300',
               ]"
               :aria-pressed="selectedItem?.id === item.id"
-              :aria-label="`Select ${item.alt ?? item.url.split('/').pop()}`"
+              :aria-label="`Select ${item.alt ?? fileName(item.url)}`"
               @click="selectedItem = item"
             >
-              <MediaThumbnail :item="item" :label="item.url.split('/').pop()" />
+              <MediaThumbnail :item="item" :label="fileName(item.url)" />
 
               <!-- Selection overlay tick -->
               <div

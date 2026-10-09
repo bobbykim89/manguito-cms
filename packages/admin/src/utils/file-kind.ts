@@ -6,6 +6,15 @@ export type FileTone = 'red' | 'blue' | 'green' | 'orange' | 'gray'
 
 export type FileKind = { label: string; tone: FileTone }
 
+// Tailwind background class for each badge tone.
+export const TONE_CLASS: Record<FileTone, string> = {
+  red: 'bg-red-600',
+  blue: 'bg-blue-600',
+  green: 'bg-green-600',
+  orange: 'bg-orange-500',
+  gray: 'bg-gray-500',
+}
+
 // Checked in order; the first match wins. CSV sits before the generic text/*
 // rule so it reads as a spreadsheet, not as plain text.
 const RULES: Array<{ test: (mime: string) => boolean; kind: FileKind }> = [
@@ -36,19 +45,29 @@ const RULES: Array<{ test: (mime: string) => boolean; kind: FileKind }> = [
   {
     test: (m) =>
       m === 'application/zip' ||
+      m === 'application/x-zip-compressed' ||
       m === 'application/gzip' ||
+      m === 'application/x-gzip' ||
       m === 'application/x-tar' ||
-      m === 'application/x-7z-compressed',
+      m === 'application/x-7z-compressed' ||
+      m === 'application/x-rar-compressed' ||
+      m === 'application/vnd.rar',
     kind: { label: 'ZIP', tone: 'gray' },
   },
   { test: (m) => m.startsWith('text/'), kind: { label: 'TXT', tone: 'gray' } },
 ]
 
-// The URL's extension, upper-cased, or '' when it has none worth showing.
-// Query strings and fragments are dropped first: signed storage URLs carry dots.
-function extensionOf(url: string): string {
+// The file name a media URL ends in, without its query string or fragment
+// (signed storage URLs carry both). Falls back to the whole URL when the path
+// has no last segment.
+export function fileName(url: string): string {
   const path = url.split(/[?#]/)[0] ?? ''
-  const name = path.split('/').pop() ?? ''
+  return path.split('/').pop() || url
+}
+
+// The URL's extension, upper-cased, or '' when it has none worth showing.
+function extensionOf(url: string): string {
+  const name = fileName(url)
   const dot = name.lastIndexOf('.')
   if (dot <= 0) return ''
   const ext = name.slice(dot + 1)
@@ -56,7 +75,8 @@ function extensionOf(url: string): string {
 }
 
 export function fileKind(mimeType: string, url: string): FileKind {
-  const mime = mimeType.toLowerCase()
+  // Stored MIME types can carry parameters ("text/csv; charset=utf-8").
+  const mime = (mimeType.split(';')[0] ?? '').trim().toLowerCase()
   const rule = RULES.find((r) => r.test(mime))
   if (rule) return rule.kind
   return { label: extensionOf(url) || 'FILE', tone: 'gray' }
