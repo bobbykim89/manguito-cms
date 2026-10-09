@@ -73,6 +73,8 @@ export function relationCardinality(field: ParsedField): Cardinality | null
 
 It reads `rel` from `field.ui_component`: `paragraph-embed` and `typeahead-select` both carry `rel: RelationType` (`packages/core/src/registry/types.ts`). The admin receives the same `ParsedField` objects from the schema endpoint, so it calls the function with no new data. It is pure, and its output is plain data ([ADR core/0002](../../adr/core/0002-serializable-parser-output.md)).
 
+**A browser-safe subpath export.** *(Added during planning.)* The admin imports only types from core today. Core's main entry also exports Node-only code (the schema file loader, `bcryptjs`), so a runtime import of it would pull that into the admin's browser bundle. Core therefore also publishes the rule as `@bobbykim/manguito-cms-core/cardinality`: an extra tsup entry, `src/cardinality.ts`, which imports types only, plus an `exports` entry in `package.json`. This is the pattern `@bobbykim/manguito-cms-api` already uses ([ADR api/0006](../../adr/api/0006-subpath-exports.md)). The admin imports the subpath; the API and CLI import the main entry.
+
 ### `findSchemaDeprecations`
 
 The parser has no warning channel (`grep -rni warning packages/core/src` finds none), and adding one would change `ParseResult`, which every consumer depends on. Deprecations are instead computed from the finished registry:
@@ -91,7 +93,7 @@ It returns one entry per `reference` field with `rel: 'one-to-many'`, across con
 
 > `<type_name>.<field_name>` uses `one-to-many`, which is deprecated for references. It holds a single item, the same as `one-to-one`. Use `one-to-one` for a single item, or `many-to-many` for a list.
 
-`manguito validate`, `build` and `dev` print each deprecation as a warning after the registry loads (`loadWorkingRegistry` in `packages/cli/src/utils/registry.ts` is their shared loader). A warning never changes the command's exit code.
+`manguito validate`, `build` and `dev` print each deprecation as a warning after the registry is built. *(Corrected during planning: they do not share `loadWorkingRegistry`, which only `version.ts` uses. Each calls `buildSchemaRegistry` itself: `runValidate` in `validate.ts`, `build.ts`, and `parseAllSchemas` in `dev.ts`. A shared helper, `printSchemaDeprecations`, prints at each of those three sites through the existing `printWarning`.)* A warning never changes the command's exit code.
 
 ### Unchanged
 
@@ -121,8 +123,8 @@ The admin create, update and patch routes for content and taxonomy validate ever
 
 - **Nested paragraph fields** inside paragraph items are validated the same way.
 - **Error messages** name the field and the expected shape, e.g. "`blog_link` holds one item: send an object or null."
-- **Normalising for the save code.** After validation, a `'one'` paragraph value becomes the array that `persistParagraphField` takes: `[object]`, or `[]` for `null`.
-- **A field absent from the body** is not touched, as today.
+- **Normalising for the save code.** After validation, a `'one'` paragraph value becomes the array that `persistParagraphField` takes: `[object]`, or `[]` for `null`. Nested values inside `persistParagraphField` get the same normalisation; today it reads them with `Array.isArray(...) ? ... : []`, so a nested object is dropped there too.
+- **A field absent from the body is not touched.** *(Corrected during planning: this is a fix, not today's behaviour.)* `writeExistingItem`, which serves PATCH and the singleton PUT, and the taxonomy PATCH route update only the column fields present in the body. But they call `persistParagraphField` for every paragraph field, and `persistJunctionField` for every many-to-many field, passing `[]` when the field is absent. So an update that leaves a paragraph or many-to-many field out erases it. The admin form always sends every field, which is why the UI never showed it. After this change, a paragraph or junction field absent from an update body is skipped, matching the column fields.
 - **Inputs that change from accepted to 422:** `[id]` for a `'one'` reference, and `[object]` for a `'one'` paragraph.
 
 ## Section 3 — The admin panel
@@ -132,9 +134,7 @@ The admin create, update and patch routes for content and taxonomy validate ever
   - **`'one'`:** a single item. When empty it shows an add button; when filled it shows that item's fields and a remove button, with no reordering and no second item. Its `update:modelValue` emits the item object or `null`, and never adds the `order` key the list mode adds.
 - **`ReferenceSelect.vue`** replaces its `isMulti` rule (`relType.value !== 'one-to-one'`) with `relationCardinality(field) === 'many'`. A deprecated `one-to-many` reference becomes a single picker that emits a string or `null`.
 - **`defaultForField` in `ContentFormView.vue`** returns `null` for `'one'` and `[]` for `'many'`, for paragraphs and references alike.
-- **`useFormValidation.ts`:**
-  - `required` fails for a `'one'` relation whose value is `null`;
-  - the `max_items` check runs only for `'many'` fields.
+- **`useFormValidation.ts`** needs no code change. *(Corrected during planning, traced in `checkField`: its `isEmpty` treats `null` as empty, so `required` already fails for an empty `'one'` value, and `max_items` only checks arrays, so an object is never counted.)* Tests pin both behaviours.
 
 The single-item editor reuses the existing paragraph item markup. There is no visual redesign.
 
@@ -158,9 +158,11 @@ Before the admin delete routes for content and taxonomy (`app.delete` in `regist
 For each such field they count the rows whose column equals the item's id. If any count is above zero, the delete is refused:
 
 - status **409**, code **`ITEM_IN_USE`** (added to `ErrorCode` in `packages/core/src/errors.ts` and to `ERROR_STATUS_MAP` in `packages/api/src/middleware/error.ts`);
-- a message built from the schema labels, for example: "This item is still used by 3 items: 2 in Blog Post (Author), 1 in Page › Card (Link target). Remove it from those first." A paragraph-type location names the paragraph type's label.
+- a message built from the schema labels, for example: "This item is still used by 3 items: 2 in Blog Post (Author), 1 in Card (Link target). Remove it from those first." A paragraph-type location names the paragraph type's label only, because a paragraph row records its parent only as `parent_type`. *(Example corrected during planning.)*
 
 The `RESTRICT` constraint is the backstop for a use added between the check and the delete. A foreign-key violation raised by a delete (Postgres SQLSTATE `23503`) also becomes 409 `ITEM_IN_USE`, with the message "This item is still in use. Remove it from the items that use it first."
+
+**Delete order.** *(Added during planning.)* Both delete routes currently clean up first: they delete the item's paragraph rows and decrement media reference counts, then call `repo.delete`. With `RESTRICT`, a refused delete would leave the item with its paragraphs gone and its media counts wrong. The API has no transactions (`grep -rn "transaction(" packages/api/src packages/db/src` finds none). So both routes change to: run the check, delete the item row (a `23503` here returns 409 with nothing else touched), then delete paragraph rows and apply the media delta. Paragraph rows have no FK back to their parent, so they can be removed after it.
 
 The plan confirms that the admin's delete action shows the API's error message.
 
@@ -168,7 +170,7 @@ The plan confirms that the admin's delete action shows the API's error message.
 
 `errorHandler` in `packages/api/src/middleware/error.ts` currently returns `err.message` for every error. After this change:
 
-- an error without a deliberate `code` (the `INTERNAL_ERROR` fallback) returns `{ ok: false, error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } }`;
+- an error whose `code` is not a key of `ERROR_STATUS_MAP`, or is `INTERNAL_ERROR`, returns `{ ok: false, error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } }`. That covers an error with no code and a raw Postgres error whose `code` is an SQLSTATE such as `23503`, which today would be returned with its message;
 - the full error still goes to `console.error`, as today;
 - errors raised with a deliberate code keep their messages.
 
