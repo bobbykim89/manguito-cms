@@ -80,4 +80,31 @@ describe('useFormValidation', () => {
     expect(Object.keys(errors.value)).toHaveLength(0)
     expect(touched.value.size).toBe(0)
   })
+
+  it('validate(): required one-to-one paragraph left empty (null) → required error', () => {
+    // MUTATION: drop `value === null` from isEmpty. An empty one-to-one
+    // paragraph would then pass "required".
+    const { validate, touch, errors } = useFormValidation()
+    const field = makeField({
+      name: 'link', label: 'Link', field_type: 'paragraph', db_column: null,
+      ui_component: { component: 'paragraph-embed', ref: 'paragraph--link', rel: 'one-to-one' },
+    })
+    touch('link')
+    validate([field], { link: null })
+    expect(errors.value['link']).toBe('Link is required.')
+  })
+
+  it('validate(): max_items never counts a one-to-one object', () => {
+    // MUTATION: treat a non-array value as a one-item list in the max_items
+    // check. A filled one-to-one paragraph would then fail max 0.
+    const { validate, touch, errors } = useFormValidation()
+    const field = makeField({
+      name: 'link', label: 'Link', field_type: 'paragraph', required: false, db_column: null,
+      validation: { required: false, max_items: 0 },
+      ui_component: { component: 'paragraph-embed', ref: 'paragraph--link', rel: 'one-to-one' },
+    })
+    touch('link')
+    validate([field], { link: { url: 'a' } })
+    expect(errors.value['link']).toBeUndefined()
+  })
 })

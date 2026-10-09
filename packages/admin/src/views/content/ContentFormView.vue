@@ -11,6 +11,7 @@ import { useContentStore } from '../../stores/content'
 import ConfirmDialog from '../../components/shared/ConfirmDialog.vue'
 import { useTabIndicator } from '../../composables/useTabIndicator'
 import { componentFor, fieldExtraProps } from '../../components/fields/field-registry'
+import { defaultForField } from '../../utils/field-defaults'
 
 const route = useRoute()
 const router = useRouter()
@@ -79,38 +80,6 @@ const slugChanged = computed(
 )
 
 // ── Form helpers ──────────────────────────────────────────────────────────────
-
-function defaultForField(field: ParsedField): unknown {
-  switch (field.field_type) {
-    case 'text/plain':
-    case 'text/rich':
-      return ''
-    case 'integer':
-    case 'float':
-      return null
-    case 'boolean':
-      return false
-    case 'date':
-      return null
-    case 'image':
-    case 'video':
-    case 'file':
-      return null
-    case 'enum':
-      return ''
-    case 'reference': {
-      const rel =
-        field.ui_component.component === 'typeahead-select'
-          ? field.ui_component.rel
-          : 'one-to-one'
-      return rel === 'one-to-one' ? null : []
-    }
-    case 'paragraph':
-      return []
-    default:
-      return null
-  }
-}
 
 function initForm(source?: Record<string, unknown>) {
   const f: Record<string, unknown> = {}

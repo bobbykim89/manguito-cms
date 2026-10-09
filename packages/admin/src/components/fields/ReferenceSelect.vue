@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
 import type { ParsedField } from '@bobbykim/manguito-cms-core'
+import { relationCardinality } from '@bobbykim/manguito-cms-core/cardinality'
 import { useApiClient } from '../../composables/useApiClient'
 import { useSchemaStore } from '../../stores/schema'
 
@@ -25,9 +26,8 @@ const typeaheadComp = computed(() => {
 })
 
 const refName = computed(() => typeaheadComp.value?.ref ?? '')
-const relType = computed(() => typeaheadComp.value?.rel ?? 'one-to-one')
 const maxItems = computed(() => props.field.validation.max_items ?? null)
-const isMulti = computed(() => relType.value !== 'one-to-one')
+const isMulti = computed(() => relationCardinality(props.field) === 'many')
 const isContentRef = computed(() => !!schemaStore.contentTypes[refName.value])
 
 // First text/plain field in the referenced schema — used as the display label.
