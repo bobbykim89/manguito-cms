@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { randomUUID } from 'node:crypto'
 import { sql } from 'drizzle-orm'
-import { getTestDb, createTestApp, authenticatedRequest } from '@bobbykim/manguito-cms-test-utils'
+import { buildSchemaRegistry } from '@bobbykim/manguito-cms-core'
+import { getTestDb, createTestApp, authenticatedRequest, testParsedSchema } from '@bobbykim/manguito-cms-test-utils'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import {
   makeCardinalityFixture,
@@ -11,6 +13,8 @@ import {
   insertParagraph,
   countRows,
   seedTestUsers,
+  parseOrThrow,
+  tableSql,
 } from './relation-cardinality.fixture'
 
 const fx = makeCardinalityFixture('rcdel')
@@ -18,16 +22,45 @@ const EXTRA = 'rcdel_outside_ref'
 let db: DrizzlePostgresInstance
 let app: ReturnType<typeof createTestApp>
 
+// A taxonomy whose required single reference points at its own type, built
+// through core's real parser so its column and RESTRICT rule are real.
+const SELF = 'taxonomy--rcdelself_node'
+const selfRegistry = buildSchemaRegistry(
+  [
+    parseOrThrow(
+      {
+        name: SELF,
+        label: 'Node',
+        type: 'taxonomy-type',
+        fields: [
+          { name: 'name', label: 'Name', type: 'text/plain', required: false },
+          { name: 'parent', label: 'Parent', type: 'reference', target: SELF, rel: 'one-to-one', required: true },
+        ],
+      },
+      'taxonomy-type'
+    ),
+  ],
+  { base_paths: [] },
+  testParsedSchema.roles
+)
+const selfTable = selfRegistry.taxonomy_types[SELF]!.db.table_name
+let selfApp: ReturnType<typeof createTestApp>
+
 beforeAll(async () => {
   process.env['AUTH_SECRET'] ??= 'test-secret'
   db = await getTestDb()
   await seedTestUsers(db)
   await createFixtureTables(db, fx)
   app = createTestApp(fx.registry, db)
+  const self = selfRegistry.taxonomy_types[SELF]!
+  await db.execute(sql.raw(`DROP TABLE IF EXISTS "${selfTable}" CASCADE`))
+  await db.execute(sql.raw(tableSql(selfTable, self.system_fields, self.fields)))
+  selfApp = createTestApp(selfRegistry, db)
 }, 30_000)
 
 afterAll(async () => {
   await db.execute(sql.raw(`DROP TABLE IF EXISTS "${EXTRA}"`))
+  await db.execute(sql.raw(`DROP TABLE IF EXISTS "${selfTable}" CASCADE`))
   await dropFixtureTables(db, fx)
 })
 
@@ -106,5 +139,42 @@ describe('deletes that must still succeed', () => {
     })
     expect((await delPost(post)).status).toBe(200)
     expect(await countRows(db, fx.tables.link, `parent_id = '${post}'`)).toBe(0)
+  })
+})
+
+describe('a required reference to its own type', () => {
+  const insertNode = async (name: string, parent: string | 'self'): Promise<string> => {
+    const id = randomUUID()
+    await db.execute(
+      sql`INSERT INTO ${sql.raw(`"${selfTable}"`)} (id, name, parent, published)
+          VALUES (${id}, ${name}, ${parent === 'self' ? id : parent}, true)`
+    )
+    return id
+  }
+  const delNode = (id: string) => authenticatedRequest(selfApp, 'admin', 'DELETE', `/admin/api/taxonomy/${SELF}/${id}`)
+
+  it('does not count the item pointing at itself, so it can be deleted', async () => {
+    // MUTATION: count every row of the owner's table, including the row being
+    // deleted. An item that references itself is then refused with 409,
+    // although Postgres would delete it under RESTRICT.
+    const node = await insertNode('alone', 'self')
+    expect((await delNode(node)).status).toBe(200)
+    expect(await countRows(db, selfTable, `id = '${node}'`)).toBe(0)
+  })
+
+  it('still refuses the delete while another item points at it', async () => {
+    // MUTATION: skip the count entirely when the referring field's owner is
+    // the type being deleted. The other item's use is then missed and the
+    // delete reaches RESTRICT (the race message), not the counted 409.
+    const root = await insertNode('root', 'self')
+    const child = await insertNode('child', root)
+    const res = await delNode(root)
+    expect(res.status).toBe(409)
+    expect(((await res.json()) as { error: { message: string } }).error.message).toBe(
+      'This item is still used by 1 item: 1 in Node (Parent). Remove it from those first.'
+    )
+    expect(await countRows(db, selfTable, `id = '${root}'`)).toBe(1)
+    expect((await delNode(child)).status).toBe(200)
+    expect((await delNode(root)).status).toBe(200)
   })
 })

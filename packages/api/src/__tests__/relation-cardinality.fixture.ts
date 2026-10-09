@@ -26,7 +26,7 @@ export type CardinalityFixture = {
   tables: { post: string; tag: string; link: string; card: string; tags: string }
 }
 
-function parseOrThrow(raw: unknown, type: 'content-type' | 'taxonomy-type' | 'paragraph-type'): ParsedSchema {
+export function parseOrThrow(raw: unknown, type: 'content-type' | 'taxonomy-type' | 'paragraph-type'): ParsedSchema {
   const result = parseSchema(raw, type, `${type}.json`)
   if (!result.ok) throw new Error(`fixture failed to parse: ${JSON.stringify(result.errors)}`)
   return result.schema
@@ -121,7 +121,8 @@ const PG_TYPE: Record<string, string> = {
   decimal: 'numeric', boolean: 'boolean', timestamp: 'timestamp',
 }
 
-function tableSql(table: string, systemFields: SystemField[], fields: ParsedField[]): string {
+// CREATE TABLE for a parsed type's own columns (junction tables excluded).
+export function tableSql(table: string, systemFields: SystemField[], fields: ParsedField[]): string {
   const cols = systemFields.map(
     (s) =>
       `"${s.name}" ${PG_TYPE[s.db_type]}` +

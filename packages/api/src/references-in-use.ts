@@ -41,8 +41,11 @@ export async function findRequiredReferrers(
   for (const owner of owners) {
     for (const f of owner.fields) {
       if (!isRequiredSingleReferenceTo(f, targetType)) continue
+      // A reference to its own type may point at the item itself. Postgres
+      // deletes such a row under RESTRICT, so it is not a use to refuse.
+      const notSelf = owner.name === targetType ? sql` AND id <> ${id}` : sql``
       const r = await db.execute(
-        sql`SELECT count(*)::int AS n FROM ${sql.raw(quoteIdent(owner.db.table_name))} WHERE ${sql.raw(quoteIdent(f.db_column!.column_name))} = ${id}`
+        sql`SELECT count(*)::int AS n FROM ${sql.raw(quoteIdent(owner.db.table_name))} WHERE ${sql.raw(quoteIdent(f.db_column!.column_name))} = ${id}${notSelf}`
       )
       const n = (r.rows[0] as { n: number }).n
       if (n > 0) out.push({ type_label: owner.label, field_label: f.label, count: n })
