@@ -259,10 +259,6 @@ export type RelationDef =
   | JunctionRelationDef
   | MediaRelationDef
 
-// Derives a content type's relations map from its parsed fields, so paragraph/
-// reference/media fields are actually resolved instead of silently dropped.
-// Junction and foreign_key info is already on each field's db_column; paragraph
-// fields store their target table on the paragraph type, hence the registry.
 // A 'one' relation reads as its single row (or null); a 'many' relation as the
 // list. Rows arrive ordered by "order", so a 'one' field holding legacy extra
 // rows reads its lowest-order row.
@@ -280,6 +276,10 @@ export function paragraphItems(field: ParsedField, value: unknown): unknown[] {
   return Array.isArray(value) ? value : []
 }
 
+// Derives a content type's relations map from its parsed fields, so paragraph/
+// reference/media fields are actually resolved instead of silently dropped.
+// Junction and foreign_key info is already on each field's db_column; paragraph
+// fields store their target table on the paragraph type, hence the registry.
 export function buildRelationsMap(
   fields: ParsedField[],
   registry: SchemaRegistry
