@@ -22,6 +22,7 @@ import {
   parseRoles,
   parseRoutes,
   buildSchemaRegistry,
+  findSchemaDeprecations,
   loadSchemaFile,
   hashPassword,
   type SchemaRegistry,
@@ -39,7 +40,7 @@ import { shouldBridgeToHono } from './dev-routing.js'
 import { resolveConfig } from '../utils/config.js'
 import { resolveSchemaConfig } from '../utils/schema-config.js'
 import { connectDb } from '../utils/db.js'
-import { printGuidedError, printSuccess, printValidationErrors } from '../utils/error.js'
+import { printGuidedError, printSuccess, printValidationErrors, printSchemaDeprecations } from '../utils/error.js'
 import { createPromptAdapter } from '../utils/prompt.js'
 import { loadProgrammaticResolvers } from '../utils/programmatic-loader.js'
 
@@ -447,7 +448,9 @@ async function parseAllSchemas(
     process.exit(1)
   }
 
-  return buildSchemaRegistry(parsedSchemas, routesResult.value, rolesResult.value)
+  const registry = buildSchemaRegistry(parsedSchemas, routesResult.value, rolesResult.value)
+  printSchemaDeprecations(findSchemaDeprecations(registry))
+  return registry
 }
 
 // ─── Admin root resolver ──────────────────────────────────────────────────────

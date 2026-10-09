@@ -26,6 +26,7 @@ vi.mock('@bobbykim/manguito-cms-core', () => ({
   loadSchemaFile: vi.fn().mockReturnValue({ ok: true, value: '{}' }),
   hashPassword: vi.fn().mockResolvedValue('hashed-pw'),
   loadVersionSnapshots: vi.fn().mockReturnValue({ ok: true, value: [] }),
+  findSchemaDeprecations: vi.fn().mockReturnValue([]),
   computeVersionModel: vi.fn().mockReturnValue({
     ok: true,
     value: { current: 'v1', live: ['v1'], union: {}, projections: {} },
@@ -80,6 +81,7 @@ import {
   loadSchemaFile,
   loadVersionSnapshots,
   computeVersionModel,
+  findSchemaDeprecations,
 } from '@bobbykim/manguito-cms-core'
 import { createCmsApp } from '@bobbykim/manguito-cms-api'
 import { createServer as createViteServer } from 'vite'
@@ -142,6 +144,7 @@ describe('runDev', () => {
       ok: true,
       value: { current: 'v1', live: ['v1'], union: {}, projections: {} },
     } as never)
+    vi.mocked(findSchemaDeprecations).mockReturnValue([])
     vi.mocked(reduceVersionModel).mockImplementation(
       (model: { current: string; live: string[]; projections: unknown }) => ({
         current: model.current,

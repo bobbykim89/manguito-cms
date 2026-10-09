@@ -6,6 +6,7 @@ import {
   parseRoles,
   parseRoutes,
   buildSchemaRegistry,
+  findSchemaDeprecations,
   validateCrossReferences,
   loadSchemaFile,
   type ParseError,
@@ -15,7 +16,7 @@ import { resolveConfig } from '../utils/config.js'
 import { loadEnvFile } from '../utils/env.js'
 import { resolveSchemaConfig } from '../utils/schema-config.js'
 import { loadProjectVersionModel } from '../utils/project-version-model.js'
-import { printSuccess, printValidationErrors } from '../utils/error.js'
+import { printSuccess, printValidationErrors, printSchemaDeprecations } from '../utils/error.js'
 
 export function registerValidate(program: Command): void {
   program
@@ -92,6 +93,7 @@ export async function runValidate(
   // 6. Cross-reference validation — only when all parsing succeeded
   if (allErrors.length === 0 && parsedRoles !== null && parsedRoutesDef !== null) {
     const registry = buildSchemaRegistry(parsedSchemas, parsedRoutesDef, parsedRoles)
+    printSchemaDeprecations(findSchemaDeprecations(registry))
     const crossRefErrors = validateCrossReferences(registry, config.api.media?.max_file_size)
     allErrors.push(...crossRefErrors)
 

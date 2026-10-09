@@ -20,6 +20,7 @@ vi.mock('@bobbykim/manguito-cms-core', () => ({
   validateCrossReferences: vi.fn().mockReturnValue([]),
   loadSchemaFile: vi.fn().mockReturnValue({ ok: true, value: '{}' }),
   loadVersionSnapshots: vi.fn().mockReturnValue({ ok: true, value: [] }),
+  findSchemaDeprecations: vi.fn().mockReturnValue([]),
   computeVersionModel: vi.fn().mockReturnValue({
     ok: true,
     value: { current: 'v1', live: ['v1'], union: {}, projections: {} },
@@ -37,6 +38,7 @@ import {
   validateCrossReferences,
   loadVersionSnapshots,
   computeVersionModel,
+  findSchemaDeprecations,
 } from '@bobbykim/manguito-cms-core'
 import { resolveConfig } from '../src/utils/config.js'
 
@@ -65,6 +67,7 @@ describe('runValidate', () => {
       ok: true,
       value: { current: 'v1', live: ['v1'], union: {}, projections: {} },
     } as never)
+    vi.mocked(findSchemaDeprecations).mockReturnValue([])
     vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
     vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
   })
@@ -146,6 +149,22 @@ describe('runValidate', () => {
     expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining('blog-post.json'))
     expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining('article.json'))
     expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining('roles.json'))
+    exitSpy.mockRestore()
+  })
+
+  it('prints a deprecation warning and still exits 0', async () => {
+    // MUTATION: route deprecations through printValidationErrors / allErrors.
+    // validate then exits 1 on a schema that is valid.
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('process.exit') })
+    vi.mocked(findSchemaDeprecations).mockReturnValue([
+      { source_file: 'post.json', type_name: 'content--post', field_name: 'category', message: 'DEPRECATED-MSG' },
+    ])
+
+    await runValidate({}, { cwd: FAKE_CWD })
+
+    expect(process.stdout.write).toHaveBeenCalledWith('⚠ post.json: DEPRECATED-MSG\n')
+    expect(process.stdout.write).toHaveBeenCalledWith(expect.stringContaining('No errors found'))
+    expect(exitSpy).not.toHaveBeenCalled()
     exitSpy.mockRestore()
   })
 })

@@ -10,6 +10,7 @@ import {
   parseRoles,
   parseRoutes,
   buildSchemaRegistry,
+  findSchemaDeprecations,
   loadSchemaFile,
   type ParseError,
   type ParsedSchema,
@@ -25,7 +26,7 @@ import { resolveConfig } from '../utils/config.js'
 import { resolveSchemaConfig } from '../utils/schema-config.js'
 import { loadEnvFile } from '../utils/env.js'
 import { loadProjectVersionModel } from '../utils/project-version-model.js'
-import { printGuidedError, printSuccess, printValidationErrors } from '../utils/error.js'
+import { printGuidedError, printSuccess, printValidationErrors, printSchemaDeprecations } from '../utils/error.js'
 
 export function registerBuild(program: Command): void {
   program
@@ -105,6 +106,7 @@ export async function runBuild(
     parsedRoutesDef!,
     parsedRoles!
   )
+  printSchemaDeprecations(findSchemaDeprecations(registry))
 
   // Checked BEFORE any codegen write: a failed build must leave nothing half
   // written under dist/generated.
