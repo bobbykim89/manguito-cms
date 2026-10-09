@@ -253,11 +253,14 @@ export const fieldTypeRegistry: FieldTypeRegistry = {
             },
           }
         : {
-            // FK column on the owning table. References are independent → SET NULL.
+            // FK column on the owning table. An optional reference is cleared when
+            // its target is deleted (SET NULL). A required one is NOT NULL, so it
+            // RESTRICTs instead: the API refuses that delete with a 409 naming the
+            // items that still use the target (docs/adr/core/0008).
             column_name: raw.name,
             column_type: 'uuid',
             nullable: !raw.required,
-            foreign_key: { table: targetTableName, column: 'id', on_delete: 'SET NULL' },
+            foreign_key: { table: targetTableName, column: 'id', on_delete: raw.required ? 'RESTRICT' : 'SET NULL' },
           }
 
     return {

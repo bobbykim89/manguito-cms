@@ -181,6 +181,27 @@ describe('field builders — reference', () => {
     })
     expect(built.validation).toEqual({ required: false, max_items: 10 })
   })
+
+  it('a required single reference restricts deletes of its target', () => {
+    // MUTATION: keep `on_delete: 'SET NULL'` for every reference. A required
+    // column is NOT NULL, so Postgres then refuses the delete with an error the
+    // API reports as a 500, instead of the 409 the API now gives.
+    const raw: RawReferenceField = { name: 'owner', label: 'Owner', type: 'reference', required: true, target: 'taxonomy--daily_post', rel: 'one-to-one' }
+    expect(fieldTypeRegistry['reference'](raw, ctx).db_column?.foreign_key?.on_delete).toBe('RESTRICT')
+  })
+
+  it('a required deprecated one-to-many reference restricts too', () => {
+    // MUTATION: apply RESTRICT only when rel === 'one-to-one'.
+    const raw: RawReferenceField = { name: 'owner', label: 'Owner', type: 'reference', required: true, target: 'taxonomy--daily_post', rel: 'one-to-many' }
+    expect(fieldTypeRegistry['reference'](raw, ctx).db_column?.foreign_key?.on_delete).toBe('RESTRICT')
+  })
+
+  it('an optional single reference still sets null on delete', () => {
+    // MUTATION: RESTRICT every reference. Deleting a tag used by an optional
+    // field would then be refused instead of clearing the field.
+    const raw: RawReferenceField = { name: 'owner', label: 'Owner', type: 'reference', required: false, target: 'taxonomy--daily_post', rel: 'one-to-one' }
+    expect(fieldTypeRegistry['reference'](raw, ctx).db_column?.foreign_key?.on_delete).toBe('SET NULL')
+  })
 })
 
 // ─── Programmatic ─────────────────────────────────────────────────────────────
