@@ -193,4 +193,23 @@ describe('ReferenceSelect', () => {
     expect(wrapper.find('input').attributes('disabled')).toBeDefined()
     expect(wrapper.text()).toContain('2 / 2')
   })
+
+  it('a deprecated one-to-many reference is a single picker and emits one id', async () => {
+    // MUTATION: keep `isMulti = relType !== 'one-to-one'`. Selecting then emits
+    // ['u1'], which the API now rejects with 422.
+    server.use(
+      http.get(`${ADMIN}/api/content/content--user`, () =>
+        HttpResponse.json({ ok: true, data: [{ id: 'u1', title: 'Alice' }] })
+      )
+    )
+    const wrapper = mountComponent(
+      makeField({ ui_component: { component: 'typeahead-select', ref: 'content--user', rel: 'one-to-many' } })
+    )
+    await wrapper.find('input').setValue('al')
+    await wrapper.find('input').trigger('input')
+    await vi.runAllTimersAsync()
+    await flushPromises()
+    await wrapper.findAll('[role="option"]')[0]!.trigger('click')
+    expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['u1'])
+  })
 })

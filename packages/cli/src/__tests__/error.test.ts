@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { printGuidedError, printWarning, printSuccess } from '../utils/error.js'
+import { printGuidedError, printWarning, printSuccess, printSchemaDeprecations } from '../utils/error.js'
 
 describe('printGuidedError', () => {
   let stderrSpy: ReturnType<typeof vi.spyOn>
@@ -67,5 +67,30 @@ describe('printSuccess', () => {
   it('output starts with ✔', () => {
     printSuccess('done')
     expect(stdoutSpy).toHaveBeenCalledWith(expect.stringMatching(/^✔/))
+  })
+})
+
+describe('printSchemaDeprecations', () => {
+  let stdoutSpy: ReturnType<typeof vi.spyOn>
+  beforeEach(() => {
+    stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+  })
+  afterEach(() => {
+    stdoutSpy.mockRestore()
+  })
+
+  it('prints each deprecation as a warning naming its file', () => {
+    // MUTATION: print the message without the source file, or to stderr. An
+    // author could not find the field, or the output reads as an error.
+    printSchemaDeprecations([
+      { source_file: 'schemas/content-types/post.json', type_name: 'content--post', field_name: 'category', message: 'MSG' },
+    ])
+    expect(stdoutSpy).toHaveBeenCalledWith('⚠ schemas/content-types/post.json: MSG\n')
+  })
+
+  it('prints nothing when there are no deprecations', () => {
+    // MUTATION: print a header before the loop.
+    printSchemaDeprecations([])
+    expect(stdoutSpy).not.toHaveBeenCalled()
   })
 })

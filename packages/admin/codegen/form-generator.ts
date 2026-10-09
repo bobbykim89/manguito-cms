@@ -79,6 +79,15 @@ function buildFieldObject(field: ParsedField): string {
       if (field.validation.max_items !== undefined) vParts.push(`max_items: ${field.validation.max_items}`)
       return `{ ${base}, validation: { ${vParts.join(', ')} }, ui_component: { component: 'typeahead-select', ref: ${str(comp.ref)}, rel: ${str(comp.rel)} } }`
     }
+    case 'paragraph-embed': {
+      // ParagraphEmbed reads ui_component (relationCardinality) to choose
+      // between the single-item and list editors, so it must be emitted.
+      const vParts = [`required: ${field.required}`]
+      if (field.validation.max_items !== undefined) vParts.push(`max_items: ${field.validation.max_items}`)
+      const uiParts = [`component: 'paragraph-embed'`, `ref: ${str(comp.ref)}`, `rel: ${str(comp.rel)}`]
+      if (comp.max !== undefined) uiParts.push(`max: ${comp.max}`)
+      return `{ ${base}, validation: { ${vParts.join(', ')} }, ui_component: { ${uiParts.join(', ')} } }`
+    }
     case 'file-upload': {
       const mimes = (field.validation.allowed_mime_types ?? []).map(str).join(', ')
       return `{ ${base}, validation: { required: ${field.required}, allowed_mime_types: [${mimes}] }, ui_component: { component: 'file-upload', accepted_mime_types: [${mimes}] } }`

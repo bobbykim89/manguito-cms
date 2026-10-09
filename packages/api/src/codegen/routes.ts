@@ -6,6 +6,7 @@ import type {
   ParsedTaxonomyType,
   ParsedParagraphType,
 } from '@bobbykim/manguito-cms-core'
+import { relationCardinality } from '@bobbykim/manguito-cms-core'
 
 // ─── Name helpers ─────────────────────────────────────────────────────────────
 
@@ -122,13 +123,13 @@ export function fieldToZodSchema(field: ParsedField, registry?: SchemaRegistry):
       const paragraphType = registry?.paragraph_types[ui.ref]
       if (!paragraphType) return 'z.unknown()'
       const inner = generateParagraphObjectSchema(paragraphType, registry)
-      return ui.rel === 'one-to-many' ? `z.array(${inner})` : inner
+      return relationCardinality(field) === 'many' ? `z.array(${inner})` : inner
     }
 
     case 'reference': {
       const ui = field.ui_component
       if (ui.component !== 'typeahead-select') return 'z.string().uuid()'
-      return ui.rel === 'one-to-many' ? 'z.array(z.string().uuid())' : 'z.string().uuid()'
+      return relationCardinality(field) === 'many' ? 'z.array(z.string().uuid())' : 'z.string().uuid()'
     }
 
     default:

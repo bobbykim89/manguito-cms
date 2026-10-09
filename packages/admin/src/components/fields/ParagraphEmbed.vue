@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 import type { Component } from 'vue'
 import type { ParsedField } from '@bobbykim/manguito-cms-core'
+import { relationCardinality } from '@bobbykim/manguito-cms-core/cardinality'
 
 const props = defineProps<{
   field: ParsedField
@@ -12,8 +13,29 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  'update:modelValue': [value: Record<string, unknown>[]]
+  'update:modelValue': [value: Record<string, unknown>[] | Record<string, unknown> | null]
 }>()
+
+// A one-to-one paragraph holds one item: an object, or null when empty. Any
+// other value (a stale array, undefined from a new nested item) reads as empty.
+const isSingle = computed(() => relationCardinality(props.field) === 'one')
+
+const singleValue = computed<Record<string, unknown> | null>(() => {
+  const v = props.modelValue
+  return typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : null
+})
+
+function addSingle() {
+  emit('update:modelValue', {})
+}
+
+function removeSingle() {
+  emit('update:modelValue', null)
+}
+
+function updateSingle(value: Record<string, unknown>) {
+  emit('update:modelValue', value)
+}
 
 const safeValue = computed<Record<string, unknown>[]>(() =>
   Array.isArray(props.modelValue)
@@ -79,68 +101,109 @@ function onDragEnd() {
       <span v-if="field.required" class="ml-0.5 text-red-500" aria-hidden="true">*</span>
     </label>
 
-    <div class="mt-1 space-y-2">
+    <!-- One-to-one: a single item, or an Add button when empty -->
+    <template v-if="isSingle">
       <div
-        v-for="(item, i) in safeValue"
-        :key="i"
-        draggable="true"
-        :class="[
-          'rounded-md border bg-white transition-colors',
-          dragOverIndex === i && dragFromIndex !== i
-            ? 'border-indigo-400 ring-2 ring-indigo-200'
-            : 'border-gray-200',
-          disabled && 'opacity-60',
-        ]"
-        @dragstart="onDragStart(i)"
-        @dragover.prevent="onDragOver(i)"
-        @drop.prevent="onDrop(i)"
-        @dragend="onDragEnd"
+        v-if="singleValue"
+        :class="['mt-1 rounded-md border border-gray-200 bg-white', disabled && 'opacity-60']"
       >
-        <!-- Item header: drag handle + label + remove -->
         <div class="flex items-center gap-2 border-b border-gray-100 px-3 py-2">
-          <span
-            class="cursor-grab select-none text-gray-400"
-            title="Drag to reorder"
-            aria-hidden="true"
-          >
-            &#8942;&#8942;
-          </span>
-          <span class="text-xs font-medium text-gray-500">
-            Item {{ i + 1 }}
-          </span>
+          <span class="text-xs font-medium text-gray-500">{{ field.label }}</span>
           <button
             v-if="!disabled"
             type="button"
             class="ml-auto text-xs text-red-500 hover:text-red-700"
-            :aria-label="`Remove item ${i + 1}`"
-            @click="removeItem(i)"
+            :aria-label="`Remove ${field.label}`"
+            @click="removeSingle"
           >
             Remove
           </button>
         </div>
-
-        <!-- Paragraph form rendered via dynamic component -->
         <div class="p-3">
           <component
             :is="formComponent"
-            :model-value="item"
+            :model-value="singleValue"
             :disabled="disabled"
-            @update:model-value="(v: unknown) => updateItem(i, v as Record<string, unknown>)"
+            @update:model-value="(v: unknown) => updateSingle(v as Record<string, unknown>)"
           />
         </div>
       </div>
-    </div>
+      <button
+        v-else-if="!disabled"
+        type="button"
+        class="mt-2 inline-flex items-center gap-1.5 rounded-md border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-600 hover:border-indigo-400 hover:text-indigo-600"
+        @click="addSingle"
+      >
+        <span aria-hidden="true">+</span>
+        Add {{ field.label }}
+      </button>
+    </template>
 
-    <!-- Add item button -->
-    <button
-      v-if="!disabled"
-      type="button"
-      class="mt-2 inline-flex items-center gap-1.5 rounded-md border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-600 hover:border-indigo-400 hover:text-indigo-600"
-      @click="addItem"
-    >
-      <span aria-hidden="true">+</span>
-      Add {{ field.label }}
-    </button>
+    <!-- One-to-many: an ordered, reorderable list -->
+    <template v-else>
+      <div class="mt-1 space-y-2">
+        <div
+          v-for="(item, i) in safeValue"
+          :key="i"
+          draggable="true"
+          :class="[
+            'rounded-md border bg-white transition-colors',
+            dragOverIndex === i && dragFromIndex !== i
+              ? 'border-indigo-400 ring-2 ring-indigo-200'
+              : 'border-gray-200',
+            disabled && 'opacity-60',
+          ]"
+          @dragstart="onDragStart(i)"
+          @dragover.prevent="onDragOver(i)"
+          @drop.prevent="onDrop(i)"
+          @dragend="onDragEnd"
+        >
+          <!-- Item header: drag handle + label + remove -->
+          <div class="flex items-center gap-2 border-b border-gray-100 px-3 py-2">
+            <span
+              class="cursor-grab select-none text-gray-400"
+              title="Drag to reorder"
+              aria-hidden="true"
+            >
+              &#8942;&#8942;
+            </span>
+            <span class="text-xs font-medium text-gray-500">
+              Item {{ i + 1 }}
+            </span>
+            <button
+              v-if="!disabled"
+              type="button"
+              class="ml-auto text-xs text-red-500 hover:text-red-700"
+              :aria-label="`Remove item ${i + 1}`"
+              @click="removeItem(i)"
+            >
+              Remove
+            </button>
+          </div>
+
+          <!-- Paragraph form rendered via dynamic component -->
+          <div class="p-3">
+            <component
+              :is="formComponent"
+              :model-value="item"
+              :disabled="disabled"
+              @update:model-value="(v: unknown) => updateItem(i, v as Record<string, unknown>)"
+            />
+          </div>
+        </div>
+      </div>
+
+      <!-- Add item button -->
+      <button
+        v-if="!disabled"
+        type="button"
+        class="mt-2 inline-flex items-center gap-1.5 rounded-md border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-600 hover:border-indigo-400 hover:text-indigo-600"
+        @click="addItem"
+      >
+        <span aria-hidden="true">+</span>
+        Add {{ field.label }}
+      </button>
+    </template>
 
     <p v-if="error" class="mt-1 text-sm text-red-600" role="alert">
       {{ error }}

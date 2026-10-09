@@ -20,6 +20,7 @@ vi.mock('@bobbykim/manguito-cms-core', () => ({
   buildSchemaRegistry: vi.fn().mockReturnValue({}),
   loadSchemaFile: vi.fn().mockReturnValue({ ok: true, value: '{}' }),
   loadVersionSnapshots: vi.fn().mockReturnValue({ ok: true, value: [] }),
+  findSchemaDeprecations: vi.fn().mockReturnValue([]),
   computeVersionModel: vi.fn().mockReturnValue({
     ok: true,
     value: { current: 'v1', live: ['v1'], union: {}, projections: {} },
@@ -51,6 +52,7 @@ import {
   loadSchemaFile,
   loadVersionSnapshots,
   computeVersionModel,
+  findSchemaDeprecations,
 } from '@bobbykim/manguito-cms-core'
 import { generateSchemaRegistry } from '../src/codegen/registry.js'
 import { generateRoutes } from '../src/codegen/routes.js'
@@ -89,6 +91,7 @@ describe('runBuild', () => {
       ok: true,
       value: { current: 'v1', live: ['v1'], union: {}, projections: {} },
     } as never)
+    vi.mocked(findSchemaDeprecations).mockReturnValue([])
     vi.mocked(generateSchemaRegistry).mockResolvedValue(undefined)
     vi.mocked(generateRoutes).mockResolvedValue(undefined)
     vi.mocked(generateForms).mockResolvedValue(undefined)

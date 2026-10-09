@@ -9,6 +9,7 @@ import { useFormValidation } from '../../composables/useFormValidation'
 import { useNotification } from '../../composables/useNotification'
 import { useSchemaStore } from '../../stores/schema'
 import { useTaxonomyStore } from '../../stores/taxonomy'
+import { initialTaxonomyForm } from '../../utils/taxonomy-form'
 import TextInput from '../../components/fields/TextInput.vue'
 import RichTextEditor from '../../components/fields/RichTextEditor.vue'
 import NumberInput from '../../components/fields/NumberInput.vue'
@@ -67,34 +68,8 @@ function componentFor(field: ParsedField): Component {
 
 // ── Form helpers ──────────────────────────────────────────────────────────────
 
-function defaultForField(field: ParsedField): unknown {
-  switch (field.field_type) {
-    case 'text/plain':
-    case 'text/rich':
-      return ''
-    case 'integer':
-    case 'float':
-      return null
-    case 'boolean':
-      return false
-    case 'date':
-      return null
-    case 'enum':
-      return ''
-    default:
-      return null
-  }
-}
-
 function initForm(source?: Record<string, unknown>) {
-  const f: Record<string, unknown> = {}
-  for (const field of allFields.value) {
-    // Programmatic fields are computed at read time — never edited or submitted,
-    // so they stay out of the form state (and therefore the save payload).
-    if (field.field_type === 'programmatic') continue
-    f[field.name] = source?.[field.name] ?? defaultForField(field)
-  }
-  form.value = f
+  form.value = initialTaxonomyForm(allFields.value, source)
 }
 
 function updateField(name: string, value: unknown) {

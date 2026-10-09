@@ -40,6 +40,12 @@ export type {
   SystemField,
 } from './registry/types.js'
 
+export { relationCardinality } from './registry/cardinality.js'
+export type { Cardinality } from './registry/cardinality.js'
+
+export { findSchemaDeprecations } from './registry/deprecations.js'
+export type { SchemaDeprecation } from './registry/deprecations.js'
+
 export type {
   ParsedSchemaBase,
   UiTab,

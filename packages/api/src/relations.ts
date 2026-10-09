@@ -1,6 +1,7 @@
 import crypto from 'node:crypto'
 import { sql } from 'drizzle-orm'
 import type { ParsedField, ParsedParagraphType, SchemaRegistry } from '@bobbykim/manguito-cms-core'
+import { relationCardinality, type Cardinality } from '@bobbykim/manguito-cms-core'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import type { MediaDelta } from './media-references.js'
 
@@ -61,15 +62,15 @@ async function fetchParagraphMediaIds(
 function nestedParagraphFields(
   pType: ParsedParagraphType,
   registry?: SchemaRegistry
-): Array<{ fieldName: string; nType: ParsedParagraphType }> {
+): Array<{ fieldName: string; nType: ParsedParagraphType; field: ParsedField }> {
   if (!registry) return []
-  const out: Array<{ fieldName: string; nType: ParsedParagraphType }> = []
+  const out: Array<{ fieldName: string; nType: ParsedParagraphType; field: ParsedField }> = []
   for (const f of pType.fields) {
     if (f.db_column !== null) continue
     const comp = f.ui_component as { component: string; ref?: string }
     if (comp.component !== 'paragraph-embed' || !comp.ref) continue
     const nType = registry.paragraph_types[comp.ref]
-    if (nType) out.push({ fieldName: f.name, nType })
+    if (nType) out.push({ fieldName: f.name, nType, field: f })
   }
   return out
 }
@@ -154,7 +155,7 @@ export async function persistParagraphField(
 
     // Persist this row's nested paragraph items against the row just inserted.
     for (const n of nested) {
-      const nestedItems = Array.isArray(pItem[n.fieldName]) ? (pItem[n.fieldName] as unknown[]) : []
+      const nestedItems = paragraphItems(n.field, pItem[n.fieldName])
       const d = await persistParagraphField(
         db,
         rowId,
@@ -226,6 +227,8 @@ export async function persistJunctionField(
 export type ParagraphRelationDef = {
   type: 'paragraph'
   table: string
+  // 'one' reads as the single row (or null); 'many' as the ordered list.
+  cardinality: Cardinality
 }
 
 export type ReferenceRelationDef = {
@@ -256,6 +259,23 @@ export type RelationDef =
   | JunctionRelationDef
   | MediaRelationDef
 
+// A 'one' relation reads as its single row (or null); a 'many' relation as the
+// list. Rows arrive ordered by "order", so a 'one' field holding legacy extra
+// rows reads its lowest-order row.
+export function oneOrMany<T>(cardinality: Cardinality, list: T[]): T | T[] | null {
+  return cardinality === 'one' ? (list[0] ?? null) : list
+}
+
+// The rows persistParagraphField stores for one paragraph field's request value.
+// A 'one' field carries an object (or null), a 'many' field an array. Callers
+// validate shape first (checkRelationInput), so any other value means "none".
+export function paragraphItems(field: ParsedField, value: unknown): unknown[] {
+  if (relationCardinality(field) === 'one') {
+    return typeof value === 'object' && value !== null && !Array.isArray(value) ? [value] : []
+  }
+  return Array.isArray(value) ? value : []
+}
+
 // Derives a content type's relations map from its parsed fields, so paragraph/
 // reference/media fields are actually resolved instead of silently dropped.
 // Junction and foreign_key info is already on each field's db_column; paragraph
@@ -274,7 +294,11 @@ export function buildRelationsMap(
       const ref = (field.ui_component as { ref?: string }).ref
       const pType = ref ? registry.paragraph_types[ref] : undefined
       if (!pType) continue
-      relations[field.name] = { type: 'paragraph', table: pType.db.table_name }
+      relations[field.name] = {
+        type: 'paragraph',
+        table: pType.db.table_name,
+        cardinality: relationCardinality(field) ?? 'many',
+      }
     } else if (field.field_type === 'reference') {
       if (!field.db_column) continue
       if (field.db_column.junction) {
@@ -373,7 +397,7 @@ export async function resolveRelationField(
     )
     const byParent = groupBy(result.rows as Record<string, unknown>[], 'parent_id')
     for (const row of batch) {
-      row[fieldName] = byParent[row['id'] as string] ?? []
+      row[fieldName] = oneOrMany(rel.cardinality, byParent[row['id'] as string] ?? [])
     }
   } else if (rel.type === 'reference') {
     // Resolved IN PLACE, under the storage column. The column is a field's
@@ -478,7 +502,7 @@ export async function resolveRelationBareIds(
     )
     const byParent = groupBy(result.rows as Record<string, unknown>[], 'parent_id')
     for (const row of rows) {
-      row[fieldName] = (byParent[row['id'] as string] ?? []).map((r) => r['id'])
+      row[fieldName] = oneOrMany(rel.cardinality, (byParent[row['id'] as string] ?? []).map((r) => r['id']))
     }
   } else if (rel.type === 'junction') {
     const parentIds = rows.map((r) => r['id'] as string)

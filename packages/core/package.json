@@ -17,6 +17,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
       "require": "./dist/index.js"
+    },
+    "./cardinality": {
+      "types": "./dist/cardinality.d.ts",
+      "import": "./dist/cardinality.mjs",
+      "require": "./dist/cardinality.js"
     }
   },
   "main": "./dist/index.js",

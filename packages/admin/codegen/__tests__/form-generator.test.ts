@@ -250,6 +250,31 @@ describe('generateFormComponent', () => {
     expect(generateFormComponent(contentTypeFixture)).toContain(':formComponent=')
   })
 
+  it('passes a paragraph field its ui_component, so ParagraphEmbed can read rel', () => {
+    // MUTATION: drop `case 'paragraph-embed'` from buildFieldObject. The field
+    // object then has no ui_component and relationCardinality(field) throws
+    // inside ParagraphEmbed when the generated form renders.
+    expect(generateFormComponent(contentTypeFixture)).toContain(
+      `:field="{ name: 'cards', label: 'Cards', field_type: 'paragraph', required: false, validation: { required: false }, ui_component: { component: 'paragraph-embed', ref: 'paragraph--pull_quote', rel: 'one-to-many' } }"`
+    )
+  })
+
+  it('carries a paragraph field\'s max into its ui_component', () => {
+    // MUTATION: emit ui_component without `max`. A capped paragraph list would
+    // lose its cap in the generated form.
+    const capped: ParsedContentType = {
+      ...contentTypeFixture,
+      fields: contentTypeFixture.fields.map((f) =>
+        f.name === 'cards'
+          ? { ...f, ui_component: { component: 'paragraph-embed', ref: 'paragraph--pull_quote', rel: 'one-to-many', max: 3 } }
+          : f
+      ),
+    }
+    expect(generateFormComponent(capped)).toContain(
+      `ui_component: { component: 'paragraph-embed', ref: 'paragraph--pull_quote', rel: 'one-to-many', max: 3 }`
+    )
+  })
+
   it('all imports use package path not relative path', () => {
     const output = generateFormComponent(contentTypeFixture)
     expect(output).not.toContain('../../')

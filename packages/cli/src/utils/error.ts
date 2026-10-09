@@ -1,3 +1,5 @@
+import type { SchemaDeprecation } from '@bobbykim/manguito-cms-core'
+
 export function printGuidedError(message: string, hint?: string): void {
   process.stderr.write(`✖ ${message}\n`)
   if (hint !== undefined) {
@@ -10,6 +12,11 @@ export function printWarning(message: string, hint?: string): void {
   if (hint !== undefined) {
     process.stdout.write(`  ${hint}\n`)
   }
+}
+
+// Schema deprecations are warnings: they never change a command's exit code.
+export function printSchemaDeprecations(deprecations: SchemaDeprecation[]): void {
+  for (const d of deprecations) printWarning(`${d.source_file}: ${d.message}`)
 }
 
 export function printSuccess(message: string): void {

@@ -207,7 +207,36 @@ There are three relation values in the system: `one-to-one`, `one-to-many`,
   multiple parents at once.
 - **`reference`** fields support all three: `one-to-one`, `one-to-many`,
   `many-to-many`. `target` must be the machine name of a `content-type` or
-  `taxonomy-type` (not a paragraph-type or enum-type).
+  `taxonomy-type` (not a paragraph-type or enum-type). `one-to-many` is
+  **deprecated** for references: it holds a single item, the same as
+  `one-to-one`, and `manguito validate` warns about it. Use `one-to-one` for a
+  single item, or `many-to-many` for a list.
+
+Whether a field holds one item or a list is the same in the admin, the REST
+API and GraphQL:
+
+| Field | Value when filled | Value when empty |
+|---|---|---|
+| `paragraph`, `one-to-one` | an object | `null` |
+| `paragraph`, `one-to-many` | an array of objects | `[]` |
+| `reference`, `one-to-one` (and deprecated `one-to-many`) | an id, or the resolved object with `?include=` | `null` |
+| `reference`, `many-to-many` | an array of ids, or of resolved objects with `?include=` | `[]` |
+
+Writes must use the same shapes, and reference ids must be UUIDs. A wrong shape
+is rejected with 422, naming the field. An update leaves out relation fields it
+does not mention.
+
+Older admin releases let a `one-to-one` paragraph hold several items; such a
+field reads as its first item and keeps only that one the next time it is
+saved, so change its `rel` to `one-to-many` wherever a list was intended.
+
+**Deleting something a reference points at:**
+
+- **optional reference:** the field is cleared;
+- **required reference:** the delete is refused with 409 `ITEM_IN_USE`, naming where the item is still used;
+- **many-to-many:** only the link is removed.
+
+Deleting a parent always deletes its paragraphs.
 
 ```json
 { "name": "body_blocks", "label": "Body Blocks", "type": "paragraph", "required": false, "ref": "paragraph--photo_card", "rel": "one-to-many" }

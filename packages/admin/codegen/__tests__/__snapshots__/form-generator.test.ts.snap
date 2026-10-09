@@ -52,7 +52,7 @@ function update(field: string, value: unknown) {
         @update:modelValue="update('status', $event)"
       />
       <ParagraphEmbed
-        :field="{ name: 'cards', label: 'Cards', field_type: 'paragraph', required: false }"
+        :field="{ name: 'cards', label: 'Cards', field_type: 'paragraph', required: false, validation: { required: false }, ui_component: { component: 'paragraph-embed', ref: 'paragraph--pull_quote', rel: 'one-to-many' } }"
         :formComponent="PullQuoteForm"
         :modelValue="modelValue.cards"
         :error="errors.cards"

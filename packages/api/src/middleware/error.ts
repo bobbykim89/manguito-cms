@@ -23,6 +23,7 @@ const ERROR_STATUS_MAP: Partial<Record<ErrorCode, number>> = {
   UNSUPPORTED_MIME_TYPE: 415,
   STORAGE_ERROR: 502,
   MEDIA_IN_USE: 409,
+  ITEM_IN_USE: 409,
   PRESIGNED_URL_EXPIRED: 410,
   RATE_LIMITED: 429,
   INTERNAL_ERROR: 500,
@@ -33,9 +34,15 @@ type ApiError = Error & { code?: ErrorCode }
 export const errorHandler: ErrorHandler = (err, c) => {
   console.error(err.stack ?? err.message)
 
-  const apiErr = err as ApiError
-  const code: ErrorCode = apiErr.code ?? 'INTERNAL_ERROR'
-  const status = ERROR_STATUS_MAP[code] ?? 500
-
-  return c.json({ ok: false, error: { code, message: err.message } }, status as Parameters<typeof c.json>[1])
+  // Only an error raised deliberately, with a code the API maps to a status,
+  // carries a message written for clients. Anything else (no code, or a
+  // driver's code such as Postgres SQLSTATE '23503') may carry SQL, values or
+  // internals: the client gets a generic message and the log keeps the rest.
+  const raw = (err as ApiError).code
+  const deliberate = raw !== undefined && raw !== 'INTERNAL_ERROR' && (raw as string) in ERROR_STATUS_MAP
+  if (!deliberate) {
+    return c.json({ ok: false, error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } }, 500)
+  }
+  const status = ERROR_STATUS_MAP[raw] ?? 500
+  return c.json({ ok: false, error: { code: raw, message: err.message } }, status as Parameters<typeof c.json>[1])
 }
