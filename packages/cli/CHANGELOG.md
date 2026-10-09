@@ -1,5 +1,23 @@
 # @bobbykim/manguito-cms-cli
 
+## 0.8.0
+
+### Minor Changes
+
+- ae39108: `manguito validate`, `build` and `dev` print a warning for each reference that uses the deprecated `one-to-many`. Warnings do not change the exit code.
+
+  **Breaking (through dependencies):** this release pins the new `@bobbykim/manguito-cms-core`, `-api` and `-admin` minors, which change relation shapes. `manguito migrate` now generates `ON DELETE RESTRICT` for required references. See those packages' changelogs before upgrading.
+
+### Patch Changes
+
+- Updated dependencies [ae39108]
+- Updated dependencies [ae39108]
+- Updated dependencies [ae39108]
+  - @bobbykim/manguito-cms-admin@0.5.0
+  - @bobbykim/manguito-cms-api@0.8.0
+  - @bobbykim/manguito-cms-core@0.7.0
+  - @bobbykim/manguito-cms-db@0.1.7
+
 ## 0.7.0
 
 ### Minor Changes
