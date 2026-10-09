@@ -10,6 +10,7 @@ import { useMediaStore } from '../../stores/media'
 import { useTabIndicator } from '../../composables/useTabIndicator'
 import Pagination from '../../components/shared/Pagination.vue'
 import ConfirmDialog from '../../components/shared/ConfirmDialog.vue'
+import MediaThumbnail from '../../components/shared/MediaThumbnail.vue'
 
 const router = useRouter()
 const api = useApiClient()
@@ -445,28 +446,11 @@ function cancelUpload() {
           :aria-label="`View ${item.alt ?? item.url.split('/').pop()}`"
           @click="goToDetail(item.id)"
         >
-          <!-- Image thumbnail -->
-          <img
-            v-if="item.type === 'image'"
-            :src="item.url"
-            :alt="item.alt ?? ''"
-            class="h-full w-full object-cover"
-            loading="lazy"
+          <MediaThumbnail
+            :item="item"
+            :label="item.url.split('/').pop()"
+            :detail="formatSize(item.file_size)"
           />
-
-          <!-- Video / file icon -->
-          <div
-            v-else
-            class="flex h-full w-full flex-col items-center justify-center gap-1 bg-gray-50 p-1 text-gray-400"
-          >
-            <span class="text-3xl" aria-hidden="true">
-              {{ item.type === 'video' ? '▶' : '📄' }}
-            </span>
-            <span class="max-w-full truncate text-center text-xs">
-              {{ item.url.split('/').pop() }}
-            </span>
-            <span class="text-xs text-gray-300">{{ formatSize(item.file_size) }}</span>
-          </div>
         </button>
       </div>
     </div>
