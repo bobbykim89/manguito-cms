@@ -14,6 +14,10 @@ _Avoid_: model, entity, document
 A reusable field group owned by a parent content type, embedded inline and never exposed as its own API endpoint. Cascade-deletes with its parent. Nests at most one level deep.
 _Avoid_: component, block, fragment
 
+**Cardinality**:
+Whether a relation field holds one item or a list, as answered by `relationCardinality`: `'one'` (an object, an id, or `null`) or `'many'` (an array). The only mapping from `rel`; see [ADR core/0008](../../docs/adr/core/0008-one-rule-for-relation-cardinality.md).
+_Avoid_: rel type, multiplicity
+
 **Taxonomy type**:
 A flat vocabulary used to categorize and query content. Has its own API but no slug or base path.
 _Avoid_: category, tag, term type
