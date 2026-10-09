@@ -17,19 +17,15 @@ Six packages are published to npm under the public `@bobbykim` scope:
 
 `master` accepts changes only through a pull request whose `ci` check passed. Nobody can push to it directly, the owner included ([ADR 0006](docs/adr/0006-protected-master-and-ci-gate.md)). A release therefore has two halves:
 
-1. **The version bump changes files, so it goes through a pull request.** `changeset version` rewrites `package.json` versions and `CHANGELOG.md` files on a `release/<x.y.z>` branch. You merge that pull request like any other.
+1. **The version bump changes files, so it goes through a pull request.** `changeset version` rewrites `package.json` versions and `CHANGELOG.md` files on a `release/<date>` branch (packages version independently, so the branch is named by date). You merge that pull request like any other.
 2. **Publishing changes no files, so it runs on `master` after the merge.** `changeset publish` uploads to npm and creates one git tag per package. It makes no commit (`.changeset/config.json` sets `"commit": false`). You push only the tags, and the ruleset does not cover tags.
 
 ## Quick reference
 
 ```bash
-# 1. Version on a release branch
+# 1. Prepare the release pull request (or run the /release-pr skill)
 git checkout master && git pull
-git checkout -b release/<x.y.z>
-pnpm run version                     # NOT `pnpm version` — see step 2
-git add -A && git commit -m "chore(release): version packages <x.y.z>"
-git push -u origin release/<x.y.z>
-gh pr create --base master --title "chore(release): version packages <x.y.z>" --body "Version Packages"
+scripts/release-pr.sh                # branch, version, commit; asks before pushing and opening the PR
 
 # 2. Merge the pull request once `ci` is green
 
@@ -79,29 +75,51 @@ When the changesets you want to release are on `master`:
 ```bash
 git checkout master
 git pull
-git checkout -b release/<x.y.z>
-pnpm run version
+scripts/release-pr.sh
 ```
 
-**Use `pnpm run version`, not `pnpm version`.** `pnpm version` is pnpm's own built-in version-bump command and never runs the repo's `version` script. `pnpm run version` runs `changeset version`, which consumes every pending changeset, bumps `package.json` versions, and updates each package's `CHANGELOG.md`.
+The script does the whole step, then stops for your decision before anything leaves your machine:
 
-Review the diff (`git diff --stat`), then commit, push and open the pull request:
+1. **Checks** that you are on `master`, the tree is clean, `master` matches `origin/master`, and at least one published package has a pending changeset. It refuses otherwise, with a message naming the fix.
+2. **Creates `release/<date>`** (e.g. `release/2026-10-08`; it adds `-2`, `-3` if that branch already exists locally or on GitHub). Packages version independently, so there is no single version to name the branch after.
+3. **Runs `pnpm run version`** (`changeset version`: consumes every pending changeset, bumps versions, writes each package's `CHANGELOG.md`), then `pnpm install`. Internal dependencies are `workspace:*`, so the lockfile normally stays unchanged; if it does change, it goes into the commit.
+4. **Commits** `chore(release): version packages`, with a body listing every published package's version change:
+
+   ```
+   Changed:
+   - @bobbykim/manguito-cms-core 0.6.0 → 0.6.1 (patch)
+
+   Bumped because a dependency changed:
+   - @bobbykim/manguito-cms-api 0.7.0 → 0.7.1
+   - @bobbykim/manguito-cms-cli 0.7.0 → 0.7.1
+   ```
+
+   *Changed* packages have their own changeset. The others are bumped only because `updateInternalDependencies: "patch"` bumps every dependent of a changed package. Private packages (`sandbox`, `test-utils`) are bumped too, but they are left out of the list because they never publish.
+5. **Prints** that list, each changeset's summary, and the diff stat, then asks `Push and open the PR? [y/N]`. On a yes, it pushes the branch and opens the PR, whose body carries the list and each published package's new changelog section. On anything else, it leaves the branch local and prints how to continue (`scripts/release-pr.sh open`) or discard it.
+
+The two halves also run separately: `scripts/release-pr.sh prepare` stops after step 4, and `scripts/release-pr.sh open` does the push and PR (add `--dry-run` to print the push command and the PR body without running anything).
+
+**The `/release-pr` skill** runs the same script through Claude Code. Before asking for your yes, it also reads each changeset's summary against its bump level and flags mismatches, such as a "patch" whose summary describes a breaking change. It never publishes.
+
+### Doing step 2 by hand
 
 ```bash
+git checkout -b release/<date>
+pnpm run version          # NOT `pnpm version`
 git add -A
-git commit -m "chore(release): version packages <x.y.z>"
-git push -u origin release/<x.y.z>
-gh pr create --base master --title "chore(release): version packages <x.y.z>" --body "Version Packages"
+git commit -m "chore(release): version packages"
+git push -u origin release/<date>
+gh pr create --base master --title "chore(release): version packages (<date>)" --body "Version Packages"
 ```
 
-You do not normally need `pnpm install` here. Internal dependencies are `workspace:*`, so a version bump leaves `pnpm-lock.yaml` unchanged. If the bump did change the lockfile (because the release also changed a dependency), CI installs with `--frozen-lockfile` and fails at its Install step; run `pnpm install` on the branch, commit the lockfile, and push.
+**Use `pnpm run version`, not `pnpm version`.** `pnpm version` is pnpm's own built-in version-bump command and never runs the repo's `version` script. If the bump changed the lockfile, CI installs with `--frozen-lockfile` and fails at its Install step; run `pnpm install` on the branch, commit the lockfile, and push.
 
 ## 3. Merge the release pull request
 
 Merge it once `ci` passes, in the GitHub UI or with:
 
 ```bash
-gh pr merge release/<x.y.z> --merge
+gh pr merge release/<date> --merge
 ```
 
 If `ci` fails, fix it on the release branch and push again, as with any pull request.
@@ -150,10 +168,10 @@ npm create @bobbykim/manguito@latest demo      # smoke-test the published scaffo
 - **Push to `master` rejected (`GH013: Repository rule violations`).** You committed on `master` locally. Move the commit to a branch and reset `master`:
 
   ```bash
-  git branch release/<x.y.z>
+  git branch release/<date>
   git reset --hard origin/master
-  git checkout release/<x.y.z>
-  git push -u origin release/<x.y.z>
+  git checkout release/<date>
+  git push -u origin release/<date>
   ```
 
   Then open a pull request from that branch.
