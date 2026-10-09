@@ -5,6 +5,7 @@ import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import {
   makeCardinalityFixture,
   createFixtureTables,
+  seedTestUsers,
   dropFixtureTables,
   insertTag,
   countRows,
@@ -19,6 +20,7 @@ let tagB = ''
 beforeAll(async () => {
   process.env['AUTH_SECRET'] ??= 'test-secret'
   db = await getTestDb()
+  await seedTestUsers(db)
   await createFixtureTables(db, fx)
   app = createTestApp(fx.registry, db)
   tagA = await insertTag(db, fx, 'a')
