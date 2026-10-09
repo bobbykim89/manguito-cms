@@ -35,6 +35,7 @@ export type ErrorCode =
   | 'UNSUPPORTED_MIME_TYPE'
   | 'STORAGE_ERROR'
   | 'MEDIA_IN_USE'
+  | 'ITEM_IN_USE'
   | 'PRESIGNED_URL_EXPIRED'
   | 'FILE_TOO_LARGE'
 

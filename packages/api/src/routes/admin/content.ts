@@ -1,4 +1,5 @@
 import { sql } from 'drizzle-orm'
+import { findRequiredReferrers, inUseMessage, IN_USE_RACE_MESSAGE, isForeignKeyViolation } from '../../references-in-use.js'
 import type { Context, Hono } from 'hono'
 import type {
   SchemaRegistry,
@@ -748,13 +749,30 @@ export function registerAdminContentRoutes(
           )
         }
 
-        // A delete removes every media reference the item held (top-level + paragraphs).
+        // Refuse while a required reference still points here (docs/adr/core/0008).
+        const referrers = db ? await findRequiredReferrers(db, registry, typeName, id) : []
+        if (referrers.length > 0) {
+          return c.json({ ok: false, error: { code: 'ITEM_IN_USE', message: inUseMessage(referrers) } }, 409)
+        }
+
+        // Delete the row FIRST. If a use slipped in after the check, RESTRICT
+        // refuses here, before anything else has changed: there are no
+        // transactions, so cleaning up first would lose the paragraphs and
+        // media counts of an item that then survives.
+        try {
+          await repo.delete(id)
+        } catch (err) {
+          if (isForeignKeyViolation(err)) {
+            return c.json({ ok: false, error: { code: 'ITEM_IN_USE', message: IN_USE_RACE_MESSAGE } }, 409)
+          }
+          throw err
+        }
+
+        // The row is gone. Paragraph rows have no FK back to it, so remove them
+        // now, and release every media reference the item held.
         const mediaDeltas: MediaDelta[] = [
           topLevelMediaDelta(mediaFields, item as Record<string, unknown>, null),
         ]
-
-        // Paragraph rows have no FK/cascade back to their parent — clean them up
-        // explicitly so they don't leak, and collect their media for decrementing.
         if (db) {
           for (const f of paragraphFieldDefs) {
             const comp = f.ui_component as { component: string; ref?: string }
@@ -764,10 +782,8 @@ export function registerAdminContentRoutes(
             mediaDeltas.push(await deleteParagraphField(db, id, f.name, pType, registry))
           }
         }
-
         await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
 
-        await repo.delete(id)
         return c.json({ ok: true })
       }
     )
@@ -1057,11 +1073,30 @@ export function registerAdminContentRoutes(
           )
         }
 
-        // A delete removes every media reference the item held (top-level + paragraphs).
+        // Refuse while a required reference still points here (docs/adr/core/0008).
+        const referrers = db ? await findRequiredReferrers(db, registry, typeName, id) : []
+        if (referrers.length > 0) {
+          return c.json({ ok: false, error: { code: 'ITEM_IN_USE', message: inUseMessage(referrers) } }, 409)
+        }
+
+        // Delete the row FIRST. If a use slipped in after the check, RESTRICT
+        // refuses here, before anything else has changed: there are no
+        // transactions, so cleaning up first would lose the paragraphs and
+        // media counts of an item that then survives.
+        try {
+          await repo.delete(id)
+        } catch (err) {
+          if (isForeignKeyViolation(err)) {
+            return c.json({ ok: false, error: { code: 'ITEM_IN_USE', message: IN_USE_RACE_MESSAGE } }, 409)
+          }
+          throw err
+        }
+
+        // The row is gone. Paragraph rows have no FK back to it, so remove them
+        // now, and release every media reference the item held.
         const mediaDeltas: MediaDelta[] = [
           topLevelMediaDelta(mediaFields, item as Record<string, unknown>, null),
         ]
-
         if (db) {
           for (const f of paragraphFieldDefs) {
             const comp = f.ui_component as { component: string; ref?: string }
@@ -1071,10 +1106,8 @@ export function registerAdminContentRoutes(
             mediaDeltas.push(await deleteParagraphField(db, id, f.name, pType, registry))
           }
         }
-
         await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
 
-        await repo.delete(id)
         return c.json({ ok: true })
       }
     )
