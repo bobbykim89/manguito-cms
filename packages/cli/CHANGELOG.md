@@ -1,5 +1,12 @@
 # @bobbykim/manguito-cms-cli
 
+## 0.8.1
+
+### Patch Changes
+
+- Updated dependencies [7e73e93]
+  - @bobbykim/manguito-cms-admin@0.5.1
+
 ## 0.8.0
 
 ### Minor Changes
