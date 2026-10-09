@@ -81,7 +81,7 @@ Scripts live in the root package.json. The non-obvious ones:
 - Before pushing, run the `ci` steps locally: `pnpm lint`, the filtered build above, `pnpm typecheck`, `pnpm test`, `pnpm smoke`.
 - A test that reads a new environment variable needs it declared in turbo.json `passThroughEnv` for the `test` task: Turborepo hides undeclared variables, and `.env.test` masks the omission locally, so it fails only in CI.
 - The `ci` job name in .github/workflows/ci.yml is the check .github/rulesets/master.json requires; rename both together, and keep the workflow free of `paths` filters.
-- Releases: follow RELEASE.md (the version bump goes through a `release/<x.y.z>` PR; publishing then runs from master).
+- Releases: follow RELEASE.md. `scripts/release-pr.sh` (or the user-invoked `/release-pr` skill) prepares the version-bump PR on a `release/<date>` branch and asks before pushing; publishing then runs from master.
 
 ## Do not
 
