@@ -20,6 +20,7 @@ import type {
   ParsedField,
   ParsedEnumType,
 } from '@bobbykim/manguito-cms-core'
+import { relationCardinality } from '@bobbykim/manguito-cms-core'
 import type { GraphQLContext } from './context.js'
 import type { FieldKeyMap } from '../field-keys.js'
 import type { VersionView, ViewField } from './version-view.js'
@@ -124,7 +125,8 @@ export function buildGraphQLSchema(
           `⚠ paragraph field '${field.name}' targets unknown paragraph type '${ref}'; exposing as Media\n`
         )
       }
-      return new GraphQLList(new GraphQLNonNull(target ?? MEDIA))
+      const t = (target ?? MEDIA) as GraphQLObjectType
+      return relationCardinality(field) === 'one' ? t : new GraphQLList(new GraphQLNonNull(t))
     }
 
     if (field.field_type === 'reference') {
@@ -133,8 +135,7 @@ export function buildGraphQLSchema(
       if (ref && !target) {
         process.stderr.write(`⚠ reference field '${field.name}' targets unknown type '${ref}'; exposing as Media\n`)
       }
-      const rel = field.ui_component.component === 'typeahead-select' ? field.ui_component.rel : undefined
-      const isMany = rel === 'many-to-many' || rel === 'one-to-many'
+      const isMany = relationCardinality(field) === 'many'
       const t = (target ?? MEDIA) as GraphQLObjectType
       return isMany ? new GraphQLList(new GraphQLNonNull(t)) : t
     }
