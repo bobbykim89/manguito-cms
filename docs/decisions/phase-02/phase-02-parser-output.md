@@ -332,8 +332,11 @@ Each paragraph type gets exactly one DB table regardless of how many content typ
 ```ts
 type TaxonomyDbMeta = {
   table_name: string              // "taxonomy_daily_post"
+  junction_tables: JunctionTable[] // only for many-to-many reference fields
 }
 ```
+
+Taxonomy types own many-to-many link tables the same way content types do (added for #55). Codegen creates one table per entry, with `left_id` pointing at the taxonomy table.
 
 ---
 

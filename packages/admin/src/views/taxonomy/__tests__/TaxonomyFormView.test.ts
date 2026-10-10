@@ -39,7 +39,7 @@ const tagType = {
     { ...base, name: 'blurb', label: 'Blurb', field_type: 'paragraph', db_column: null,
       ui_component: { component: 'paragraph-embed', ref: 'paragraph--blurb', rel: 'one-to-one' } },
   ] as unknown as ParsedField[],
-  db: { table_name: 'taxonomy_tag' },
+  db: { table_name: 'taxonomy_tag', junction_tables: [] },
 } as unknown as ParsedTaxonomyType
 
 let pinia: ReturnType<typeof createPinia>

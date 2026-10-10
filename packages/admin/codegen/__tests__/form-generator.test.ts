@@ -152,7 +152,7 @@ const taxonomyTypeFixture: ParsedTaxonomyType = {
       ui_component: { component: 'text-input' },
     },
   ],
-  db: { table_name: 'taxonomy_tag' },
+  db: { table_name: 'taxonomy_tag', junction_tables: [] },
   api: {
     collection_path: '/api/taxonomy/tag',
     item_path: '/api/taxonomy/tag/:id',
