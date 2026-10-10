@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { fieldToZodSchema, generateContentSchema, generateRoutes } from '../routes'
-import { makeCardinalityFixture } from '../../__tests__/relation-cardinality.fixture'
+import type { ParsedTaxonomyType } from '@bobbykim/manguito-cms-core'
+import { makeCardinalityFixture, parseOrThrow } from '../../__tests__/relation-cardinality.fixture'
 
 const fx = makeCardinalityFixture('rccg')
 const post = fx.registry.content_types[fx.names.post]!
@@ -25,8 +26,13 @@ describe('fieldToZodSchema list-ness follows relationCardinality', () => {
 
 // #56: the generated docs agree with what the API stores and returns.
 describe('generated schemas and routes follow the relation contract', () => {
+  const entryIn = (schema: string, name: string) => {
+    const line = schema.split('\n').find((l) => l.trim().startsWith(`${name}:`))
+    if (!line) throw new Error(`no "${name}" entry in the generated schema`)
+    return line.trim()
+  }
   const schema = generateContentSchema(post, fx.registry)
-  const entry = (name: string) => schema.split('\n').find((l) => l.trim().startsWith(`${name}:`))!.trim()
+  const entry = (name: string) => entryIn(schema, name)
 
   it('lets an optional "one" relation be null', () => {
     // MUTATION: drop the `.nullable()` in fieldEntrySchema. The docs then
@@ -41,6 +47,27 @@ describe('generated schemas and routes follow the relation contract', () => {
     expect(entry('tags')).toBe('tags: z.array(z.string().uuid()).optional(),')
     expect(entry('cards')).toMatch(/\)\)\.optional\(\),$/)
     expect(entry('owner')).toBe('owner: z.string().uuid(),')
+  })
+
+  it('follows the column for scalar fields: an optional boolean is never null', () => {
+    // MUTATION: decide nullability from `f.nullable` (that is, !required). An
+    // optional boolean is NOT NULL with a default, so the docs would invite a
+    // null that Postgres refuses.
+    const flags = parseOrThrow(
+      {
+        name: 'taxonomy--rccg_flag',
+        label: 'Flag',
+        type: 'taxonomy-type',
+        fields: [
+          { name: 'featured', label: 'Featured', type: 'boolean', required: false },
+          { name: 'note', label: 'Note', type: 'text/plain', required: false },
+        ],
+      },
+      'taxonomy-type'
+    ) as ParsedTaxonomyType
+    const out = generateContentSchema(flags)
+    expect(entryIn(out, 'featured')).toBe('featured: z.boolean().optional(),')
+    expect(entryIn(out, 'note')).toBe('note: z.string().nullable().optional(),')
   })
 
   it('documents ITEM_IN_USE (409) on the content and taxonomy deletes', () => {
