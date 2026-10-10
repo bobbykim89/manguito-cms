@@ -164,11 +164,10 @@ export async function createFixtureTables(db: DrizzlePostgresInstance, fx: Cardi
   await db.execute(sql.raw(tableSql(t.post, post.system_fields, post.fields)))
   await db.execute(sql.raw(tableSql(t.link, link.system_fields, link.fields)))
   await db.execute(sql.raw(tableSql(t.card, card.system_fields, card.fields)))
-  // Every many-to-many field's link table, for each owner type.
+  // The link tables the parser lists for each owner type: the same list db
+  // codegen creates them from, so a type the parser leaves out fails here too.
   for (const [owner, ownerTable] of [[post, t.post], [tag, t.tag]] as const) {
-    for (const f of owner.fields) {
-      const j = f.db_column?.junction
-      if (!j) continue
+    for (const j of owner.db.junction_tables) {
       await db.execute(
         sql.raw(
           `CREATE TABLE "${j.table_name}" ("${j.left_column}" uuid NOT NULL REFERENCES "${ownerTable}"(id) ON DELETE CASCADE, ` +

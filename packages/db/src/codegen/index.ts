@@ -254,10 +254,16 @@ export function orderParagraphTypes(
 function generateJunctionTables(registry: SchemaRegistry): string {
   const tables: string[] = []
 
-  for (const ct of Object.values(registry.content_types)) {
-    const leftVar = tableNameToVarName(ct.db.table_name)
+  // Content and taxonomy types both own many-to-many fields; each needs its
+  // link tables. Paragraph types do not get them (not yet supported).
+  const owners = [
+    ...Object.values(registry.content_types),
+    ...Object.values(registry.taxonomy_types),
+  ]
+  for (const owner of owners) {
+    const leftVar = tableNameToVarName(owner.db.table_name)
 
-    for (const jt of ct.db.junction_tables) {
+    for (const jt of owner.db.junction_tables) {
       const varName = tableNameToVarName(jt.table_name)
       const rightVar = tableNameToVarName(jt.right_table)
 
