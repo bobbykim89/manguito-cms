@@ -207,6 +207,64 @@ describe('taxonomy writes', () => {
   })
 })
 
+describe('publishing with only `published` in the body', () => {
+  // A copy of the fixture with its relation fields required. Their values live
+  // in link and paragraph tables, not on the item's row, so the publish check
+  // must load them when the body leaves them out.
+  function requiredApp() {
+    const registry = structuredClone(fx.registry)
+    const required = new Set(['tags', 'link', 'related_tags', 'tag_link'])
+    for (const owner of [registry.content_types[fx.names.post]!, registry.taxonomy_types[fx.names.tag]!]) {
+      for (const f of owner.fields) if (required.has(f.name)) f.required = true
+    }
+    return createTestApp(registry, db)
+  }
+
+  it('publishes a content item whose required relations are already stored', async () => {
+    // MUTATION: merge the body with the bare row only (the check before this
+    // fix). Both fields then read as missing and the publish is refused.
+    const reqApp = requiredApp()
+    const created = await authenticatedRequest(reqApp, 'admin', 'POST', POSTS(), {
+      body: { slug: `p-${++slugN}`, title: 'T', owner: tagA, tags: [tagA], link: { url: 'u' }, published: false },
+    })
+    expect(created.status).toBe(201)
+    const id = ((await created.json()) as { data: { id: string } }).data.id
+    const res = await authenticatedRequest(reqApp, 'admin', 'PATCH', `${POSTS()}/${id}`, { body: { published: true } })
+    expect(res.status).toBe(200)
+  })
+
+  it('publishes a taxonomy term whose required relations are already stored', async () => {
+    // MUTATION: as above, on the taxonomy PATCH.
+    const reqApp = requiredApp()
+    const TAGS = `/admin/api/taxonomy/${fx.names.tag}`
+    const created = await authenticatedRequest(reqApp, 'admin', 'POST', TAGS, {
+      body: { name: 't', related_tags: [tagA], tag_link: { url: 'u' }, published: false },
+    })
+    expect(created.status).toBe(201)
+    const id = ((await created.json()) as { data: { id: string } }).data.id
+    const res = await authenticatedRequest(reqApp, 'admin', 'PATCH', `${TAGS}/${id}`, { body: { published: true } })
+    expect(res.status).toBe(200)
+  })
+
+  it('still refuses to publish when a required relation is stored empty', async () => {
+    // MUTATION: treat a loaded relation as present whatever it holds. An item
+    // with no links would then publish despite the required field. The term is
+    // created before the field was required, the only way it can be empty.
+    const reqApp = requiredApp()
+    const TAGS = `/admin/api/taxonomy/${fx.names.tag}`
+    const created = await authenticatedRequest(app, 'admin', 'POST', TAGS, {
+      body: { name: 't', related_tags: [], tag_link: { url: 'u' }, published: false },
+    })
+    expect(created.status).toBe(201)
+    const id = ((await created.json()) as { data: { id: string } }).data.id
+    const res = await authenticatedRequest(reqApp, 'admin', 'PATCH', `${TAGS}/${id}`, { body: { published: true } })
+    expect(res.status).toBe(422)
+    const body = (await res.json()) as { error: { code: string; details: Array<{ field: string }> } }
+    expect(body.error.code).toBe('PUBLISH_VALIDATION_ERROR')
+    expect(body.error.details.map((d) => d.field)).toEqual(['related_tags'])
+  })
+})
+
 // #54: inputs that pass the shape check but would make Postgres refuse a
 // statement part-way through the write. They are refused before any write.
 describe('references and required fields checked before writing', () => {

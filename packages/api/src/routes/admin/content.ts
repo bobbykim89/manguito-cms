@@ -115,10 +115,27 @@ async function loadRelationsForEdit(
   }
 }
 
+// What a publish check on an update reads: the stored row (label-keyed), with
+// the body on top. A required paragraph or many-to-many field lives in its own
+// table, not on the row, so when the body leaves one out its stored value is
+// loaded here; otherwise it would always read as missing.
+async function valuesForPublishCheck(
+  db: DrizzlePostgresInstance | undefined,
+  registry: SchemaRegistry,
+  requiredFields: ParsedField[],
+  id: string,
+  storedLabels: Record<string, unknown>,
+  body: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  const stored = { ...storedLabels }
+  if (db) await loadRelationsForEdit(db, registry, requiredFields.filter((f) => !(f.name in body)), id, stored)
+  return { ...stored, ...body }
+}
+
 // Saves one write's paragraph fields and many-to-many links: every content and
 // taxonomy create and update goes through here, so the four routes cannot
-// drift apart. On an 'update', a field absent from the body is left untouched;
-// on a 'create' there is nothing stored to keep, so every field is written. Returns the
+// drift apart. A field absent from the body is skipped: an update leaves it
+// untouched, and on a create there is nothing stored for it yet. Returns the
 // media changes of the paragraph rows, for the caller to reconcile.
 async function persistRelationFields(
   db: DrizzlePostgresInstance,
@@ -126,12 +143,11 @@ async function persistRelationFields(
   fields: ParsedField[],
   body: Record<string, unknown>,
   itemId: string,
-  ownerTable: string,
-  mode: 'create' | 'update'
+  ownerTable: string
 ): Promise<MediaDelta[]> {
   const deltas: MediaDelta[] = []
   for (const f of fields) {
-    if (mode === 'update' && !(f.name in body)) continue
+    if (!(f.name in body)) continue
     if (f.db_column === null) {
       const comp = f.ui_component as { component: string; ref?: string }
       if (comp.component !== 'paragraph-embed' || !comp.ref) continue
@@ -562,7 +578,7 @@ export function registerAdminContentRoutes(
         const mediaDeltas: MediaDelta[] = [topLevelMediaDelta(mediaFields, null, storageBody)]
 
         if (db) {
-          mediaDeltas.push(...(await persistRelationFields(db, registry, contentType.fields, body, itemId, contentType.db.table_name, 'create')))
+          mediaDeltas.push(...(await persistRelationFields(db, registry, contentType.fields, body, itemId, contentType.db.table_name)))
         }
 
         await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
@@ -657,7 +673,7 @@ export function registerAdminContentRoutes(
           // `existing` is a raw SELECT * row (storage-keyed) but
           // checkRequiredFields reads labels, as does `body` — project the row
           // to labels first so a renamed field's stored value is actually seen.
-          const merged = { ...fieldKeys.toLabels(existing as Record<string, unknown>), ...body }
+          const merged = await valuesForPublishCheck(db, registry, requiredFields, id, fieldKeys.toLabels(existing as Record<string, unknown>), body)
           const fieldErrors = checkRequiredFields(requiredFields, merged)
           if (fieldErrors.length > 0) {
             return c.json(
@@ -700,7 +716,7 @@ export function registerAdminContentRoutes(
         ]
 
         if (db) {
-          mediaDeltas.push(...(await persistRelationFields(db, registry, contentType.fields, body, id, contentType.db.table_name, 'update')))
+          mediaDeltas.push(...(await persistRelationFields(db, registry, contentType.fields, body, id, contentType.db.table_name)))
         }
 
         await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
@@ -952,7 +968,7 @@ export function registerAdminContentRoutes(
         const mediaDeltas: MediaDelta[] = [topLevelMediaDelta(mediaFields, null, storageBody)]
 
         if (db) {
-          mediaDeltas.push(...(await persistRelationFields(db, registry, taxonomyType.fields, body, taxItemId, taxonomyType.db.table_name, 'create')))
+          mediaDeltas.push(...(await persistRelationFields(db, registry, taxonomyType.fields, body, taxItemId, taxonomyType.db.table_name)))
         }
 
         await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
@@ -993,7 +1009,7 @@ export function registerAdminContentRoutes(
           // `existing` is a raw SELECT * row (storage-keyed) but
           // checkRequiredFields reads labels, as does `body` — project the row
           // to labels first so a renamed field's stored value is actually seen.
-          const merged = { ...fieldKeys.toLabels(existing as Record<string, unknown>), ...body }
+          const merged = await valuesForPublishCheck(db, registry, requiredFields, id, fieldKeys.toLabels(existing as Record<string, unknown>), body)
           const fieldErrors = checkRequiredFields(requiredFields, merged)
           if (fieldErrors.length > 0) {
             return c.json(
@@ -1035,7 +1051,7 @@ export function registerAdminContentRoutes(
         ]
 
         if (db) {
-          mediaDeltas.push(...(await persistRelationFields(db, registry, taxonomyType.fields, body, id, taxonomyType.db.table_name, 'update')))
+          mediaDeltas.push(...(await persistRelationFields(db, registry, taxonomyType.fields, body, id, taxonomyType.db.table_name)))
         }
 
         await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
