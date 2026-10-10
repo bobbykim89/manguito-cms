@@ -39,25 +39,24 @@ const fields: ParsedField[] = [
 ] as unknown as ParsedField[]
 
 describe('initialTaxonomyForm', () => {
-  it('leaves out every field the taxonomy read does not return', () => {
-    // MUTATION: put every non-programmatic field into the form (the old
-    // initForm). The paragraph and many-to-many keys would then be sent as
-    // null, which the api rejects with a 422 for a "many" field and which
-    // erases a one-to-one paragraph.
-    const form = initialTaxonomyForm(fields, { name: 'Tag', parent: 'p-1' })
-    expect(form).not.toHaveProperty('blocks')
-    expect(form).not.toHaveProperty('hero')
-    expect(form).not.toHaveProperty('related')
-    expect(form).not.toHaveProperty('computed')
+  it('includes relation fields, from the source or their empty default', () => {
+    // MUTATION: keep leaving paragraph and many-to-many fields out (before
+    // #55). The taxonomy form then cannot show or edit them, although the
+    // edit read now returns them.
+    const form = initialTaxonomyForm(fields, {
+      name: 'Tag', parent: 'p-1', blocks: [{ title: 'b' }], hero: { title: 'h' }, related: ['t-2'],
+    })
+    expect(form).toMatchObject({ blocks: [{ title: 'b' }], hero: { title: 'h' }, related: ['t-2'] })
+
+    // Empty defaults follow cardinality: a list for "many", null for "one".
+    expect(initialTaxonomyForm(fields)).toEqual({
+      name: '', parent: null, blocks: [], hero: null, related: [],
+    })
   })
 
-  it('keeps column-backed fields, from the source or their default', () => {
-    // MUTATION: drop every reference field (filter on field_type instead of
-    // storage). A one-to-one reference has a column and must stay editable.
-    expect(initialTaxonomyForm(fields, { name: 'Tag', parent: 'p-1' })).toEqual({
-      name: 'Tag',
-      parent: 'p-1',
-    })
-    expect(initialTaxonomyForm(fields)).toEqual({ name: '', parent: null })
+  it('leaves programmatic fields out: they are computed and never saved', () => {
+    // MUTATION: put programmatic fields into the form. Save would then send a
+    // computed value back to the api.
+    expect(initialTaxonomyForm(fields, { name: 'Tag', computed: 'x' })).not.toHaveProperty('computed')
   })
 })

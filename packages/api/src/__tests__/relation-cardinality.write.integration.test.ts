@@ -170,6 +170,41 @@ describe('taxonomy writes', () => {
     const res = await authenticatedRequest(app, 'admin', 'POST', TAGS(), { body: { name: 't', tag_link: [{ url: 'x' }] } })
     expect(res.status).toBe(422)
   })
+
+  const relatedLinks = (id: string) => countRows(db, fx.tables.relatedTags, `left_id = '${id}'`)
+
+  async function createTag(body: Record<string, unknown>) {
+    const res = await authenticatedRequest(app, 'admin', 'POST', TAGS(), { body: { name: 't', ...body } })
+    expect(res.status).toBe(201)
+    return ((await res.json()) as { data: { id: string } }).data.id
+  }
+
+  it('stores many-to-many links on create', async () => {
+    // MUTATION: leave the taxonomy routes without link saving (before #55 they
+    // saved paragraphs only). The links are then silently dropped.
+    const id = await createTag({ related_tags: [tagA, tagB] })
+    expect(await relatedLinks(id)).toBe(2)
+  })
+
+  it('a name-only PATCH keeps the links, and an empty list clears them', async () => {
+    // MUTATION: replace links for absent fields too. The name-only PATCH then
+    // erases both links.
+    const id = await createTag({ related_tags: [tagA, tagB] })
+    expect((await authenticatedRequest(app, 'admin', 'PATCH', `${TAGS()}/${id}`, { body: { name: 'renamed' } })).status).toBe(200)
+    expect(await relatedLinks(id)).toBe(2)
+    expect((await authenticatedRequest(app, 'admin', 'PATCH', `${TAGS()}/${id}`, { body: { related_tags: [] } })).status).toBe(200)
+    expect(await relatedLinks(id)).toBe(0)
+  })
+
+  it('the taxonomy edit read returns link ids and the one-to-one paragraph', async () => {
+    // MUTATION: keep the taxonomy edit read as a bare row (before #55). The
+    // admin form then starts both fields empty and its next save clears them.
+    const id = await createTag({ related_tags: [tagA], tag_link: { url: 'read-me' } })
+    const res = await authenticatedRequest(app, 'admin', 'GET', `${TAGS()}/${id}`)
+    const data = ((await res.json()) as { data: Record<string, unknown> }).data
+    expect(data['related_tags']).toEqual([tagA])
+    expect(data['tag_link']).toMatchObject({ url: 'read-me' })
+  })
 })
 
 // #54: inputs that pass the shape check but would make Postgres refuse a

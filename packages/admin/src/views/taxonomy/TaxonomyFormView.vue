@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import type { Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import type { ParsedField } from '@bobbykim/manguito-cms-core'
 import { useApiClient } from '../../composables/useApiClient'
 import { usePermission } from '../../composables/usePermission'
 import { useFormValidation } from '../../composables/useFormValidation'
@@ -10,13 +8,7 @@ import { useNotification } from '../../composables/useNotification'
 import { useSchemaStore } from '../../stores/schema'
 import { useTaxonomyStore } from '../../stores/taxonomy'
 import { initialTaxonomyForm } from '../../utils/taxonomy-form'
-import TextInput from '../../components/fields/TextInput.vue'
-import RichTextEditor from '../../components/fields/RichTextEditor.vue'
-import NumberInput from '../../components/fields/NumberInput.vue'
-import BooleanToggle from '../../components/fields/BooleanToggle.vue'
-import DatePicker from '../../components/fields/DatePicker.vue'
-import EnumSelect from '../../components/fields/EnumSelect.vue'
-import ComputedDisplay from '../../components/fields/ComputedDisplay.vue'
+import { componentFor, fieldExtraProps } from '../../components/fields/field-registry'
 import ConfirmDialog from '../../components/shared/ConfirmDialog.vue'
 
 const route = useRoute()
@@ -47,24 +39,6 @@ const loading = ref(true)
 const saving = ref(false)
 const formError = ref('')
 const showDeleteConfirm = ref(false)
-
-// ── Field component mapping (flat — no paragraphs, media, or references in taxonomy) ──
-
-const FIELD_COMP = {
-  'text/plain': TextInput,
-  'text/rich': RichTextEditor,
-  integer: NumberInput,
-  float: NumberInput,
-  boolean: BooleanToggle,
-  date: DatePicker,
-  enum: EnumSelect,
-  programmatic: ComputedDisplay,
-} as const
-
-function componentFor(field: ParsedField): Component {
-  const key = field.field_type as keyof typeof FIELD_COMP
-  return FIELD_COMP[key] ?? TextInput
-}
 
 // ── Form helpers ──────────────────────────────────────────────────────────────
 
@@ -241,6 +215,7 @@ const pageTitle = computed(() => {
         :model-value="form[field.name]"
         :error="errors[field.name]"
         :disabled="saving"
+        v-bind="fieldExtraProps(field)"
         @update:model-value="updateField(field.name, $event)"
       />
     </div>
