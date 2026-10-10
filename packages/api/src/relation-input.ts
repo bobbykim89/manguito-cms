@@ -119,9 +119,14 @@ function paragraphItemsIn(
   return out
 }
 
-// Same rule as the top-level required check in the admin routes.
-function isMissing(value: unknown): boolean {
-  return value === null || value === undefined || value === '' || (Array.isArray(value) && value.length === 0)
+// What "required" refuses: no value, a blank string, or an empty list. Shared by
+// the top-level required check in the admin routes and the paragraph-item check
+// below, so the two levels cannot drift apart.
+export function isMissing(value: unknown): boolean {
+  if (value === null || value === undefined) return true
+  if (typeof value === 'string' && value.trim() === '') return true
+  if (Array.isArray(value) && value.length === 0) return true
+  return false
 }
 
 // Required fields inside paragraph items. A required field that has its own
@@ -156,9 +161,10 @@ function quoteIdent(name: string): string {
 
 type ReferenceUse = { table: string; id: string; field: string }
 
-// Every reference id in the body, with the table it must exist in and the path
-// that names it: single references ("owner"), list entries ("tags[1]"), and
-// references inside paragraph items ("cards[0].card_tag").
+// Every foreign-key id in the body, with the table it must exist in and the
+// path that names it: single references ("owner"), list entries ("tags[1]"),
+// media fields ("hero_image"), and all of these inside paragraph items
+// ("cards[0].card_tag", "cards[0].card_image").
 function collectReferences(
   fields: ParsedField[],
   body: Record<string, unknown>,
@@ -167,7 +173,7 @@ function collectReferences(
   out: ReferenceUse[],
 ): void {
   for (const f of fields) {
-    if (f.field_type !== 'reference' || !(f.name in body) || !f.db_column) continue
+    if (!(f.name in body) || !f.db_column) continue
     const table = f.db_column.junction ? f.db_column.junction.right_table : f.db_column.foreign_key?.table
     if (!table) continue
     const value = body[f.name]
@@ -185,10 +191,12 @@ function collectReferences(
   }
 }
 
-// Reference ids that point at no row. A missing target makes Postgres refuse
-// the insert on its foreign key (23503) part-way through a write that has
-// already deleted the field's old links or paragraph rows. One query per target
-// table. Unpublished targets exist and pass. Assumes checkRelationInput passed.
+// Foreign-key ids (references and media) that point at no row. A missing target
+// makes Postgres refuse the insert on its foreign key (23503) part-way through a
+// write that has already deleted the field's old links or paragraph rows. An id
+// that is not a UUID counts as missing without a query: Postgres would refuse it
+// as a uuid (22P02) inside the lookup itself. One query per target table, run in
+// parallel. Unpublished targets exist and pass.
 export async function findMissingReferences(
   db: DrizzlePostgresInstance,
   fields: ParsedField[],
@@ -199,14 +207,15 @@ export async function findMissingReferences(
   collectReferences(fields, body, registry, '', uses)
   if (uses.length === 0) return []
 
-  const found = new Map<string, Set<string>>()
-  for (const table of new Set(uses.map((u) => u.table))) {
-    const ids = [...new Set(uses.filter((u) => u.table === table).map((u) => u.id.toLowerCase()))]
+  const lookups = [...new Set(uses.map((u) => u.table))].map(async (table) => {
+    const ids = [...new Set(uses.filter((u) => u.table === table && isUuid(u.id)).map((u) => u.id.toLowerCase()))]
+    if (ids.length === 0) return [table, new Set<string>()] as const
     const result = await db.execute(
       sql`SELECT id FROM ${sql.raw(quoteIdent(table))} WHERE id IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})`
     )
-    found.set(table, new Set((result.rows as Array<{ id: string }>).map((r) => String(r.id).toLowerCase())))
-  }
+    return [table, new Set((result.rows as Array<{ id: string }>).map((r) => String(r.id).toLowerCase()))] as const
+  })
+  const found = new Map(await Promise.all(lookups))
 
   return uses
     .filter((u) => !found.get(u.table)!.has(u.id.toLowerCase()))

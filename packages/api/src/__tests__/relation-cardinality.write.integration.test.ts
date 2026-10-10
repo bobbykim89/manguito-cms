@@ -218,4 +218,26 @@ describe('references and required fields checked before writing', () => {
     expect(status).toBe(422)
     expect(body.error!.details!.map((d) => d.field)).toEqual(['owner'])
   })
+
+  it('refuses a media id inside a paragraph item that does not exist, keeping the stored cards', async () => {
+    // MUTATION: collect only reference fields. A card image id with no media
+    // row then reaches the insert after the old cards were deleted: a 500 and
+    // lost cards.
+    const { body } = await create({ cards: [{ heading: 'keep', card_tag: tagA }] })
+    const res = await authenticatedRequest(app, 'admin', 'PATCH', `${POSTS()}/${body.data!.id}`, {
+      body: { cards: [{ heading: 'new', card_tag: tagA, card_image: MISSING_ID }] },
+    })
+    expect(res.status).toBe(422)
+    const err = ((await res.json()) as { error: { details: Array<{ field: string }> } }).error
+    expect(err.details.map((d) => d.field)).toEqual(['cards[0].card_image'])
+    expect(await countRows(db, fx.tables.card, `parent_id = '${body.data!.id}' AND heading = 'keep'`)).toBe(1)
+  })
+
+  it('refuses a media id that is not a UUID with 422, not a 500 from the lookup', async () => {
+    // MUTATION: query every collected id as-is. Postgres rejects 'abc' as a
+    // uuid (22P02) inside the existence query itself.
+    const { status, body } = await create({ cards: [{ card_tag: tagA, card_image: 'abc' }] })
+    expect(status).toBe(422)
+    expect(body.error!.details!.map((d) => d.field)).toEqual(['cards[0].card_image'])
+  })
 })

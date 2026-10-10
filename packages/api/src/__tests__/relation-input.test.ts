@@ -119,6 +119,11 @@ describe('checkRequiredInParagraphItems', () => {
       { field: 'hero.caption', message: 'hero.caption is required.' },
     ])
     expect(checkRequiredInParagraphItems(pageFields, { hero: null }, registry)).toEqual([])
+    // MUTATION: test only `=== ''`. A whitespace-only caption then passes here
+    // although the top-level required check refuses the same value.
+    expect(checkRequiredInParagraphItems(pageFields, { hero: { caption: '   ' } }, registry)).toEqual([
+      { field: 'hero.caption', message: 'hero.caption is required.' },
+    ])
   })
 
   it('accepts complete items, empty lists and absent fields', () => {

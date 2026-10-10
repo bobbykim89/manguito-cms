@@ -34,6 +34,7 @@ import {
   checkRelationInput,
   checkRequiredInParagraphItems,
   findMissingReferences,
+  isMissing,
   type RelationInputError,
 } from '../../relation-input.js'
 import type { createPermissionMiddleware } from '../../middleware/permission.js'
@@ -94,19 +95,13 @@ const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
 // ─── Validation helpers ───────────────────────────────────────────────────────
 
-function isEmpty(value: unknown): boolean {
-  if (value === null || value === undefined) return true
-  if (typeof value === 'string' && value.trim() === '') return true
-  if (Array.isArray(value) && value.length === 0) return true
-  return false
-}
 
 function checkRequiredFields(
   fields: ParsedField[],
   data: Record<string, unknown>
 ): { field: string; message: string }[] {
   return fields
-    .filter((f) => f.required && isEmpty(data[f.name]))
+    .filter((f) => f.required && isMissing(data[f.name]))
     .map((f) => ({ field: f.name, message: `${f.label} is required` }))
 }
 
