@@ -117,8 +117,8 @@ async function loadRelationsForEdit(
 
 // Saves one write's paragraph fields and many-to-many links: every content and
 // taxonomy create and update goes through here, so the four routes cannot
-// drift apart. On an update (`skipAbsent`), a field absent from the body is
-// left untouched; on a create there is nothing stored to keep. Returns the
+// drift apart. On an 'update', a field absent from the body is left untouched;
+// on a 'create' there is nothing stored to keep, so every field is written. Returns the
 // media changes of the paragraph rows, for the caller to reconcile.
 async function persistRelationFields(
   db: DrizzlePostgresInstance,
@@ -127,11 +127,11 @@ async function persistRelationFields(
   body: Record<string, unknown>,
   itemId: string,
   ownerTable: string,
-  skipAbsent: boolean
+  mode: 'create' | 'update'
 ): Promise<MediaDelta[]> {
   const deltas: MediaDelta[] = []
   for (const f of fields) {
-    if (skipAbsent && !(f.name in body)) continue
+    if (mode === 'update' && !(f.name in body)) continue
     if (f.db_column === null) {
       const comp = f.ui_component as { component: string; ref?: string }
       if (comp.component !== 'paragraph-embed' || !comp.ref) continue
@@ -562,7 +562,7 @@ export function registerAdminContentRoutes(
         const mediaDeltas: MediaDelta[] = [topLevelMediaDelta(mediaFields, null, storageBody)]
 
         if (db) {
-          mediaDeltas.push(...(await persistRelationFields(db, registry, contentType.fields, body, itemId, contentType.db.table_name, false)))
+          mediaDeltas.push(...(await persistRelationFields(db, registry, contentType.fields, body, itemId, contentType.db.table_name, 'create')))
         }
 
         await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
@@ -700,7 +700,7 @@ export function registerAdminContentRoutes(
         ]
 
         if (db) {
-          mediaDeltas.push(...(await persistRelationFields(db, registry, contentType.fields, body, id, contentType.db.table_name, true)))
+          mediaDeltas.push(...(await persistRelationFields(db, registry, contentType.fields, body, id, contentType.db.table_name, 'update')))
         }
 
         await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
@@ -952,7 +952,7 @@ export function registerAdminContentRoutes(
         const mediaDeltas: MediaDelta[] = [topLevelMediaDelta(mediaFields, null, storageBody)]
 
         if (db) {
-          mediaDeltas.push(...(await persistRelationFields(db, registry, taxonomyType.fields, body, taxItemId, taxonomyType.db.table_name, false)))
+          mediaDeltas.push(...(await persistRelationFields(db, registry, taxonomyType.fields, body, taxItemId, taxonomyType.db.table_name, 'create')))
         }
 
         await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
@@ -1035,7 +1035,7 @@ export function registerAdminContentRoutes(
         ]
 
         if (db) {
-          mediaDeltas.push(...(await persistRelationFields(db, registry, taxonomyType.fields, body, id, taxonomyType.db.table_name, true)))
+          mediaDeltas.push(...(await persistRelationFields(db, registry, taxonomyType.fields, body, id, taxonomyType.db.table_name, 'update')))
         }
 
         await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
