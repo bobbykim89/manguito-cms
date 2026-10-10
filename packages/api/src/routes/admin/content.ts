@@ -30,7 +30,12 @@ import {
   oneOrMany,
   paragraphItems,
 } from '../../relations.js'
-import { checkRelationInput } from '../../relation-input.js'
+import {
+  checkRelationInput,
+  checkRequiredInParagraphItems,
+  findMissingReferences,
+  type RelationInputError,
+} from '../../relation-input.js'
 import type { createPermissionMiddleware } from '../../middleware/permission.js'
 import type { ContentRepos } from '../content.js'
 import { isColumnBacked } from '../../field-keys.js'
@@ -105,20 +110,31 @@ function checkRequiredFields(
     .map((f) => ({ field: f.name, message: `${f.label} is required` }))
 }
 
-// 422 when a relation value's shape does not match its cardinality. Runs before
-// any write, so a refused request changes nothing.
-function relationShapeError(
+// 422 when a relation value would make the write fail part-way: a shape that
+// does not match its cardinality, a paragraph item missing a required field,
+// or a reference to an item that does not exist. Runs before any write, so a
+// refused request changes nothing. Each category has its own message.
+async function relationInputError(
   c: Context,
   fields: ParsedField[],
   body: Record<string, unknown>,
-  registry: SchemaRegistry
-): Response | null {
-  const details = checkRelationInput(fields, body, registry)
-  if (details.length === 0) return null
-  return c.json(
-    { ok: false, error: { code: 'VALIDATION_ERROR', message: 'Relation fields have the wrong shape', details } },
-    422
-  )
+  registry: SchemaRegistry,
+  db: DrizzlePostgresInstance | undefined
+): Promise<Response | null> {
+  const refuse = (message: string, details: RelationInputError[]) =>
+    c.json({ ok: false, error: { code: 'VALIDATION_ERROR', message, details } }, 422)
+
+  const shape = checkRelationInput(fields, body, registry)
+  if (shape.length > 0) return refuse('Relation fields have the wrong shape', shape)
+
+  const required = checkRequiredInParagraphItems(fields, body, registry)
+  if (required.length > 0) return refuse('Required fields are missing', required)
+
+  if (db) {
+    const missing = await findMissingReferences(db, fields, body, registry)
+    if (missing.length > 0) return refuse('Relation fields refer to items that do not exist', missing)
+  }
+  return null
 }
 
 // Extract IDs from already-resolved media field values ({ id: string } objects).
@@ -443,8 +459,8 @@ export function registerAdminContentRoutes(
     // pre-checks (slug rules, singleton existence, 404s) stay in the routes.
 
     const writeNewItem = async (c: Context, body: Record<string, unknown>) => {
-        const shapeError = relationShapeError(c, contentType.fields, body, registry)
-        if (shapeError) return shapeError
+        const inputError = await relationInputError(c, contentType.fields, body, registry, db)
+        if (inputError) return inputError
         // Inbound boundary: the request body arrives label-keyed; everything
         // downstream (insert data, media delta) works in storage keys.
         const storageBody = fieldKeys.toStorage(body)
@@ -614,8 +630,8 @@ export function registerAdminContentRoutes(
       existing: Record<string, unknown>,
       body: Record<string, unknown>,
     ) => {
-        const shapeError = relationShapeError(c, contentType.fields, body, registry)
-        if (shapeError) return shapeError
+        const inputError = await relationInputError(c, contentType.fields, body, registry, db)
+        if (inputError) return inputError
         // Inbound boundary: the request body arrives label-keyed; everything
         // downstream (insert data, media delta) works in storage keys.
         const storageBody = fieldKeys.toStorage(body)
@@ -896,8 +912,8 @@ export function registerAdminContentRoutes(
       requirePermission('content:create'),
       async (c) => {
         const body = (await c.req.json()) as Record<string, unknown>
-        const shapeError = relationShapeError(c, taxonomyType.fields, body, registry)
-        if (shapeError) return shapeError
+        const inputError = await relationInputError(c, taxonomyType.fields, body, registry, db)
+        if (inputError) return inputError
 
         // Inbound boundary: the request body arrives label-keyed; everything
         // downstream (insert data, media delta) works in storage keys.
@@ -983,8 +999,8 @@ export function registerAdminContentRoutes(
             404
           )
         }
-        const shapeError = relationShapeError(c, taxonomyType.fields, body, registry)
-        if (shapeError) return shapeError
+        const inputError = await relationInputError(c, taxonomyType.fields, body, registry, db)
+        if (inputError) return inputError
 
         if (body['published'] === true) {
           const publishDeny = await requirePermission('content:edit')(c, async () => {})
