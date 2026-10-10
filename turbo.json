@@ -15,6 +15,18 @@
       "passThroughEnv": ["DB_URL"]
     },
     "lint": {},
+    "typecheck": {
+      "dependsOn": ["^build"]
+    },
+    // db and api type-check their tests, which import test-utils, which
+    // imports the built db and api. So each needs its own build first, or a
+    // rebuild running alongside clears the dist it is reading.
+    "@bobbykim/manguito-cms-db#typecheck": {
+      "dependsOn": ["^build", "build"]
+    },
+    "@bobbykim/manguito-cms-api#typecheck": {
+      "dependsOn": ["^build", "build"]
+    },
     "smoke": {
       "dependsOn": ["test"],
       "cache": false,

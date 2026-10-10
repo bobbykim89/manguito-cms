@@ -135,9 +135,8 @@ async function uploadPresigned(file: File, alt: string): Promise<MediaItem> {
     }
 
     xhr.onload = () => {
-      xhr.status >= 200 && xhr.status < 300
-        ? resolve()
-        : reject(new Error(`Storage upload failed (${xhr.status})`))
+      if (xhr.status >= 200 && xhr.status < 300) resolve()
+      else reject(new Error(`Storage upload failed (${xhr.status})`))
     }
     xhr.onerror = () => reject(new Error('Network error during upload'))
     if (method === 'POST' && fields) {

@@ -68,7 +68,7 @@ CLI: commander + @inquirer/prompts
 Scripts live in the root package.json. The non-obvious ones:
 
 - `pnpm test` needs the test database: `pnpm db:test:up` and a `.env.test` copied from `.env.test.example`.
-- Build packages with `pnpm turbo run build --filter="./packages/*"` (what CI runs). `pnpm build` also builds apps/sandbox, which needs real storage credentials; `pnpm build:packages` skips create-manguito.
+- Build packages with `pnpm build:packages`: the filtered turbo build CI runs, then `pnpm install` to link the sandbox's `manguito` bin. `pnpm build` also builds apps/sandbox, which needs real storage credentials.
 - `pnpm run version` runs `changeset version`; bare `pnpm version` is pnpm's built-in bump and runs nothing.
 
 ## Workflow and CI
@@ -78,7 +78,7 @@ Scripts live in the root package.json. The non-obvious ones:
 - Work on a branch (`feat/`, `fix/`, `docs/`, `chore/`, `release/`), then open a PR against master.
 - Commit messages are conventional commits: `type(scope): subject`.
 - Changes that ship inside a published package carry a changeset (`pnpm changeset`); docs, `.github/` and tooling changes do not.
-- Before pushing, run the `ci` steps locally: `pnpm lint`, the filtered build above, `pnpm typecheck`, `pnpm test`, `pnpm smoke`.
+- Before pushing, run the `ci` steps locally: `pnpm lint`, `pnpm build:packages`, `pnpm typecheck`, `pnpm test`, `pnpm smoke`.
 - Before opening a PR, run `/code-review` on the branch (its diff against master), fix the Critical and Important findings, and list any finding you leave in the PR body.
 - A test that reads a new environment variable needs it declared in turbo.json `passThroughEnv` for the `test` task: Turborepo hides undeclared variables, and `.env.test` masks the omission locally, so it fails only in CI.
 - The `ci` job name in .github/workflows/ci.yml is the check .github/rulesets/master.json requires; rename both together, and keep the workflow free of `paths` filters.
