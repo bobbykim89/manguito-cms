@@ -137,15 +137,23 @@ export function fieldToZodSchema(field: ParsedField, registry?: SchemaRegistry):
   }
 }
 
+// A field's schema as an object entry. A nullable field also takes null: the
+// API stores and returns it, a "one" relation included (#56). A list relation
+// is the exception, since it is [] when empty and the API refuses null for it.
+// A field that is not required may be left out.
+function fieldEntrySchema(f: ParsedField, registry?: SchemaRegistry): string {
+  let s = fieldToZodSchema(f, registry)
+  if (f.nullable && relationCardinality(f) !== 'many') s += '.nullable()'
+  if (!f.required) s += '.optional()'
+  return s
+}
+
 // Generates inline z.object({...}) for a paragraph type — used recursively inside fieldToZodSchema
 function generateParagraphObjectSchema(
   paragraph: ParsedParagraphType,
   registry?: SchemaRegistry
 ): string {
-  const entries = paragraph.fields.map((f) => {
-    const zodType = fieldToZodSchema(f, registry)
-    return `${f.name}: ${f.required ? zodType : `${zodType}.optional()`}`
-  })
+  const entries = paragraph.fields.map((f) => `${f.name}: ${fieldEntrySchema(f, registry)}`)
   if (entries.length === 0) return 'z.object({})'
   return `z.object({ ${entries.join(', ')} })`
 }
@@ -167,10 +175,7 @@ function schemaFieldEntries(
   fields: ParsedField[],
   registry?: SchemaRegistry
 ): string[] {
-  return fields.map((f) => {
-    const zodType = fieldToZodSchema(f, registry)
-    return `  ${f.name}: ${f.required ? zodType : `${zodType}.optional()`}`
-  })
+  return fields.map((f) => `  ${f.name}: ${fieldEntrySchema(f, registry)}`)
 }
 
 export function generateContentSchema(
@@ -424,6 +429,10 @@ function generateContentRoutes(contentType: ParsedContentType): string {
     404: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
       description: '${label} not found',
+    },
+    409: {
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+      description: 'ITEM_IN_USE: a required reference elsewhere still points at this ${label}',
     },
   },
 })`
@@ -712,6 +721,10 @@ function generateTaxonomyRoutes(taxonomyType: ParsedTaxonomyType): string {
     404: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
       description: '${label} not found',
+    },
+    409: {
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+      description: 'ITEM_IN_USE: a required reference elsewhere still points at this ${label}',
     },
   },
 })`
