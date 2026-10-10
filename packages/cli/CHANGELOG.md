@@ -1,5 +1,22 @@
 # @bobbykim/manguito-cms-cli
 
+## 0.9.0
+
+### Minor Changes
+
+- 95b3816: Ships core 0.8.0 and the taxonomy relation support. The CLI pins its dependencies at exact versions, so this release is a minor: `manguito migrate` now generates the link tables for many-to-many fields on taxonomy types, which projects with such fields need to apply after upgrading.
+
+### Patch Changes
+
+- Updated dependencies [e4017d4]
+- Updated dependencies [e4017d4]
+- Updated dependencies [ccd816a]
+- Updated dependencies [ccd816a]
+  - @bobbykim/manguito-cms-admin@0.5.2
+  - @bobbykim/manguito-cms-api@0.8.2
+  - @bobbykim/manguito-cms-core@0.8.0
+  - @bobbykim/manguito-cms-db@0.1.8
+
 ## 0.8.2
 
 ### Patch Changes
