@@ -497,7 +497,7 @@ describe('graphql schema-init failure', () => {
       { name: 'slug', db_type: 'varchar', nullable: false },
     ],
     fields: [],
-    db: { table_name: TABLE },
+    db: { table_name: TABLE, junction_tables: [] },
     api: { collection_path: '/dup', item_path: '/dup/:slug' },
   }
 

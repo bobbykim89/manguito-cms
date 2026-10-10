@@ -55,6 +55,7 @@ export type ParagraphDbMeta = {
 
 export type TaxonomyDbMeta = {
   table_name: string
+  junction_tables: JunctionTable[]
 }
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
@@ -418,6 +419,25 @@ function buildFields(
 
 // ─── Per-schema-type parsers ──────────────────────────────────────────────────
 
+// The link tables a type's many-to-many reference fields need. Content and
+// taxonomy types both own them; db codegen creates one table per entry.
+function collectJunctionTables(fields: ParsedField[]): JunctionTable[] {
+  const junctionTables: JunctionTable[] = []
+  for (const field of fields) {
+    if (field.field_type === 'reference' && field.db_column?.junction) {
+      const j = field.db_column.junction
+      junctionTables.push({
+        table_name: j.table_name,
+        left_column: j.left_column,
+        right_column: j.right_column,
+        right_table: j.right_table,
+        order_column: j.order_column,
+      })
+    }
+  }
+  return junctionTables
+}
+
 function parseContentType(raw: unknown, sourceFile: string): ParseResult {
   const result = ContentTypeRawSchema.safeParse(raw)
   if (!result.success) {
@@ -456,22 +476,6 @@ function parseContentType(raw: unknown, sourceFile: string): ParseResult {
   const { fields, errors } = buildFields(flatRawFields, sourceFile, tableName)
   if (errors.length > 0) return { ok: false, errors }
 
-  // ── Collect junction tables from many-to-many reference fields ─────────────
-
-  const junctionTables: JunctionTable[] = []
-  for (const field of fields) {
-    if (field.field_type === 'reference' && field.db_column?.junction) {
-      const j = field.db_column.junction
-      junctionTables.push({
-        table_name: j.table_name,
-        left_column: j.left_column,
-        right_column: j.right_column,
-        right_table: j.right_table,
-        order_column: j.order_column,
-      })
-    }
-  }
-
   // ── ContentApiMeta ─────────────────────────────────────────────────────────
 
   const nameKebab = nameSegmentToKebab(getNameSegment(v.name))
@@ -499,7 +503,7 @@ function parseContentType(raw: unknown, sourceFile: string): ParseResult {
     system_fields: CONTENT_SYSTEM_FIELDS,
     fields,
     ui: { tabs },
-    db: { table_name: tableName, junction_tables: junctionTables },
+    db: { table_name: tableName, junction_tables: collectJunctionTables(fields) },
     api,
   }
 
@@ -564,7 +568,7 @@ function parseTaxonomyType(raw: unknown, sourceFile: string): ParseResult {
     source_file: sourceFile,
     system_fields: TAXONOMY_SYSTEM_FIELDS,
     fields,
-    db: { table_name: tableName },
+    db: { table_name: tableName, junction_tables: collectJunctionTables(fields) },
     api: {
       collection_path: basePath,
       item_path: `${basePath}/:id`,

@@ -23,7 +23,7 @@ export type CardinalityFixture = {
   registry: SchemaRegistry
   basePath: string
   names: { post: string; tag: string; link: string; card: string }
-  tables: { post: string; tag: string; link: string; card: string; tags: string }
+  tables: { post: string; tag: string; link: string; card: string; tags: string; relatedTags: string }
 }
 
 export function parseOrThrow(raw: unknown, type: 'content-type' | 'taxonomy-type' | 'paragraph-type'): ParsedSchema {
@@ -50,6 +50,7 @@ export function makeCardinalityFixture(prefix: string): CardinalityFixture {
           fields: [
             { name: 'name', label: 'Name', type: 'text/plain', required: false },
             { name: 'tag_link', label: 'Tag link', type: 'paragraph', ref: names.link, rel: 'one-to-one', required: false },
+            { name: 'related_tags', label: 'Related tags', type: 'reference', target: names.tag, rel: 'many-to-many', required: false },
           ],
         },
         'taxonomy-type'
@@ -103,6 +104,7 @@ export function makeCardinalityFixture(prefix: string): CardinalityFixture {
     testParsedSchema.roles
   )
   const post = registry.content_types[names.post]!
+  const tag = registry.taxonomy_types[names.tag]!
   return {
     registry,
     basePath,
@@ -113,6 +115,7 @@ export function makeCardinalityFixture(prefix: string): CardinalityFixture {
       link: registry.paragraph_types[names.link]!.db.table_name,
       card: registry.paragraph_types[names.card]!.db.table_name,
       tags: post.fields.find((f) => f.name === 'tags')!.db_column!.junction!.table_name,
+      relatedTags: tag.fields.find((f) => f.name === 'related_tags')!.db_column!.junction!.table_name,
     },
   }
 }
@@ -144,7 +147,7 @@ export function tableSql(table: string, systemFields: SystemField[], fields: Par
 }
 
 export async function dropFixtureTables(db: DrizzlePostgresInstance, fx: CardinalityFixture): Promise<void> {
-  for (const t of [fx.tables.tags, fx.tables.post, fx.tables.card, fx.tables.link, fx.tables.tag]) {
+  for (const t of [fx.tables.tags, fx.tables.relatedTags, fx.tables.post, fx.tables.card, fx.tables.link, fx.tables.tag]) {
     await db.execute(sql.raw(`DROP TABLE IF EXISTS "${t}" CASCADE`))
   }
   await db.execute(sql`DELETE FROM base_paths WHERE path = ${fx.basePath}`)
@@ -161,15 +164,20 @@ export async function createFixtureTables(db: DrizzlePostgresInstance, fx: Cardi
   await db.execute(sql.raw(tableSql(t.post, post.system_fields, post.fields)))
   await db.execute(sql.raw(tableSql(t.link, link.system_fields, link.fields)))
   await db.execute(sql.raw(tableSql(t.card, card.system_fields, card.fields)))
-  const j = post.fields.find((f) => f.name === 'tags')!.db_column!.junction!
-  await db.execute(
-    sql.raw(
-      `CREATE TABLE "${j.table_name}" ("${j.left_column}" uuid NOT NULL REFERENCES "${t.post}"(id) ON DELETE CASCADE, ` +
-        `"${j.right_column}" uuid NOT NULL REFERENCES "${j.right_table}"(id) ON DELETE CASCADE` +
-        (j.order_column ? ', "order" integer NOT NULL DEFAULT 0' : '') +
-        ')'
-    )
-  )
+  // The link tables the parser lists for each owner type: the same list db
+  // codegen creates them from, so a type the parser leaves out fails here too.
+  for (const [owner, ownerTable] of [[post, t.post], [tag, t.tag]] as const) {
+    for (const j of owner.db.junction_tables) {
+      await db.execute(
+        sql.raw(
+          `CREATE TABLE "${j.table_name}" ("${j.left_column}" uuid NOT NULL REFERENCES "${ownerTable}"(id) ON DELETE CASCADE, ` +
+            `"${j.right_column}" uuid NOT NULL REFERENCES "${j.right_table}"(id) ON DELETE CASCADE` +
+            (j.order_column ? ', "order" integer NOT NULL DEFAULT 0' : '') +
+            ')'
+        )
+      )
+    }
+  }
   await db.execute(sql`INSERT INTO base_paths (name, path) VALUES (${fx.basePath}, ${fx.basePath}) ON CONFLICT (path) DO NOTHING`)
 }
 

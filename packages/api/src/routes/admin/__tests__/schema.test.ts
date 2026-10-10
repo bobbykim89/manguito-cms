@@ -69,7 +69,7 @@ const TAXONOMY_TYPE: ParsedTaxonomyType = {
   source_file: 'taxonomy--category.json',
   system_fields: [],
   fields: FIELDS,
-  db: { table_name: 'taxonomy_category' },
+  db: { table_name: 'taxonomy_category', junction_tables: [] },
   api: { collection_path: '/api/category', item_path: '/api/category/:slug' },
 }
 

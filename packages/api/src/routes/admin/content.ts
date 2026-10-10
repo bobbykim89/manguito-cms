@@ -82,6 +82,87 @@ async function loadParagraphRows(
   return rows
 }
 
+// Fills an edit read's relation fields, which the item's own row lacks: each
+// paragraph field (an object or null for a 'one' field, a list otherwise) and
+// each many-to-many field (its list of linked ids). Shared by the content and
+// taxonomy edit reads, so both edit forms load the same data.
+//
+// This deliberately does NOT reuse the relation module's resolvers: the edit
+// read scopes paragraph rows by parent_id AND parent_field, whereas
+// resolveRelationField scopes by parent_id only. Two paragraph fields of the
+// same paragraph type would be mixed by the resolver.
+async function loadRelationsForEdit(
+  db: DrizzlePostgresInstance,
+  registry: SchemaRegistry,
+  fields: ParsedField[],
+  id: string,
+  row: Record<string, unknown>
+): Promise<void> {
+  for (const f of fields) {
+    if (f.db_column === null) {
+      const comp = f.ui_component as { component: string; ref?: string }
+      if (comp.component !== 'paragraph-embed' || !comp.ref) continue
+      const pType = registry.paragraph_types[comp.ref]
+      if (!pType) continue
+      row[f.name] = oneOrMany(relationCardinality(f) ?? 'many', await loadParagraphRows(db, registry, pType, id, f.name))
+    } else if (f.db_column.junction) {
+      const j = f.db_column.junction
+      const r = await db.execute(
+        sql`SELECT ${sql.raw(quoteIdent(j.right_column))} FROM ${sql.raw(quoteIdent(j.table_name))} WHERE ${sql.raw(quoteIdent(j.left_column))} = ${id}`
+      )
+      row[f.name] = r.rows.map((linked) => (linked as Record<string, unknown>)[j.right_column] as string)
+    }
+  }
+}
+
+// What a publish check on an update reads: the stored row (label-keyed), with
+// the body on top. A required paragraph or many-to-many field lives in its own
+// table, not on the row, so when the body leaves one out its stored value is
+// loaded here; otherwise it would always read as missing.
+async function valuesForPublishCheck(
+  db: DrizzlePostgresInstance | undefined,
+  registry: SchemaRegistry,
+  requiredFields: ParsedField[],
+  id: string,
+  storedLabels: Record<string, unknown>,
+  body: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  const stored = { ...storedLabels }
+  if (db) await loadRelationsForEdit(db, registry, requiredFields.filter((f) => !(f.name in body)), id, stored)
+  return { ...stored, ...body }
+}
+
+// Saves one write's paragraph fields and many-to-many links: every content and
+// taxonomy create and update goes through here, so the four routes cannot
+// drift apart. A field absent from the body is skipped: an update leaves it
+// untouched, and on a create there is nothing stored for it yet. Returns the
+// media changes of the paragraph rows, for the caller to reconcile.
+async function persistRelationFields(
+  db: DrizzlePostgresInstance,
+  registry: SchemaRegistry,
+  fields: ParsedField[],
+  body: Record<string, unknown>,
+  itemId: string,
+  ownerTable: string
+): Promise<MediaDelta[]> {
+  const deltas: MediaDelta[] = []
+  for (const f of fields) {
+    if (!(f.name in body)) continue
+    if (f.db_column === null) {
+      const comp = f.ui_component as { component: string; ref?: string }
+      if (comp.component !== 'paragraph-embed' || !comp.ref) continue
+      const pType = registry.paragraph_types[comp.ref]
+      if (!pType) continue
+      deltas.push(await persistParagraphField(db, itemId, ownerTable, f.name, pType, paragraphItems(f, body[f.name]), registry))
+    } else if (f.db_column.junction) {
+      const value = body[f.name]
+      const relatedIds = Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : []
+      await persistJunctionField(db, itemId, f.db_column.junction, relatedIds)
+    }
+  }
+  return deltas
+}
+
 async function lookupBasePathId(db: DrizzlePostgresInstance, pathOrName: string): Promise<string | null> {
   const r = await db.execute(
     sql`SELECT id FROM base_paths WHERE path = ${pathOrName} OR name = ${pathOrName} LIMIT 1`
@@ -343,32 +424,7 @@ export function registerAdminContentRoutes(
           )
         }
 
-        // Resolve paragraph and junction fields so the edit form loads real data.
-        // This deliberately does NOT reuse the relation module's resolvers: the
-        // edit read scopes paragraph rows by parent_id AND parent_field, whereas
-        // resolveRelationField scopes by parent_id only. Two paragraph fields of
-        // the same paragraph type would be mixed by the resolver — so the more
-        // precise per-field read stays here on purpose.
-        if (db) {
-          const row = item as Record<string, unknown>
-          for (const f of contentType.fields) {
-            if (f.db_column === null) {
-              const comp = f.ui_component as { component: string; ref?: string }
-              if (comp.component !== 'paragraph-embed' || !comp.ref) continue
-              const pType = registry.paragraph_types[comp.ref]
-              if (!pType) continue
-              row[f.name] = oneOrMany(relationCardinality(f) ?? 'many', await loadParagraphRows(db, registry, pType, id, f.name))
-            } else if (f.db_column.junction) {
-              const j = f.db_column.junction
-              const r = await db.execute(
-                sql`SELECT ${sql.raw(quoteIdent(j.right_column))} FROM ${sql.raw(quoteIdent(j.table_name))} WHERE ${sql.raw(quoteIdent(j.left_column))} = ${id}`
-              )
-              row[f.name] = r.rows.map(
-                (row) => (row as Record<string, unknown>)[j.right_column] as string
-              )
-            }
-          }
-        }
+        if (db) await loadRelationsForEdit(db, registry, contentType.fields, id, item as Record<string, unknown>)
 
         // Outbound boundary: rows are storage-keyed; responses speak labels.
         // Mapped after the paragraph/junction population above so those
@@ -480,12 +536,6 @@ export function registerAdminContentRoutes(
           if (publishDeny) return publishDeny
         }
 
-        // Classify fields
-        const paragraphFields = contentType.fields.filter((f) => f.db_column === null)
-        const junctionFields = contentType.fields.filter(
-          (f) => f.db_column !== null && f.db_column.junction !== undefined
-        )
-
         // Storage-keyed payload. `storageBody` was normalized at the inbound
         // boundary, so each value is found under its column name.
         const columnBackedFields = contentType.fields.filter(isColumnBacked)
@@ -527,23 +577,8 @@ export function registerAdminContentRoutes(
         // Reconcile media reference counts across top-level fields and paragraphs.
         const mediaDeltas: MediaDelta[] = [topLevelMediaDelta(mediaFields, null, storageBody)]
 
-        // Save paragraph and junction rows
         if (db) {
-          for (const f of paragraphFields) {
-            const comp = f.ui_component as { component: string; ref?: string }
-            if (comp.component !== 'paragraph-embed' || !comp.ref) continue
-            const pType = registry.paragraph_types[comp.ref]
-            if (!pType) continue
-            const items = paragraphItems(f, body[f.name])
-            mediaDeltas.push(await persistParagraphField(db, itemId, contentType.db.table_name, f.name, pType, items, registry))
-          }
-          for (const f of junctionFields) {
-            const junction = f.db_column!.junction!
-            const relatedIds = Array.isArray(body[f.name])
-              ? (body[f.name] as unknown[]).filter((v): v is string => typeof v === 'string')
-              : []
-            await persistJunctionField(db, itemId, junction, relatedIds)
-          }
+          mediaDeltas.push(...(await persistRelationFields(db, registry, contentType.fields, body, itemId, contentType.db.table_name)))
         }
 
         await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
@@ -638,7 +673,7 @@ export function registerAdminContentRoutes(
           // `existing` is a raw SELECT * row (storage-keyed) but
           // checkRequiredFields reads labels, as does `body` — project the row
           // to labels first so a renamed field's stored value is actually seen.
-          const merged = { ...fieldKeys.toLabels(existing as Record<string, unknown>), ...body }
+          const merged = await valuesForPublishCheck(db, registry, requiredFields, id, fieldKeys.toLabels(existing as Record<string, unknown>), body)
           const fieldErrors = checkRequiredFields(requiredFields, merged)
           if (fieldErrors.length > 0) {
             return c.json(
@@ -654,12 +689,6 @@ export function registerAdminContentRoutes(
             )
           }
         }
-
-        // Classify fields
-        const patchParagraphFields = contentType.fields.filter((f) => f.db_column === null)
-        const patchJunctionFields = contentType.fields.filter(
-          (f) => f.db_column !== null && f.db_column.junction !== undefined
-        )
 
         // Storage-keyed payload. `storageBody` was normalized at the inbound
         // boundary, so each value is found under its column name.
@@ -686,25 +715,8 @@ export function registerAdminContentRoutes(
           topLevelMediaDelta(mediaFields, existing as Record<string, unknown>, storageBody),
         ]
 
-        // Delete+reinsert paragraph and junction rows
         if (db) {
-          for (const f of patchParagraphFields) {
-            if (!(f.name in body)) continue
-            const comp = f.ui_component as { component: string; ref?: string }
-            if (comp.component !== 'paragraph-embed' || !comp.ref) continue
-            const pType = registry.paragraph_types[comp.ref]
-            if (!pType) continue
-            const items = paragraphItems(f, body[f.name])
-            mediaDeltas.push(await persistParagraphField(db, id, contentType.db.table_name, f.name, pType, items, registry))
-          }
-          for (const f of patchJunctionFields) {
-            if (!(f.name in body)) continue
-            const junction = f.db_column!.junction!
-            const relatedIds = Array.isArray(body[f.name])
-              ? (body[f.name] as unknown[]).filter((v): v is string => typeof v === 'string')
-              : []
-            await persistJunctionField(db, id, junction, relatedIds)
-          }
+          mediaDeltas.push(...(await persistRelationFields(db, registry, contentType.fields, body, id, contentType.db.table_name)))
         }
 
         await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
@@ -894,7 +906,10 @@ export function registerAdminContentRoutes(
           )
         }
 
+        if (db) await loadRelationsForEdit(db, registry, taxonomyType.fields, id, item as Record<string, unknown>)
+
         // Outbound boundary: rows are storage-keyed; responses speak labels.
+        // Mapped after the relation population above, so those additions survive.
         const data = projectRow(item as Record<string, unknown>, typeName, projectors)
 
         return c.json({ ok: true, data })
@@ -934,9 +949,6 @@ export function registerAdminContentRoutes(
           if (publishDeny) return publishDeny
         }
 
-        // Filter to column-only fields
-        const taxParagraphFields = taxonomyType.fields.filter((f) => f.db_column === null)
-
         // Storage-keyed payload. `storageBody` was normalized at the inbound
         // boundary, so each value is found under its column name.
         const taxColumnBackedFields = taxonomyType.fields.filter(isColumnBacked)
@@ -956,14 +968,7 @@ export function registerAdminContentRoutes(
         const mediaDeltas: MediaDelta[] = [topLevelMediaDelta(mediaFields, null, storageBody)]
 
         if (db) {
-          for (const f of taxParagraphFields) {
-            const comp = f.ui_component as { component: string; ref?: string }
-            if (comp.component !== 'paragraph-embed' || !comp.ref) continue
-            const pType = registry.paragraph_types[comp.ref]
-            if (!pType) continue
-            const items = paragraphItems(f, body[f.name])
-            mediaDeltas.push(await persistParagraphField(db, taxItemId, taxonomyType.db.table_name, f.name, pType, items, registry))
-          }
+          mediaDeltas.push(...(await persistRelationFields(db, registry, taxonomyType.fields, body, taxItemId, taxonomyType.db.table_name)))
         }
 
         await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
@@ -1004,7 +1009,7 @@ export function registerAdminContentRoutes(
           // `existing` is a raw SELECT * row (storage-keyed) but
           // checkRequiredFields reads labels, as does `body` — project the row
           // to labels first so a renamed field's stored value is actually seen.
-          const merged = { ...fieldKeys.toLabels(existing as Record<string, unknown>), ...body }
+          const merged = await valuesForPublishCheck(db, registry, requiredFields, id, fieldKeys.toLabels(existing as Record<string, unknown>), body)
           const fieldErrors = checkRequiredFields(requiredFields, merged)
           if (fieldErrors.length > 0) {
             return c.json(
@@ -1020,9 +1025,6 @@ export function registerAdminContentRoutes(
             )
           }
         }
-
-        // Filter to column-only fields
-        const taxPatchParagraphFields = taxonomyType.fields.filter((f) => f.db_column === null)
 
         // Storage-keyed payload. `storageBody` was normalized at the inbound
         // boundary, so each value is found under its column name.
@@ -1049,15 +1051,7 @@ export function registerAdminContentRoutes(
         ]
 
         if (db) {
-          for (const f of taxPatchParagraphFields) {
-            if (!(f.name in body)) continue
-            const comp = f.ui_component as { component: string; ref?: string }
-            if (comp.component !== 'paragraph-embed' || !comp.ref) continue
-            const pType = registry.paragraph_types[comp.ref]
-            if (!pType) continue
-            const items = paragraphItems(f, body[f.name])
-            mediaDeltas.push(await persistParagraphField(db, id, taxonomyType.db.table_name, f.name, pType, items, registry))
-          }
+          mediaDeltas.push(...(await persistRelationFields(db, registry, taxonomyType.fields, body, id, taxonomyType.db.table_name)))
         }
 
         await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)

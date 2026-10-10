@@ -12,7 +12,7 @@ const TAXO: ParsedTaxonomyType = {
     { name: 'label_field', label: 'Label', field_type: 'text/plain', required: true, nullable: false, order: 0, validation: { required: true }, db_column: { column_name: 'label_field', column_type: 'varchar', nullable: false }, ui_component: { component: 'text-input' } },
     { name: 'computed_one', label: 'Computed One', field_type: 'programmatic', required: false, nullable: true, order: 1, validation: { required: false }, db_column: null, ui_component: { component: 'computed-display' } },
   ],
-  db: { table_name: 'taxonomy_tag' },
+  db: { table_name: 'taxonomy_tag', junction_tables: [] },
   api: { collection_path: '/api/taxonomy/tag', item_path: '/api/taxonomy/tag/:id' },
 }
 

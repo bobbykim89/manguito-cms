@@ -418,6 +418,33 @@ describe('parseSchema — taxonomy-type', () => {
     expect(schema.api.item_path).toBe('/api/taxonomy/daily-post/:id')
   })
 
+  it('lists a junction table for each many-to-many reference field (#55)', () => {
+    // MUTATION: leave db.junction_tables out of the taxonomy result. db codegen
+    // then never creates the link table, and saving the field fails.
+    const raw: unknown = {
+      name: 'taxonomy--tag',
+      label: 'Tag',
+      type: 'taxonomy-type',
+      fields: [
+        { name: 'related_tags', label: 'Related', type: 'reference', target: 'taxonomy--tag', rel: 'many-to-many', required: false },
+      ],
+    }
+    const result = parseSchema(raw, 'taxonomy-type')
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    const schema = result.schema as ParsedTaxonomyType
+    expect(schema.db.junction_tables).toEqual([
+      {
+        table_name: 'junction_taxonomy_tag_related_tags',
+        left_column: 'left_id',
+        right_column: 'right_id',
+        right_table: 'taxonomy_tag',
+        order_column: false,
+      },
+    ])
+  })
+
   it('derives table name from machine name', () => {
     const result = parseSchema(MINIMAL_TAXONOMY, 'taxonomy-type')
     expect(result.ok).toBe(true)

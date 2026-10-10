@@ -141,7 +141,7 @@ const categorySchema: ParsedTaxonomyType = {
       ui_component: { component: 'text-input' },
     },
   ],
-  db: { table_name: 'taxonomy_category' },
+  db: { table_name: 'taxonomy_category', junction_tables: [] },
   api: {
     collection_path: '/api/taxonomy/category',
     item_path: '/api/taxonomy/category/:id',

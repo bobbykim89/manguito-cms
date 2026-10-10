@@ -102,7 +102,7 @@ const CATEGORY_TAXONOMY_TYPE: ParsedTaxonomyType = {
     { name: 'published', db_type: 'boolean', default: 'true', nullable: false },
   ],
   fields: [divergentTextField],
-  db: { table_name: CATEGORY_TABLE },
+  db: { table_name: CATEGORY_TABLE, junction_tables: [] },
   api: { collection_path: '/api/taxonomy/category', item_path: '/api/taxonomy/category/:id' },
 }
 

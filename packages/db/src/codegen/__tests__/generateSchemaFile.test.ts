@@ -8,6 +8,7 @@ import type {
   SchemaRegistry,
   SystemField,
 } from '@bobbykim/manguito-cms-core'
+import { parseSchema } from '@bobbykim/manguito-cms-core'
 import { testParsedSchema } from '@bobbykim/manguito-cms-test-utils'
 import {
   generateFieldColumn,
@@ -124,7 +125,7 @@ function makeTaxonomyType(name: string): ParsedTaxonomyType {
     source_file: `${name}.json`,
     system_fields: TAXONOMY_SYSTEM_FIELDS,
     fields: [],
-    db: { table_name: `taxonomy_${name}` },
+    db: { table_name: `taxonomy_${name}`, junction_tables: [] },
     api: { collection_path: `/taxonomy/${name}`, item_path: `/taxonomy/${name}/:id` },
   }
 }
@@ -583,6 +584,35 @@ describe('generateSchemaFile — junction tables', () => {
 
     const output = generateSchemaFile(registry)
     expect(output).toContain("order: s.integer('order').notNull().default(0)")
+  })
+
+  it('a taxonomy type\'s many-to-many field gets its link table (#55)', () => {
+    // MUTATION: loop over content types only, or leave junction_tables out of
+    // the taxonomy parser. The table is then never migrated, and the admin
+    // taxonomy edit screen fails on the missing relation.
+    const parsed = parseSchema(
+      {
+        name: 'taxonomy--tag',
+        label: 'Tag',
+        type: 'taxonomy-type',
+        fields: [
+          { name: 'related_tags', label: 'Related', type: 'reference', target: 'taxonomy--tag', rel: 'many-to-many', required: false },
+        ],
+      },
+      'taxonomy-type',
+      'tag.json',
+    )
+    if (!parsed.ok || parsed.schema.schema_type !== 'taxonomy-type') throw new Error('fixture failed to parse')
+    const tag = parsed.schema
+    const registry = makeEmptyRegistry()
+    registry.taxonomy_types[tag.name] = tag
+
+    const jt = tag.db.junction_tables[0]!
+    const output = generateSchemaFile(registry)
+    const start = `export const ${jt.table_name} = s.pgTable(`
+    expect(output).toContain(start)
+    const def = output.slice(output.indexOf(start))
+    expect((def.match(/references\(\(\) => taxonomy_tag\.id/g) ?? []).length).toBe(2)
   })
 })
 
