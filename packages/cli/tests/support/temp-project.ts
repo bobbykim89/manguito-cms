@@ -74,7 +74,7 @@ class ExitSignal extends Error {}
  * `process.exit` is turned into a thrown signal so the handler stops exactly
  * where the real process would, and the code is recorded rather than lost.
  */
-export async function run(fn: () => Promise<void>): Promise<Run> {
+export async function run(fn: () => Promise<unknown>): Promise<Run> {
   let stdout = ''
   let stderr = ''
   let exitCode: number | null = null

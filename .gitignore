@@ -17,3 +17,6 @@ uploads/
 .vercel/
 apps/sandbox/public/
 .vercel
+
+# tsup writes these while loading its config; an interrupted build leaves them behind
+*.bundled_*.mjs

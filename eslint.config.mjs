@@ -12,6 +12,9 @@ export default tseslint.config(
     files: ['**/*.vue'],
     languageOptions: { parserOptions: { parser: tseslint.parser } },
     rules: {
+      // The core-rule adjustments typescript-eslint applies to .ts files only
+      // (no-redeclare off for overloads, prefer-const and no-var on).
+      ...tseslint.configs.eslintRecommended.rules,
       // TypeScript already reports undefined names, and no-undef does not know
       // browser globals or Vite's `define` constants (__ADMIN_PREFIX__).
       'no-undef': 'off',

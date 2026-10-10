@@ -1,5 +1,8 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  // Root configs every package's typecheck and lint read: a change to either
+  // must invalidate their cached results.
+  "globalDependencies": ["tsconfig.base.json", "eslint.config.mjs"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -22,10 +25,10 @@
     // imports the built db and api. So each needs its own build first, or a
     // rebuild running alongside clears the dist it is reading.
     "@bobbykim/manguito-cms-db#typecheck": {
-      "dependsOn": ["^build", "build"]
+      "dependsOn": ["build"]
     },
     "@bobbykim/manguito-cms-api#typecheck": {
-      "dependsOn": ["^build", "build"]
+      "dependsOn": ["build"]
     },
     "smoke": {
       "dependsOn": ["test"],

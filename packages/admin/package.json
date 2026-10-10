@@ -29,10 +29,10 @@
   ],
   "scripts": {
     "build": "vue-tsc && vite build && tsup",
-    "typecheck": "vue-tsc --noEmit && tsc --noEmit -p tsconfig.codegen.json && tsc --noEmit -p tsconfig.adapter.json",
+    "typecheck": "vue-tsc --noEmit && vue-tsc --noEmit -p tsconfig.tests.json && tsc --noEmit -p tsconfig.codegen.json && tsc --noEmit -p tsconfig.adapter.json",
     "dev": "vite",
     "test": "dotenv -e ../../.env.test -- vitest run",
-    "lint": "eslint src codegen index.ts"
+    "lint": "eslint src codegen index.ts tests __tests__"
   },
   "dependencies": {
     "@bobbykim/manguito-cms-core": "workspace:*",
