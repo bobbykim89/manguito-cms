@@ -67,6 +67,7 @@ export function makeCardinalityFixture(prefix: string): CardinalityFixture {
             { name: 'heading', label: 'Heading', type: 'text/plain', required: false },
             { name: 'card_link', label: 'Card link', type: 'paragraph', ref: names.link, rel: 'one-to-one', required: false },
             { name: 'card_tag', label: 'Card tag', type: 'reference', target: names.tag, rel: 'one-to-one', required: true },
+            { name: 'card_image', label: 'Card image', type: 'image', required: false },
           ],
         },
         'paragraph-type'

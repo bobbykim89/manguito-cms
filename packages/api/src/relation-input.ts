@@ -1,8 +1,14 @@
+import { sql } from 'drizzle-orm'
 import { relationCardinality } from '@bobbykim/manguito-cms-core'
 import type { ParsedField, SchemaRegistry } from '@bobbykim/manguito-cms-core'
+import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 
-// Shape checks for relation values in an admin write, run before any database
-// work. Every relation field PRESENT in the body must match its cardinality:
+// Checks on relation values in an admin write, all run before any write.
+// checkRelationInput (shape), checkRequiredInParagraphItems and
+// findMissingReferences (one read per target table) each refuse an input that
+// would otherwise make Postgres fail part-way through the write (#54).
+//
+// Shape: Every relation field PRESENT in the body must match its cardinality:
 //   'one'  paragraph → a plain object, or null    'one'  reference → a UUID string, or null
 //   'many' paragraph → an array of plain objects  'many' reference → an array of UUID strings
 // Paragraph items are checked recursively; `path` prefixes nested names, so an
@@ -83,4 +89,135 @@ export function checkRelationInput(
     })
   }
   return errors
+}
+
+// The paragraph items present in a body, each with the paragraph type's fields
+// and the path prefix its own fields are named under ("cards[1]." or
+// "hero."). Assumes checkRelationInput passed, so values have the right shape.
+function paragraphItemsIn(
+  fields: ParsedField[],
+  body: Record<string, unknown>,
+  registry: SchemaRegistry,
+  path: string,
+): Array<{ item: Record<string, unknown>; fields: ParsedField[]; prefix: string }> {
+  const out: Array<{ item: Record<string, unknown>; fields: ParsedField[]; prefix: string }> = []
+  for (const field of fields) {
+    if (field.field_type !== 'paragraph' || !(field.name in body)) continue
+    const comp = field.ui_component
+    const pType = comp.component === 'paragraph-embed' ? registry.paragraph_types[comp.ref] : undefined
+    if (!pType) continue
+    const value = body[field.name]
+    const name = `${path}${field.name}`
+    if (relationCardinality(field) === 'one') {
+      if (isPlainObject(value)) out.push({ item: value, fields: pType.fields, prefix: `${name}.` })
+    } else if (Array.isArray(value)) {
+      value.forEach((item, i) => {
+        if (isPlainObject(item)) out.push({ item, fields: pType.fields, prefix: `${name}[${i}].` })
+      })
+    }
+  }
+  return out
+}
+
+// What "required" refuses: no value, a blank string, or an empty list. Shared by
+// the top-level required check in the admin routes and the paragraph-item check
+// below, so the two levels cannot drift apart.
+export function isMissing(value: unknown): boolean {
+  if (value === null || value === undefined) return true
+  if (typeof value === 'string' && value.trim() === '') return true
+  if (Array.isArray(value) && value.length === 0) return true
+  return false
+}
+
+// Required fields inside paragraph items. A required field that has its own
+// column is NOT NULL in the paragraph table, so an item missing it makes
+// Postgres refuse the insert, after persistParagraphField has already deleted
+// the field's stored rows. Checked here, before any write, at every nesting
+// level. Column-less fields (a nested paragraph, a many-to-many list) cannot
+// make the insert fail and are not checked.
+export function checkRequiredInParagraphItems(
+  fields: ParsedField[],
+  body: Record<string, unknown>,
+  registry: SchemaRegistry,
+  path = '',
+): RelationInputError[] {
+  const errors: RelationInputError[] = []
+  for (const { item, fields: itemFields, prefix } of paragraphItemsIn(fields, body, registry, path)) {
+    for (const f of itemFields) {
+      if (!f.required || f.removed === true || !f.db_column || f.db_column.junction) continue
+      if (isMissing(item[f.name])) {
+        errors.push({ field: `${prefix}${f.name}`, message: `${prefix}${f.name} is required.` })
+      }
+    }
+    errors.push(...checkRequiredInParagraphItems(itemFields, item, registry, prefix))
+  }
+  return errors
+}
+
+function quoteIdent(name: string): string {
+  if (!/^[a-z][a-z0-9_-]*$/.test(name)) throw new Error(`Unsafe identifier: ${name}`)
+  return `"${name}"`
+}
+
+type ReferenceUse = { table: string; id: string; field: string }
+
+// Every foreign-key id in the body, with the table it must exist in and the
+// path that names it: single references ("owner"), list entries ("tags[1]"),
+// media fields ("hero_image"), and all of these inside paragraph items
+// ("cards[0].card_tag", "cards[0].card_image").
+function collectReferences(
+  fields: ParsedField[],
+  body: Record<string, unknown>,
+  registry: SchemaRegistry,
+  path: string,
+  out: ReferenceUse[],
+): void {
+  for (const f of fields) {
+    if (!(f.name in body) || !f.db_column) continue
+    const table = f.db_column.junction ? f.db_column.junction.right_table : f.db_column.foreign_key?.table
+    if (!table) continue
+    const value = body[f.name]
+    const name = `${path}${f.name}`
+    if (typeof value === 'string') {
+      out.push({ table, id: value, field: name })
+    } else if (Array.isArray(value)) {
+      value.forEach((v, i) => {
+        if (typeof v === 'string') out.push({ table, id: v, field: `${name}[${i}]` })
+      })
+    }
+  }
+  for (const { item, fields: itemFields, prefix } of paragraphItemsIn(fields, body, registry, path)) {
+    collectReferences(itemFields, item, registry, prefix, out)
+  }
+}
+
+// Foreign-key ids (references and media) that point at no row. A missing target
+// makes Postgres refuse the insert on its foreign key (23503) part-way through a
+// write that has already deleted the field's old links or paragraph rows. An id
+// that is not a UUID counts as missing without a query: Postgres would refuse it
+// as a uuid (22P02) inside the lookup itself. One query per target table, run in
+// parallel. Unpublished targets exist and pass.
+export async function findMissingReferences(
+  db: DrizzlePostgresInstance,
+  fields: ParsedField[],
+  body: Record<string, unknown>,
+  registry: SchemaRegistry,
+): Promise<RelationInputError[]> {
+  const uses: ReferenceUse[] = []
+  collectReferences(fields, body, registry, '', uses)
+  if (uses.length === 0) return []
+
+  const lookups = [...new Set(uses.map((u) => u.table))].map(async (table) => {
+    const ids = [...new Set(uses.filter((u) => u.table === table && isUuid(u.id)).map((u) => u.id.toLowerCase()))]
+    if (ids.length === 0) return [table, new Set<string>()] as const
+    const result = await db.execute(
+      sql`SELECT id FROM ${sql.raw(quoteIdent(table))} WHERE id IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})`
+    )
+    return [table, new Set((result.rows as Array<{ id: string }>).map((r) => String(r.id).toLowerCase()))] as const
+  })
+  const found = new Map(await Promise.all(lookups))
+
+  return uses
+    .filter((u) => !found.get(u.table)!.has(u.id.toLowerCase()))
+    .map((u) => ({ field: u.field, message: `${u.field} refers to an item that does not exist.` }))
 }

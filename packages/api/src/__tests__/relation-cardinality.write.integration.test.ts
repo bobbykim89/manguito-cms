@@ -171,3 +171,73 @@ describe('taxonomy writes', () => {
     expect(res.status).toBe(422)
   })
 })
+
+// #54: inputs that pass the shape check but would make Postgres refuse a
+// statement part-way through the write. They are refused before any write.
+describe('references and required fields checked before writing', () => {
+  const MISSING_ID = '00000000-0000-4000-8000-0000000000ff'
+  const postsWithSlug = (slug: string) => countRows(db, fx.tables.post, `slug = '${slug}'`)
+
+  it('refuses a link to an item that does not exist, keeping the existing links', async () => {
+    // MUTATION: skip findMissingReferences. persistJunctionField then deletes
+    // both links, inserts tagA, and fails on the foreign key: a 500 and lost links.
+    const { body } = await create({ tags: [tagA, tagB] })
+    const res = await authenticatedRequest(app, 'admin', 'PATCH', `${POSTS()}/${body.data!.id}`, {
+      body: { tags: [tagA, MISSING_ID] },
+    })
+    expect(res.status).toBe(422)
+    const err = ((await res.json()) as { error: { message: string; details: Array<{ field: string }> } }).error
+    expect(err.message).toBe('Relation fields refer to items that do not exist')
+    expect(err.details.map((d) => d.field)).toEqual(['tags[1]'])
+    expect(await countRows(db, fx.tables.tags, `left_id = '${body.data!.id}'`)).toBe(2)
+  })
+
+  it('refuses a paragraph item missing a required field, writing nothing', async () => {
+    // MUTATION: skip checkRequiredInParagraphItems. The post row is inserted,
+    // then the card insert fails on NOT NULL: a 500 and a half-created post.
+    const { status, body } = await create({ cards: [{ heading: 'no tag' }] })
+    expect(status).toBe(422)
+    expect(body.error!.code).toBe('VALIDATION_ERROR')
+    expect(body.error!.details!.map((d) => d.field)).toEqual(['cards[0].card_tag'])
+    expect(await postsWithSlug(`p-${slugN}`)).toBe(0)
+  })
+
+  it('names a missing reference inside a paragraph item by its path', async () => {
+    // MUTATION: collect reference ids from top-level fields only. The card's
+    // card_tag then reaches the database and fails on the foreign key.
+    const { status, body } = await create({ cards: [{ heading: 'h', card_tag: MISSING_ID }] })
+    expect(status).toBe(422)
+    expect(body.error!.details!.map((d) => d.field)).toEqual(['cards[0].card_tag'])
+    expect(await postsWithSlug(`p-${slugN}`)).toBe(0)
+  })
+
+  it('refuses a single reference to an item that does not exist with 422, not 500', async () => {
+    // MUTATION: check only many-to-many lists. The insert then fails on the
+    // owner foreign key and the client gets a generic 500.
+    const { status, body } = await create({ owner: MISSING_ID })
+    expect(status).toBe(422)
+    expect(body.error!.details!.map((d) => d.field)).toEqual(['owner'])
+  })
+
+  it('refuses a media id inside a paragraph item that does not exist, keeping the stored cards', async () => {
+    // MUTATION: collect only reference fields. A card image id with no media
+    // row then reaches the insert after the old cards were deleted: a 500 and
+    // lost cards.
+    const { body } = await create({ cards: [{ heading: 'keep', card_tag: tagA }] })
+    const res = await authenticatedRequest(app, 'admin', 'PATCH', `${POSTS()}/${body.data!.id}`, {
+      body: { cards: [{ heading: 'new', card_tag: tagA, card_image: MISSING_ID }] },
+    })
+    expect(res.status).toBe(422)
+    const err = ((await res.json()) as { error: { details: Array<{ field: string }> } }).error
+    expect(err.details.map((d) => d.field)).toEqual(['cards[0].card_image'])
+    expect(await countRows(db, fx.tables.card, `parent_id = '${body.data!.id}' AND heading = 'keep'`)).toBe(1)
+  })
+
+  it('refuses a media id that is not a UUID with 422, not a 500 from the lookup', async () => {
+    // MUTATION: query every collected id as-is. Postgres rejects 'abc' as a
+    // uuid (22P02) inside the existence query itself.
+    const { status, body } = await create({ cards: [{ card_tag: tagA, card_image: 'abc' }] })
+    expect(status).toBe(422)
+    expect(body.error!.details!.map((d) => d.field)).toEqual(['cards[0].card_image'])
+  })
+})

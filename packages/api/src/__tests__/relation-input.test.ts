@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { checkRelationInput } from '../relation-input'
-import { makeCardinalityFixture } from './relation-cardinality.fixture'
+import { buildSchemaRegistry } from '@bobbykim/manguito-cms-core'
+import { checkRelationInput, checkRequiredInParagraphItems } from '../relation-input'
+import { makeCardinalityFixture, parseOrThrow } from './relation-cardinality.fixture'
 
 const fx = makeCardinalityFixture('rcin')
 const fields = fx.registry.content_types[fx.names.post]!.fields
@@ -68,5 +69,68 @@ describe('checkRelationInput', () => {
     // MUTATION: check every relation field, treating absent as undefined. A
     // title-only PATCH is then rejected.
     expect(check({ title: 'only' })).toEqual([])
+  })
+})
+
+describe('checkRequiredInParagraphItems', () => {
+  const required = (body: Record<string, unknown>) => checkRequiredInParagraphItems(fields, body, fx.registry)
+
+  it('names a required field missing from a list item by its path', () => {
+    // MUTATION: check only top-level fields. The card is then stored with a
+    // NULL card_tag: Postgres refuses it after the old cards were deleted.
+    expect(required({ cards: [{ heading: 'ok', card_tag: T }, { heading: 'no tag' }] })).toEqual([
+      { field: 'cards[1].card_tag', message: 'cards[1].card_tag is required.' },
+    ])
+  })
+
+  it('treats null and the empty string as missing, like the top-level check', () => {
+    // MUTATION: test only `=== undefined`. A null or '' then passes the check
+    // and fails in the database (NOT NULL), or stores an empty value.
+    expect(required({ cards: [{ card_tag: null }, { card_tag: '' }] }).map((e) => e.field)).toEqual([
+      'cards[0].card_tag',
+      'cards[1].card_tag',
+    ])
+  })
+
+  it('names a required field inside a one-to-one item with a dotted path', () => {
+    // MUTATION: index every item as `[i]`. A one-to-one item's error would then
+    // read "hero[0].caption", a field path that does not exist.
+    const registry = buildSchemaRegistry(
+      [
+        parseOrThrow(
+          { name: 'paragraph--rq_hero', label: 'Hero', type: 'paragraph-type', fields: [
+            { name: 'caption', label: 'Caption', type: 'text/plain', required: true },
+          ] },
+          'paragraph-type'
+        ),
+        parseOrThrow(
+          { name: 'content--rq_page', label: 'Page', type: 'content-type', default_base_path: 'rq-pages', only_one: false,
+            fields: [{ tab: { name: 'main', label: 'Main', fields: [
+              { name: 'hero', label: 'Hero', type: 'paragraph', ref: 'paragraph--rq_hero', rel: 'one-to-one', required: false },
+            ] } }] },
+          'content-type'
+        ),
+      ],
+      { base_paths: [] },
+      { roles: [], valid_permissions: [] }
+    )
+    const pageFields = registry.content_types['content--rq_page']!.fields
+    expect(checkRequiredInParagraphItems(pageFields, { hero: {} }, registry)).toEqual([
+      { field: 'hero.caption', message: 'hero.caption is required.' },
+    ])
+    expect(checkRequiredInParagraphItems(pageFields, { hero: null }, registry)).toEqual([])
+    // MUTATION: test only `=== ''`. A whitespace-only caption then passes here
+    // although the top-level required check refuses the same value.
+    expect(checkRequiredInParagraphItems(pageFields, { hero: { caption: '   ' } }, registry)).toEqual([
+      { field: 'hero.caption', message: 'hero.caption is required.' },
+    ])
+  })
+
+  it('accepts complete items, empty lists and absent fields', () => {
+    // MUTATION: flag every required field of the paragraph type even when no
+    // item exists. An empty list or an omitted field would then be refused.
+    expect(required({ cards: [{ card_tag: T }] })).toEqual([])
+    expect(required({ cards: [] })).toEqual([])
+    expect(required({ title: 'only' })).toEqual([])
   })
 })
