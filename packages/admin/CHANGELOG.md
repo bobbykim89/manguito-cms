@@ -1,5 +1,13 @@
 # @bobbykim/manguito-cms-admin
 
+## 0.5.2
+
+### Patch Changes
+
+- e4017d4: The taxonomy form edits every field type the content form does. Paragraph, reference and media fields on a taxonomy render with their real editors instead of a plain text box, and are loaded and saved.
+- Updated dependencies [ccd816a]
+  - @bobbykim/manguito-cms-core@0.8.0
+
 ## 0.5.1
 
 ### Patch Changes
