@@ -234,8 +234,9 @@ is rejected with 422, naming the field. An update leaves out relation fields it
 does not mention.
 
 A `many-to-many` list keeps the order it was saved in, on every read. An id
-that appears twice is stored once, at its first position. (Links saved before
-this order was kept read in id order until the item is next saved.)
+that appears twice in a save is stored once, at its first position. Links saved
+before an upgrade to this behaviour read in id order, and any duplicates they
+hold stay until the item is next saved.
 
 Older admin releases let a `one-to-one` paragraph hold several items; such a
 field reads as its first item and keeps only that one the next time it is

@@ -202,10 +202,10 @@ export async function deleteParagraphField(
   return { added: [], removed }
 }
 
-// Replaces every junction row for one many-to-many field of one parent.
-// Replaces an item's links. A repeated id is stored once, at its first
+// Replaces an item's links for one many-to-many field. A repeated id is stored once, at its first
 // position; UUIDs compare case-insensitively, as Postgres stores them. With an
-// order column, each link keeps its position in the list (#57).
+// order column, each link keeps its position in the list (#57). All links go in
+// one INSERT: one round trip, however long the list.
 export async function persistJunctionField(
   db: DrizzlePostgresInstance,
   itemId: string,
@@ -223,13 +223,18 @@ export async function persistJunctionField(
     return true
   })
   await db.execute(sql`DELETE FROM ${tbl} WHERE ${left} = ${itemId}`)
-  for (const [position, rid] of ids.entries()) {
-    await db.execute(
-      junction.order_column
-        ? sql`INSERT INTO ${tbl} (${left}, ${right}, "order") VALUES (${itemId}, ${rid}, ${position})`
-        : sql`INSERT INTO ${tbl} (${left}, ${right}) VALUES (${itemId}, ${rid})`
-    )
-  }
+  if (ids.length === 0) return
+  const rows = sql.join(
+    ids.map((rid, position) =>
+      junction.order_column ? sql`(${itemId}, ${rid}, ${position})` : sql`(${itemId}, ${rid})`
+    ),
+    sql`, `
+  )
+  await db.execute(
+    junction.order_column
+      ? sql`INSERT INTO ${tbl} (${left}, ${right}, "order") VALUES ${rows}`
+      : sql`INSERT INTO ${tbl} (${left}, ${right}) VALUES ${rows}`
+  )
 }
 
 // How every read lists an item's links: by the position saved with each link,
