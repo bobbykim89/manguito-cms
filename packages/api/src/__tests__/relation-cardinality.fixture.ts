@@ -94,6 +94,7 @@ export function makeCardinalityFixture(prefix: string): CardinalityFixture {
                   { name: 'tags', label: 'Tags', type: 'reference', target: names.tag, rel: 'many-to-many', required: false },
                   { name: 'published_on', label: 'Published on', type: 'date', required: false },
                   { name: 'rating', label: 'Rating', type: 'integer', min: 1, max: 5, required: false },
+                  { name: 'score', label: 'Score', type: 'float', required: false },
                 ],
               },
             },

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { splitServerDetails } from '../../utils/server-errors'
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { ParsedField } from '@bobbykim/manguito-cms-core'
@@ -173,8 +174,10 @@ async function doSave(publishedOverride?: boolean) {
 
   if (!res.ok) {
     const raw = res.error as { code: string; message: string; details?: Array<{ field: string; message: string }> }
-    if (raw.code === 'PUBLISH_VALIDATION_ERROR' && raw.details) {
-      mergeServerErrors(raw.details)
+    if ((raw.code === 'PUBLISH_VALIDATION_ERROR' || raw.code === 'VALIDATION_ERROR') && raw.details) {
+      const { fieldErrors, other } = splitServerDetails(raw.details, allFields.value.map((f) => f.name))
+      mergeServerErrors(fieldErrors)
+      if (other.length > 0) formError.value = [raw.message, ...other].join(' ')
     } else if (raw.code === 'SLUG_CONFLICT') {
       setError('slug', 'This slug is already taken.')
     } else {

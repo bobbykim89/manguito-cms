@@ -24,7 +24,7 @@ function isUuid(v: unknown): v is string {
   return typeof v === 'string' && UUID_RE.test(v)
 }
 
-function isPlainObject(v: unknown): v is Record<string, unknown> {
+export function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v)
 }
 
@@ -80,8 +80,7 @@ export function checkRelationInput(
       continue
     }
 
-    const comp = field.ui_component
-    const pType = comp.component === 'paragraph-embed' ? registry.paragraph_types[comp.ref] : undefined
+    const pType = paragraphTypeOf(field, registry)
     if (!pType) continue
     items.forEach((item, i) => {
       const prefix = cardinality === 'one' ? `${name}.` : `${name}[${i}].`
@@ -89,6 +88,13 @@ export function checkRelationInput(
     })
   }
   return errors
+}
+
+// The paragraph type a paragraph field embeds, or undefined for any other
+// field or an unknown ref.
+export function paragraphTypeOf(field: ParsedField, registry: SchemaRegistry) {
+  const comp = field.ui_component
+  return comp.component === 'paragraph-embed' ? registry.paragraph_types[comp.ref] : undefined
 }
 
 // The paragraph items present in a body, each with the paragraph type's fields
@@ -103,8 +109,7 @@ export function paragraphItemsIn(
   const out: Array<{ item: Record<string, unknown>; fields: ParsedField[]; prefix: string }> = []
   for (const field of fields) {
     if (field.field_type !== 'paragraph' || !(field.name in body)) continue
-    const comp = field.ui_component
-    const pType = comp.component === 'paragraph-embed' ? registry.paragraph_types[comp.ref] : undefined
+    const pType = paragraphTypeOf(field, registry)
     if (!pType) continue
     const value = body[field.name]
     const name = `${path}${field.name}`

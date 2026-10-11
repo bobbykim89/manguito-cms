@@ -33,6 +33,7 @@ const registry = buildSchemaRegistry(
               label: 'Main',
               fields: [
                 { name: 'code', label: 'Code', type: 'text/plain', limit: 10, pattern: '^[a-z]+$', required: false },
+                { name: 'legacy', label: 'Legacy', type: 'text/plain', pattern: '[a-z', required: false },
                 { name: 'title', label: 'Title', type: 'text/plain', required: true },
                 { name: 'notes', label: 'Notes', type: 'text/rich', required: false },
                 { name: 'qty', label: 'Qty', type: 'integer', min: 1, max: 5, required: false },
@@ -72,7 +73,7 @@ describe('checkFieldValues', () => {
   it('refuses a value whose type its column cannot store', () => {
     // MUTATION: drop a type check. Postgres then refuses the value part-way
     // through the write, after a paragraph field's old rows are deleted.
-    expect(check({ code: 123, qty: '3', price: '9.99', active: 'yes', on_sale: 'tomorrow', notes: 1 })).toEqual([
+    expect(check({ code: 123, qty: '3', price: 'abc', active: 'yes', on_sale: 'tomorrow', notes: 1 })).toEqual([
       { field: 'code', message: 'code must be text.' },
       { field: 'notes', message: 'notes must be text.' },
       { field: 'qty', message: 'qty must be a whole number.' },
@@ -84,12 +85,48 @@ describe('checkFieldValues', () => {
 
   it('refuses numbers and dates the column cannot hold', () => {
     // MUTATION: drop the integer range, the decimal(10, 4) limit or the
-    // Date.parse check. Postgres refuses each (22003, 22008).
+    // calendar check. Postgres refuses each (22003, 22008).
     expect(fieldsWithErrors({ qty: 1.5 })).toEqual(['qty'])
-    expect(check({ qty: 3_000_000_000 })[0]!.message).toBe('qty is too large.')
+    expect(check({ qty: -3_000_000_000 })[0]!.message).toBe('qty must be between -2147483648 and 2147483647.')
     expect(check({ price: 1_000_000 })[0]!.message).toBe('price must be less than 1000000 in size.')
     expect(fieldsWithErrors({ price: 999_999.9999 })).toEqual([])
     expect(fieldsWithErrors({ on_sale: '2026-13-45' })).toEqual(['on_sale'])
+  })
+
+  it('refuses dates Date.parse accepts but Postgres does not', () => {
+    // MUTATION: check the format with Date.parse alone. V8 reads 2026-02-30 as
+    // March 2, and accepts year 0 and hour 25; Postgres refuses all (22008).
+    for (const bad of ['2026-02-30', '2026-04-31', '0000-01-01', '2026-10-11T25:00', '2026-10-11T10:61']) {
+      expect(fieldsWithErrors({ on_sale: bad }), bad).toEqual(['on_sale'])
+    }
+    expect(fieldsWithErrors({ on_sale: '2024-02-29' })).toEqual([])
+  })
+
+  it('refuses a decimal that rounds past its column', () => {
+    // MUTATION: compare the value before Postgres rounds it to four places.
+    // 999999.99995 then passes and overflows decimal(10, 4) (22003).
+    expect(fieldsWithErrors({ price: 999_999.99995 })).toEqual(['price'])
+  })
+
+  it('accepts a float as the decimal string a read returns', () => {
+    // MUTATION: accept only numbers. Postgres returns a numeric column as
+    // "9.9900"; the admin form sends it back, so every save of an item with a
+    // stored float would be refused.
+    expect(fieldsWithErrors({ price: '9.9900' })).toEqual([])
+    expect(fieldsWithErrors({ price: '-0.5' })).toEqual([])
+    expect(check({ price: '9.99e3' })[0]!.message).toBe('price must be a number.')
+  })
+
+  it('refuses an array for a field that holds one value', () => {
+    // MUTATION: pass every array through as a list. node-postgres then sends
+    // it as an array literal, stored as text past the limit and the pattern,
+    // or refused for a number column (22P02).
+    expect(fieldsWithErrors({ title: ['x'], qty: [1] })).toEqual(['title', 'qty'])
+  })
+
+  it('refuses text Postgres cannot store (U+0000)', () => {
+    // MUTATION: accept any string. Postgres refuses a NUL character (22021).
+    expect(fieldsWithErrors({ title: 'a\u0000b', notes: '\u0000' })).toEqual(['title', 'notes'])
   })
 
   it('counts text length in characters, as Postgres does', () => {
@@ -100,6 +137,14 @@ describe('checkFieldValues', () => {
       { field: 'title', message: 'title can be at most 255 characters.' },
     ])
     expect(check({ code: 'abcdefghijk' })[0]!.message).toBe('code can be at most 10 characters.')
+  })
+
+  it('does not test an empty optional field against its pattern, and skips a pattern that does not compile', () => {
+    // MUTATION: test '' against the pattern, or compile the pattern without a
+    // guard. The admin form sends '' for a blank text field, so an optional
+    // patterned field would block every save; an invalid pattern would throw.
+    expect(fieldsWithErrors({ code: '' })).toEqual([])
+    expect(fieldsWithErrors({ legacy: 'anything' })).toEqual([])
   })
 
   it('enforces the declared rules: pattern, min and max, allowed values, max items', () => {

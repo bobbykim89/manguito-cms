@@ -182,6 +182,19 @@ describe('values checked before writing', () => {
     expect(outOfRange.body.error!.details!.map((d) => d.field)).toEqual(['rating'])
   })
 
+  it('accepts an item read back and sent unchanged, as the admin form does', async () => {
+    // MUTATION: accept floats only as numbers. Postgres returns the stored
+    // score as "9.9900" and the form sends it back, so every later save of the
+    // item would be refused.
+    const { body } = await create({ score: 9.99, rating: 3, published_on: '2026-10-11T09:30:00.000Z', cards: [{ heading: 'h', card_tag: tagA }] })
+    const id = body.data!.id
+    const read = await authenticatedRequest(app, 'admin', 'GET', `${POSTS()}/${id}`)
+    const data = ((await read.json()) as { data: Record<string, unknown> }).data
+    expect(typeof data['score']).toBe('string') // what makes this test matter
+    const { id: _id, created_at: _c, updated_at: _u, base_path_id: _b, ...sendBack } = data
+    expect((await patch(id, sendBack)).status).toBe(200)
+  })
+
   it('stores a cleared date ("") as null', async () => {
     // MUTATION: read the PATCH body without emptyValuesToNull. The admin
     // form's cleared date ('') is then refused, where it used to be a 500.
