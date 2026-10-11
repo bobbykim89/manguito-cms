@@ -137,15 +137,30 @@ export function fieldToZodSchema(field: ParsedField, registry?: SchemaRegistry):
   }
 }
 
+// Whether the API stores and returns null for a field (#56). A column-backed
+// field follows its column, so an optional boolean (NOT NULL, default false)
+// does not. A list relation never does: it is [] when empty, and the API
+// refuses null for it. A column-less "one" paragraph is null when empty.
+function acceptsNull(f: ParsedField): boolean {
+  if (relationCardinality(f) === 'many') return false
+  return f.db_column ? f.db_column.nullable : f.nullable
+}
+
+// A field's schema as an object entry. A field that is not required may be
+// left out.
+function fieldEntrySchema(f: ParsedField, registry?: SchemaRegistry): string {
+  let s = fieldToZodSchema(f, registry)
+  if (acceptsNull(f)) s += '.nullable()'
+  if (!f.required) s += '.optional()'
+  return s
+}
+
 // Generates inline z.object({...}) for a paragraph type — used recursively inside fieldToZodSchema
 function generateParagraphObjectSchema(
   paragraph: ParsedParagraphType,
   registry?: SchemaRegistry
 ): string {
-  const entries = paragraph.fields.map((f) => {
-    const zodType = fieldToZodSchema(f, registry)
-    return `${f.name}: ${f.required ? zodType : `${zodType}.optional()`}`
-  })
+  const entries = paragraph.fields.map((f) => `${f.name}: ${fieldEntrySchema(f, registry)}`)
   if (entries.length === 0) return 'z.object({})'
   return `z.object({ ${entries.join(', ')} })`
 }
@@ -167,10 +182,7 @@ function schemaFieldEntries(
   fields: ParsedField[],
   registry?: SchemaRegistry
 ): string[] {
-  return fields.map((f) => {
-    const zodType = fieldToZodSchema(f, registry)
-    return `  ${f.name}: ${f.required ? zodType : `${zodType}.optional()`}`
-  })
+  return fields.map((f) => `  ${f.name}: ${fieldEntrySchema(f, registry)}`)
 }
 
 export function generateContentSchema(
@@ -248,6 +260,14 @@ const ADMIN_LIST_QUERY = `z.object({
 
 const SLUG_PARAMS = `z.object({ slug: z.string() })`
 const ID_PARAMS = `z.object({ id: z.string().uuid() })`
+// The admin DELETE routes refuse with 409 ITEM_IN_USE while a required
+// reference elsewhere still points at the item. No label in the text: labels
+// are not quoted safely for a single-quoted string.
+const ITEM_IN_USE_RESPONSE = `{
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+      description: 'ITEM_IN_USE: a required reference elsewhere still points at this item',
+    }`
+
 const INCLUDE_QUERY = `z.object({ include: z.string().optional().describe('Comma-separated relation field names to expand') })`
 
 // ─── Content route generators ─────────────────────────────────────────────────
@@ -425,6 +445,7 @@ function generateContentRoutes(contentType: ParsedContentType): string {
       content: { 'application/json': { schema: ErrorResponseSchema } },
       description: '${label} not found',
     },
+    409: ${ITEM_IN_USE_RESPONSE},
   },
 })`
     )
@@ -713,6 +734,7 @@ function generateTaxonomyRoutes(taxonomyType: ParsedTaxonomyType): string {
       content: { 'application/json': { schema: ErrorResponseSchema } },
       description: '${label} not found',
     },
+    409: ${ITEM_IN_USE_RESPONSE},
   },
 })`
   )
