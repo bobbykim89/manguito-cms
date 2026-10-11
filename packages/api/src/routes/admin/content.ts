@@ -23,6 +23,7 @@ import {
   applyMediaReferenceDelta,
   type MediaDelta,
 } from '../../media-references.js'
+import { checkFieldValues, emptyValuesToNull } from '../../field-values.js'
 import {
   persistParagraphField,
   deleteParagraphField,
@@ -202,6 +203,9 @@ async function relationInputError(
 
   const shape = checkRelationInput(fields, body, registry)
   if (shape.length > 0) return refuse('Relation fields have the wrong shape', shape)
+
+  const values = checkFieldValues(fields, body, registry)
+  if (values.length > 0) return refuse('Some values are not valid', values)
 
   const required = checkRequiredInParagraphItems(fields, body, registry)
   if (required.length > 0) return refuse('Required fields are missing', required)
@@ -440,7 +444,7 @@ export function registerAdminContentRoutes(
       `/admin/api/${basePath}`,
       requirePermission('content:create'),
       async (c) => {
-        const body = (await c.req.json()) as Record<string, unknown>
+        const body = emptyValuesToNull(contentType.fields, (await c.req.json()) as Record<string, unknown>, registry)
 
         if (contentType.only_one) {
           const existing = await repo.findMany({ page: 1, per_page: 1 })
@@ -595,7 +599,7 @@ export function registerAdminContentRoutes(
       requirePermission('content:edit'),
       async (c) => {
         const id = c.req.param('id')
-        const body = (await c.req.json()) as Record<string, unknown>
+        const body = emptyValuesToNull(contentType.fields, (await c.req.json()) as Record<string, unknown>, registry)
 
         const existing = await repo.findOne(id)
         if (!existing) {
@@ -739,7 +743,7 @@ export function registerAdminContentRoutes(
         `/admin/api/${basePath}`,
         requirePermission('content:edit'),
         async (c) => {
-          const body = (await c.req.json()) as Record<string, unknown>
+          const body = emptyValuesToNull(contentType.fields, (await c.req.json()) as Record<string, unknown>, registry)
 
           const existingResult = await repo.findMany({ page: 1, per_page: 1 })
           const existing = existingResult.data[0] as Record<string, unknown> | undefined
@@ -921,7 +925,7 @@ export function registerAdminContentRoutes(
       `/admin/api/taxonomy/${typeName}`,
       requirePermission('content:create'),
       async (c) => {
-        const body = (await c.req.json()) as Record<string, unknown>
+        const body = emptyValuesToNull(taxonomyType.fields, (await c.req.json()) as Record<string, unknown>, registry)
         const inputError = await relationInputError(c, taxonomyType.fields, body, registry, db)
         if (inputError) return inputError
 
@@ -986,7 +990,7 @@ export function registerAdminContentRoutes(
       requirePermission('content:edit'),
       async (c) => {
         const id = c.req.param('id')
-        const body = (await c.req.json()) as Record<string, unknown>
+        const body = emptyValuesToNull(taxonomyType.fields, (await c.req.json()) as Record<string, unknown>, registry)
 
         // Inbound boundary: the request body arrives label-keyed; everything
         // downstream (insert data, media delta) works in storage keys.

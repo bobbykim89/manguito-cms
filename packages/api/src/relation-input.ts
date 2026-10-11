@@ -94,7 +94,7 @@ export function checkRelationInput(
 // The paragraph items present in a body, each with the paragraph type's fields
 // and the path prefix its own fields are named under ("cards[1]." or
 // "hero."). Assumes checkRelationInput passed, so values have the right shape.
-function paragraphItemsIn(
+export function paragraphItemsIn(
   fields: ParsedField[],
   body: Record<string, unknown>,
   registry: SchemaRegistry,
