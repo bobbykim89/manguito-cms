@@ -28,6 +28,8 @@ import {
   hashPassword,
   type SchemaRegistry,
   type ParsedSchema,
+  type ParseError,
+  type Result,
 } from '@bobbykim/manguito-cms-core'
 import { generateDrizzleConfig } from '../codegen/drizzle-config.js'
 import { generateSchemaRegistry } from '../codegen/registry.js'
@@ -98,27 +100,22 @@ export async function runDev(
   // 4. Parse schemas and always push schema to DB (idempotent — creates tables on
   //    first run, adds missing columns on subsequent runs when schema evolves).
   const needsSeed = !(await db.tableExists('users'))
-  const bootstrap = await parseAllSchemas(cwd, config)
-  if (!bootstrap.ok) {
-    printGuidedError(bootstrap.message)
+  // The whole schema is validated before anything below writes: the
+  // migration, seeding and codegen all assume it is valid.
+  const loaded = loadValidatedSchema(cwd, config)
+  if (!loaded.ok) {
+    printValidationErrors(loaded.errors, 'Schema errors', 'manguito validate')
     process.exit(1)
   }
-  const bootstrapRegistry = bootstrap.registry
-  // Before the migration below writes anything: an invalid reference between
-  // schemas is a structural error, handled like the parse errors above.
-  const crossRefErrors = validateCrossReferences(bootstrapRegistry, config.api.media?.max_file_size)
-  if (crossRefErrors.length > 0) {
-    printValidationErrors(crossRefErrors, 'Schema reference errors', 'manguito validate')
-    process.exit(1)
-  }
+  const { registry, versionModel } = loaded.value
 
   await generateDrizzleConfig(config, manguitoDir)
-  await writeFile(join(manguitoDir, 'schema.ts'), generateSchemaFile(bootstrapRegistry), 'utf8')
+  await writeFile(join(manguitoDir, 'schema.ts'), generateSchemaFile(registry), 'utf8')
   await runDevMigration(drizzleConfigPath)
   printSuccess(needsSeed ? 'Schema tables created' : 'Schema tables up to date')
 
   if (needsSeed) {
-    await seedSystemTables(db.getDb(), bootstrapRegistry)
+    await seedSystemTables(db.getDb(), registry)
     printSuccess('System tables seeded')
   }
 
@@ -158,9 +155,7 @@ export async function runDev(
     printSuccess('Admin account created')
   }
 
-  // 6. Use the already-parsed registry; write remaining .manguito/ artifacts
-  const registry = bootstrapRegistry
-
+  // 6. Write the remaining .manguito/ artifacts for the validated registry
   const contentCount = Object.keys(registry.content_types).length
   const paragraphCount = Object.keys(registry.paragraph_types).length
   const taxonomyCount = Object.keys(registry.taxonomy_types).length
@@ -173,19 +168,6 @@ export async function runDev(
   await generateRoutes(registry, manguitoDir)
   await generateForms(registry, join(manguitoDir, 'forms'))
   await generateNav(registry, manguitoDir)
-
-  // 7b. Compute the version model — same pair `manguito build` bakes
-  // (snapshots, then the model), so `dev` serves the
-  // same versioned routes a build would. A missing/invalid version contract
-  // at startup is a structural error, matching how the schema-parse failures
-  // above are handled: print a guided error and exit rather than silently
-  // starting with versioning disabled.
-  const versionsResult = loadProjectVersionModel(resolveSchemaConfig(cwd, config), registry)
-  if (!versionsResult.ok) {
-    printValidationErrors(versionsResult.errors, 'Version model errors', 'manguito validate')
-    process.exit(1)
-  }
-  const versionModel = reduceVersionModel(versionsResult.value.model)
 
   // 8. Create Hono app via createCmsApp
   const resolverMap = await loadProgrammaticResolvers(cwd, config.programmatic.dir)
@@ -297,7 +279,7 @@ export async function runDev(
     for await (const event of watcher) {
       if (event.filename && /\.(json|ya?ml)$/.test(event.filename)) {
         // 12. On schema file change: incremental re-parse + hot-swap
-        await onSchemaFileChange({
+        await reloadSafely({
           cwd,
           config,
           manguitoDir,
@@ -322,7 +304,7 @@ export async function runDev(
     void (async () => {
       for await (const event of progWatcher) {
         if (event.filename && /\.(ts|mjs|js)$/.test(event.filename)) {
-          await onSchemaFileChange({
+          await reloadSafely({
             cwd,
             config,
             manguitoDir,
@@ -351,39 +333,33 @@ type OnSchemaFileChangeArgs = {
   getResolvers: () => Promise<ResolverMap>
 }
 
+// A reload must never end the watch loop or the process: whatever it throws
+// (a resolver file that fails to import, a write error) is reported, and dev
+// keeps serving the previous app, since updateFetch was not reached.
+async function reloadSafely(args: OnSchemaFileChangeArgs): Promise<void> {
+  try {
+    await onSchemaFileChange(args)
+  } catch (err) {
+    process.stderr.write(
+      `⚠ Reload failed: ${err instanceof Error ? err.message : String(err)}\n⚠ Still serving the previous version.\n`,
+    )
+  }
+}
+
 async function onSchemaFileChange(args: OnSchemaFileChangeArgs): Promise<void> {
   const { cwd, config, manguitoDir, drizzleConfigPath, db, updateFetch, getResolvers } = args
 
   // Every check runs before anything is regenerated. An edited schema that
-  // fails one is mid-flight, not a reason to stop the watch process: warn and
-  // return, so the .manguito artifacts and the served app both stay at the
-  // last good schema. (A drizzle-kit push failure below comes after the
-  // regeneration, because the push reads the new schema.ts.)
-  const loaded = await parseAllSchemas(cwd, config)
+  // fails one is mid-flight, not a reason to stop the watch process: report
+  // it and return, so the .manguito artifacts and the served app both stay at
+  // the last good schema.
+  const loaded = loadValidatedSchema(cwd, config)
   if (!loaded.ok) {
-    printGuidedError(loaded.message)
+    printValidationErrors(loaded.errors, 'Schema errors', 'manguito validate')
     process.stderr.write('⚠ Changes not applied.\n')
     return
   }
-  const registry = loaded.registry
-
-  const crossRefErrors = validateCrossReferences(registry, config.api.media?.max_file_size)
-  if (crossRefErrors.length > 0) {
-    printValidationErrors(crossRefErrors, 'Schema reference errors', 'manguito validate')
-    process.stderr.write('⚠ Changes not applied.\n')
-    return
-  }
-
-  // Recompute the version model: a schema edit can add a tombstone or a
-  // `column` declaration, which changes the projections, so it cannot be
-  // reused from startup.
-  const versionsResult = loadProjectVersionModel(resolveSchemaConfig(cwd, config), registry)
-  if (!versionsResult.ok) {
-    printValidationErrors(versionsResult.errors, 'Version model errors', 'manguito validate')
-    process.stderr.write('⚠ Changes not applied.\n')
-    return
-  }
-  const versionModel = reduceVersionModel(versionsResult.value.model)
+  const { registry, versionModel } = loaded.value
 
   // Regenerate .manguito/ artifacts for the updated schema
   await generateDrizzleConfig(config, manguitoDir)
@@ -393,7 +369,9 @@ async function onSchemaFileChange(args: OnSchemaFileChangeArgs): Promise<void> {
   await generateForms(registry, join(manguitoDir, 'forms'))
   await generateNav(registry, manguitoDir)
 
-  // Push schema changes to DB
+  // Push schema changes to DB. This comes after the regeneration because the
+  // push reads the new schema.ts, so a failed push leaves the artifacts ahead
+  // of the served app.
   try {
     await runDevMigration(drizzleConfigPath)
   } catch (err) {
@@ -421,49 +399,67 @@ async function onSchemaFileChange(args: OnSchemaFileChangeArgs): Promise<void> {
   printSuccess('Schema updated')
 }
 
-// ─── Schema parsing helper ────────────────────────────────────────────────────
+// ─── Schema loading ───────────────────────────────────────────────────────────
 
-// A failure carries the guided message to print. The caller decides what it
-// means: startup exits, a reload keeps serving the last good schema.
-type SchemaLoad = { ok: true; registry: SchemaRegistry } | { ok: false; message: string }
+type ValidatedSchema = { registry: SchemaRegistry; versionModel: ReturnType<typeof reduceVersionModel> }
 
-async function parseAllSchemas(
+// Everything a schema must pass before dev writes or serves it: every file
+// parses, references across schemas hold, and the version model is valid.
+// Startup and every reload run this one sequence, so they cannot drift apart.
+// The caller decides what a failure means: startup exits, a reload keeps the
+// last good schema. Deprecations print only for a schema that passed.
+function loadValidatedSchema(
   cwd: string,
   config: Awaited<ReturnType<typeof resolveConfig>>,
-): Promise<SchemaLoad> {
+): Result<ValidatedSchema> {
+  const parsed = parseAllSchemas(cwd, config)
+  if (!parsed.ok) return parsed
+  const registry = parsed.value
+
+  const crossRefErrors = validateCrossReferences(registry, config.api.media?.max_file_size)
+  if (crossRefErrors.length > 0) return { ok: false, errors: crossRefErrors }
+
+  // The same pair `manguito build` bakes (snapshots, then the model), so dev
+  // serves the versioned routes a build would. Recomputed on every reload: an
+  // edit can add a tombstone or a `column` declaration.
+  const versions = loadProjectVersionModel(resolveSchemaConfig(cwd, config), registry)
+  if (!versions.ok) return { ok: false, errors: versions.errors }
+
+  printSchemaDeprecations(findSchemaDeprecations(registry))
+  return { ok: true, value: { registry, versionModel: reduceVersionModel(versions.value.model) } }
+}
+
+// Parses every schema file, roles.json and routes.json, collecting all errors.
+function parseAllSchemas(
+  cwd: string,
+  config: Awaited<ReturnType<typeof resolveConfig>>,
+): Result<SchemaRegistry> {
+  const errors: ParseError[] = []
   const parsedSchemas: ParsedSchema[] = []
+
   const walkResult = walkSchemaDirectory(config.schema)
   if (!walkResult.ok) {
-    return { ok: false, message: 'Schema directory errors — run `manguito validate` for details.' }
-  }
-
-  for (const file of walkResult.value) {
-    const parseResult = parseSchema(file.raw, file.schema_type, file.path)
-    if (!parseResult.ok) {
-      return { ok: false, message: 'Schema parse errors — run `manguito validate` for details.' }
+    errors.push(...walkResult.errors)
+  } else {
+    for (const file of walkResult.value) {
+      const parseResult = parseSchema(file.raw, file.schema_type, file.path)
+      if (parseResult.ok) parsedSchemas.push(parseResult.schema)
+      else errors.push(...parseResult.errors)
     }
-    parsedSchemas.push(parseResult.schema)
   }
 
   const rolesPath = resolve(cwd, config.schema.base_path, 'roles.json')
   const rolesLoad = loadSchemaFile(rolesPath)
-  if (!rolesLoad.ok) return { ok: false, message: 'Could not read roles.json.' }
-  const rolesResult = parseRoles(rolesLoad.value, rolesPath)
-  if (!rolesResult.ok) {
-    return { ok: false, message: 'roles.json parse errors — run `manguito validate` for details.' }
-  }
+  const rolesResult = rolesLoad.ok ? parseRoles(rolesLoad.value, rolesPath) : rolesLoad
+  if (!rolesResult.ok) errors.push(...rolesResult.errors)
 
   const routesPath = resolve(cwd, config.schema.base_path, 'routes.json')
   const routesLoad = loadSchemaFile(routesPath)
-  if (!routesLoad.ok) return { ok: false, message: 'Could not read routes.json.' }
-  const routesResult = parseRoutes(routesLoad.value, routesPath)
-  if (!routesResult.ok) {
-    return { ok: false, message: 'routes.json parse errors — run `manguito validate` for details.' }
-  }
+  const routesResult = routesLoad.ok ? parseRoutes(routesLoad.value, routesPath) : routesLoad
+  if (!routesResult.ok) errors.push(...routesResult.errors)
 
-  const registry = buildSchemaRegistry(parsedSchemas, routesResult.value, rolesResult.value)
-  printSchemaDeprecations(findSchemaDeprecations(registry))
-  return { ok: true, registry }
+  if (errors.length > 0 || !rolesResult.ok || !routesResult.ok) return { ok: false, errors }
+  return { ok: true, value: buildSchemaRegistry(parsedSchemas, routesResult.value, rolesResult.value) }
 }
 
 // ─── Admin root resolver ──────────────────────────────────────────────────────
