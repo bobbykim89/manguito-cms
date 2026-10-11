@@ -27,6 +27,7 @@ vi.mock('@bobbykim/manguito-cms-core', () => ({
   hashPassword: vi.fn().mockResolvedValue('hashed-pw'),
   loadVersionSnapshots: vi.fn().mockReturnValue({ ok: true, value: [] }),
   findSchemaDeprecations: vi.fn().mockReturnValue([]),
+  validateCrossReferences: vi.fn().mockReturnValue([]),
   computeVersionModel: vi.fn().mockReturnValue({
     ok: true,
     value: { current: 'v1', live: ['v1'], union: {}, projections: {} },
@@ -82,8 +83,10 @@ import {
   loadVersionSnapshots,
   computeVersionModel,
   findSchemaDeprecations,
+  validateCrossReferences,
 } from '@bobbykim/manguito-cms-core'
 import { createCmsApp } from '@bobbykim/manguito-cms-api'
+import { runDevMigration } from '@bobbykim/manguito-cms-db'
 import { createServer as createViteServer } from 'vite'
 import { createServer as httpCreateServer } from 'node:http'
 import { generateDrizzleConfig } from '../src/codegen/drizzle-config.js'
@@ -145,6 +148,7 @@ describe('runDev', () => {
       value: { current: 'v1', live: ['v1'], union: {}, projections: {} },
     } as never)
     vi.mocked(findSchemaDeprecations).mockReturnValue([])
+    vi.mocked(validateCrossReferences).mockReturnValue([])
     vi.mocked(reduceVersionModel).mockImplementation(
       (model: { current: string; live: string[]; projections: unknown }) => ({
         current: model.current,
@@ -242,6 +246,53 @@ describe('runDev', () => {
     expect(createViteServer).not.toHaveBeenCalled()
     expect(httpCreateServer).not.toHaveBeenCalled()
     exitSpy.mockRestore()
+  })
+
+  it('stops on schema reference errors before migrating the database', async () => {
+    // MUTATION: skip validateCrossReferences at dev startup (only `manguito
+    // validate` ran it before #65), or run it after runDevMigration. Dev then
+    // serves a paragraph many-to-many reference whose links are dropped.
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('process.exit') })
+    const db = makeDb([{ rows: [{ count: 1 }] }])
+    vi.mocked(connectDb).mockResolvedValue(db as never)
+    vi.mocked(validateCrossReferences).mockReturnValue([{ file: 'schemas/paragraph-types/paragraph--card.json', code: 'UNSUPPORTED_RELATION', message: 'Field "tags" in "paragraph--card" is a many-to-many reference' }] as never)
+
+    await expect(runDev({}, { cwd: FAKE_CWD })).rejects.toThrow('process.exit')
+
+    expect(exitSpy).toHaveBeenCalledWith(1)
+    expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining('paragraph--card'))
+    expect(runDevMigration).not.toHaveBeenCalled()
+    expect(httpCreateServer).not.toHaveBeenCalled()
+    exitSpy.mockRestore()
+  })
+
+  it('keeps the last good schema when an edit introduces a reference error', async () => {
+    // MUTATION: drop the validateCrossReferences check in onSchemaFileChange.
+    // The edit is then regenerated and hot-swapped, so a paragraph many-to-many
+    // reference added while dev runs drops its links again (#65).
+    const db = makeDb([{ rows: [{ count: 1 }] }])
+    vi.mocked(connectDb).mockResolvedValue(db as never)
+    let sent = false
+    vi.mocked(fsWatch).mockReturnValue({
+      [Symbol.asyncIterator]() {
+        return {
+          next: async () => {
+            if (sent) return { done: true as const, value: undefined }
+            sent = true
+            return { done: false as const, value: { eventType: 'change', filename: 'paragraph-types/paragraph--card.json' } }
+          },
+        }
+      },
+    } as never)
+    vi.mocked(validateCrossReferences)
+      .mockReturnValueOnce([])
+      .mockReturnValue([{ file: 'schemas/paragraph-types/paragraph--card.json', code: 'UNSUPPORTED_RELATION', message: 'Field "tags" in "paragraph--card" is a many-to-many reference' }] as never)
+
+    await runDev({}, { cwd: FAKE_CWD })
+    await vi.waitFor(() => expect(validateCrossReferences).toHaveBeenCalledTimes(2))
+
+    expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining('Changes not applied'))
+    expect(generateRoutes).toHaveBeenCalledTimes(1) // startup only
   })
 
   it('forwards config.api.rateLimit to createCmsApp', async () => {

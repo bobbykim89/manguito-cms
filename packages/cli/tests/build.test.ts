@@ -21,6 +21,7 @@ vi.mock('@bobbykim/manguito-cms-core', () => ({
   loadSchemaFile: vi.fn().mockReturnValue({ ok: true, value: '{}' }),
   loadVersionSnapshots: vi.fn().mockReturnValue({ ok: true, value: [] }),
   findSchemaDeprecations: vi.fn().mockReturnValue([]),
+  validateCrossReferences: vi.fn().mockReturnValue([]),
   computeVersionModel: vi.fn().mockReturnValue({
     ok: true,
     value: { current: 'v1', live: ['v1'], union: {}, projections: {} },
@@ -53,6 +54,7 @@ import {
   loadVersionSnapshots,
   computeVersionModel,
   findSchemaDeprecations,
+  validateCrossReferences,
 } from '@bobbykim/manguito-cms-core'
 import { generateSchemaRegistry } from '../src/codegen/registry.js'
 import { generateRoutes } from '../src/codegen/routes.js'
@@ -92,6 +94,7 @@ describe('runBuild', () => {
       value: { current: 'v1', live: ['v1'], union: {}, projections: {} },
     } as never)
     vi.mocked(findSchemaDeprecations).mockReturnValue([])
+    vi.mocked(validateCrossReferences).mockReturnValue([])
     vi.mocked(generateSchemaRegistry).mockResolvedValue(undefined)
     vi.mocked(generateRoutes).mockResolvedValue(undefined)
     vi.mocked(generateForms).mockResolvedValue(undefined)
@@ -132,6 +135,21 @@ describe('runBuild', () => {
     expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining('article.json'))
     expect(generateSchemaRegistry).not.toHaveBeenCalled()
     expect(viteBuild).not.toHaveBeenCalled()
+    exitSpy.mockRestore()
+  })
+
+  it('stops on schema reference errors before any codegen write', async () => {
+    // MUTATION: skip validateCrossReferences in runBuild (only `manguito
+    // validate` ran it before #65). A paragraph many-to-many reference then
+    // builds, and its links are silently dropped at runtime.
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('process.exit') })
+    vi.mocked(validateCrossReferences).mockReturnValue([{ file: 'schemas/paragraph-types/paragraph--card.json', code: 'UNSUPPORTED_RELATION', message: 'Field "tags" in "paragraph--card" is a many-to-many reference' }] as never)
+
+    await expect(runBuild({}, { cwd: FAKE_CWD })).rejects.toThrow('process.exit')
+
+    expect(exitSpy).toHaveBeenCalledWith(1)
+    expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining('paragraph--card'))
+    expect(generateSchemaRegistry).not.toHaveBeenCalled()
     exitSpy.mockRestore()
   })
 

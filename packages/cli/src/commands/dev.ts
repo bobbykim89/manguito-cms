@@ -24,6 +24,7 @@ import {
   buildSchemaRegistry,
   findSchemaDeprecations,
   loadSchemaFile,
+  validateCrossReferences,
   hashPassword,
   type SchemaRegistry,
   type ParsedSchema,
@@ -98,6 +99,13 @@ export async function runDev(
   //    first run, adds missing columns on subsequent runs when schema evolves).
   const needsSeed = !(await db.tableExists('users'))
   const bootstrapRegistry = await parseAllSchemas(cwd, config)
+  // Before the migration below writes anything: an invalid reference between
+  // schemas is a structural error, handled like the parse errors above.
+  const crossRefErrors = validateCrossReferences(bootstrapRegistry, config.api.media?.max_file_size)
+  if (crossRefErrors.length > 0) {
+    printValidationErrors(crossRefErrors, 'Schema reference errors', 'manguito validate')
+    process.exit(1)
+  }
 
   await generateDrizzleConfig(config, manguitoDir)
   await writeFile(join(manguitoDir, 'schema.ts'), generateSchemaFile(bootstrapRegistry), 'utf8')
@@ -346,6 +354,14 @@ async function onSchemaFileChange(args: OnSchemaFileChangeArgs): Promise<void> {
     registry = await parseAllSchemas(cwd, config)
   } catch {
     process.stderr.write('⚠ Schema parse error — changes not applied.\n')
+    return
+  }
+  // Checked before anything is regenerated: on an error, the .manguito
+  // artifacts and the served app both stay at the last good schema.
+  const crossRefErrors = validateCrossReferences(registry, config.api.media?.max_file_size)
+  if (crossRefErrors.length > 0) {
+    printValidationErrors(crossRefErrors, 'Schema reference errors', 'manguito validate')
+    process.stderr.write('⚠ Changes not applied.\n')
     return
   }
 

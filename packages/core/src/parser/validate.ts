@@ -155,6 +155,7 @@ export function buildSchemaRegistry(
  * - INVALID_REF_TARGET        — ref points to a schema of the wrong type
  * - CIRCULAR_REFERENCE        — paragraph A refs paragraph B which refs paragraph A
  * - MAX_SIZE_EXCEEDS_GLOBAL_LIMIT — field max_size exceeds the global limit
+ * - UNSUPPORTED_RELATION      — a paragraph type holds a many-to-many reference
  *
  * @param registry         The assembled SchemaRegistry (from buildSchemaRegistry).
  * @param globalMaxFileSize Global max file size in bytes from api.media.max_file_size.
@@ -169,11 +170,42 @@ export function validateCrossReferences(
   errors.push(...checkDuplicateSchemaNames(registry.all_schemas))
   errors.push(...checkFieldRefs(registry))
   errors.push(...checkCircularParagraphRefs(registry))
+  errors.push(...checkParagraphRelations(registry))
 
   if (globalMaxFileSize !== undefined) {
     errors.push(...checkMaxSizeLimit(registry, globalMaxFileSize))
   }
 
+  return errors
+}
+
+// ─── UNSUPPORTED_RELATION ─────────────────────────────────────────────────────
+
+// A paragraph type cannot hold a field that needs a link table: a many-to-many
+// reference (#65, ADR core/0009). A paragraph row belongs to one parent and is
+// deleted and re-inserted on every save, so it cannot own links; nothing would
+// store them. Checked here rather than in parseSchema because version
+// snapshots are parsed but never cross-validated, so a version cut before this
+// rule still loads, and editing the current schema is enough to clear it.
+function checkParagraphRelations(registry: SchemaRegistry): ParseError[] {
+  const errors: ParseError[] = []
+  for (const paragraph of Object.values(registry.paragraph_types)) {
+    for (const field of paragraph.fields) {
+      // A reference that needs a link table: what the message describes.
+      if (field.field_type !== 'reference' || !field.db_column?.junction) continue
+      errors.push({
+        file: paragraph.source_file,
+        code: 'UNSUPPORTED_RELATION',
+        message:
+          `Field "${field.name}" in "${paragraph.name}" is a many-to-many reference, which paragraph ` +
+          `types do not support: a paragraph belongs to one parent and is replaced on every save, so ` +
+          `it cannot own links. For a single item, use "rel": "one-to-one". For a list, put the ` +
+          `many-to-many field on the content or taxonomy type this paragraph appears in, or make the ` +
+          `paragraph field that embeds it "one-to-many" with a "one-to-one" reference in each item.`,
+        path: `fields[${field.order}].rel`,
+      })
+    }
+  }
   return errors
 }
 

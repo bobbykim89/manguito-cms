@@ -6,7 +6,7 @@ import type {
   ParsedRoles,
   SchemaRegistry,
 } from '../validate'
-import type { ParsedParagraphType, ParsedContentType, ParsedEnumType } from '../parseSchema'
+import type { ParsedParagraphType, ParsedContentType, ParsedEnumType, ParsedSchema as ParsedSchemaAny } from '../parseSchema'
 import type { ParsedField, FieldType, RelationType } from '../../registry/types'
 
 // ─── Shared fixtures ──────────────────────────────────────────────────────────
@@ -829,6 +829,56 @@ describe('validateCrossReferences — MAX_SIZE_EXCEEDS_GLOBAL_LIMIT', () => {
 })
 
 // ─── validateCrossReferences — clean registry ─────────────────────────────────
+
+describe('validateCrossReferences — UNSUPPORTED_RELATION', () => {
+  // #65, ADR core/0009: a paragraph row belongs to one parent and is replaced
+  // on every save, so a paragraph type cannot hold a many-to-many reference.
+  const tagsRef = (rel: string) => ({ name: 'tags', label: 'Tags', type: 'reference', target: 'taxonomy--tag', rel, required: false })
+  const tag = () => okSchema<ParsedSchemaAny>(makeTaxonomyType('taxonomy--tag'))
+  const registryOf = (...schemas: ParsedSchemaAny[]) => buildSchemaRegistry(schemas, EMPTY_ROUTES, EMPTY_ROLES)
+  const relationErrors = (registry: SchemaRegistry) =>
+    validateCrossReferences(registry).filter((e) => e.code === 'UNSUPPORTED_RELATION')
+
+  it('refuses a many-to-many reference on a paragraph type, naming the field', () => {
+    // MUTATION: drop checkParagraphRelations. The schema then loads, codegen
+    // makes no link table, and the links an editor picks are silently dropped.
+    const card = okSchema<ParsedSchemaAny>(makeParagraphType('paragraph--card', [tagsRef('many-to-many')]))
+    const errors = relationErrors(registryOf(card, tag()))
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toMatchObject({
+      file: 'schemas/paragraph-types/paragraph--card.json',
+      path: 'fields[0].rel',
+    })
+    expect(errors[0]!.message).toContain('Field "tags" in "paragraph--card"')
+  })
+
+  it('is cleared by each fix the message suggests', () => {
+    // MUTATION: refuse every reference on a paragraph type, or many-to-many on
+    // content types too. One of the suggested fixes would then not clear it.
+    // "one-to-one" for a single item:
+    const single = okSchema<ParsedSchemaAny>(makeParagraphType('paragraph--card', [tagsRef('one-to-one')]))
+    expect(relationErrors(registryOf(single, tag()))).toEqual([])
+    // A list: the many-to-many field on the content type the paragraph appears
+    // in, or a one-to-many paragraph field with a one-to-one reference per item.
+    const page = okSchema<ParsedSchemaAny>(
+      makeContentType('content--page', [
+        tagsRef('many-to-many'),
+        { name: 'cards', label: 'Cards', type: 'paragraph', ref: 'paragraph--card', rel: 'one-to-many', required: false },
+      ])
+    )
+    expect(relationErrors(registryOf(page, single, tag()))).toEqual([])
+  })
+
+  it('refuses it in a nested paragraph too', () => {
+    // MUTATION: check only paragraph types a content or taxonomy type embeds
+    // directly. A card inside a gallery paragraph then slips through.
+    const card = okSchema<ParsedSchemaAny>(makeParagraphType('paragraph--card', [tagsRef('many-to-many')]))
+    const gallery = okSchema<ParsedSchemaAny>(
+      makeParagraphType('paragraph--gallery', [{ name: 'cards', label: 'Cards', type: 'paragraph', ref: 'paragraph--card', rel: 'one-to-many', required: false }])
+    )
+    expect(relationErrors(registryOf(gallery, card, tag())).map((e) => e.file)).toEqual(['schemas/paragraph-types/paragraph--card.json'])
+  })
+})
 
 describe('validateCrossReferences — no errors on a fully valid registry', () => {
   it('returns an empty error array for a well-formed registry', () => {

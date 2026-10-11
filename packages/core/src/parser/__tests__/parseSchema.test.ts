@@ -292,6 +292,19 @@ describe('parseSchema — content-type', () => {
 // ─── Paragraph type ───────────────────────────────────────────────────────────
 
 describe('parseSchema — paragraph-type', () => {
+  it('parses a many-to-many reference: validateCrossReferences refuses it, not the parser', () => {
+    // MUTATION: refuse it in parseParagraphType. Version snapshots are parsed
+    // but never cross-validated, so a version cut with such a field would then
+    // fail to load, and no edit to the current schema could clear it (#65).
+    const card = {
+      name: 'paragraph--card',
+      label: 'Card',
+      type: 'paragraph-type',
+      fields: [{ name: 'tags', label: 'Tags', type: 'reference', target: 'taxonomy--tag', rel: 'many-to-many', required: false }],
+    }
+    expect(parseSchema(card, 'paragraph-type').ok).toBe(true)
+  })
+
   it('parses a minimal valid paragraph type', () => {
     const result = parseSchema(MINIMAL_PARAGRAPH, 'paragraph-type', 'schemas/paragraph-types/paragraph--photo_card.json')
     expect(result.ok).toBe(true)

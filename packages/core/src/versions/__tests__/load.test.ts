@@ -219,6 +219,24 @@ describe('loadVersionSnapshots', () => {
     expect(r.value.map((s) => s.version)).toEqual(['v9', 'v10'])
   })
 
+  it('loads a snapshot whose paragraph type holds a many-to-many reference', () => {
+    // MUTATION: refuse the field in parseSchema instead of validateCrossReferences.
+    // A version cut before #65 then fails with VERSION_SNAPSHOT_INVALID, and no
+    // edit to the current schema can clear it.
+    const pDir = path.join(dir, 'versions', 'v1', 'paragraph-types')
+    fs.mkdirSync(pDir, { recursive: true })
+    fs.writeFileSync(
+      path.join(pDir, 'paragraph--card.json'),
+      JSON.stringify({
+        name: 'paragraph--card', label: 'Card', type: 'paragraph-type',
+        fields: [{ name: 'tags', label: 'Tags', type: 'reference', target: 'taxonomy--tag', rel: 'many-to-many', required: false }],
+      })
+    )
+    const current = makeRegistry([makeContentType('content--post', [{ name: 'a' }])])
+    const r = loadVersionSnapshots(config(), current)
+    expect(r.ok).toBe(true)
+  })
+
   it('reads snapshots through config.folders, not hardcoded folder names', () => {
     // Guards a Critical defect found in review: a hardcoded folder name made
     // every snapshot read as silently EMPTY for any project that renamed a

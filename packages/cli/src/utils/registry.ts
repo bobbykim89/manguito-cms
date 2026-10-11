@@ -6,6 +6,7 @@ import {
   parseRoutes,
   buildSchemaRegistry,
   loadSchemaFile,
+  validateCrossReferences,
   type ParseError,
   type ParsedSchema,
   type ParsedRoles,
@@ -17,8 +18,8 @@ import { printValidationErrors } from './error.js'
 import { resolveSchemaConfig } from './schema-config.js'
 
 /**
- * Parses every schema file, roles.json and routes.json into a SchemaRegistry.
- * Prints all errors and exits 1 on any failure — the exit-on-failure variant
+ * Parses every schema file, roles.json and routes.json into a SchemaRegistry,
+ * and cross-validates it. Prints all errors and exits 1 on any failure — the exit-on-failure variant
  * that build/start/migrate use, as distinct from `validate`, which
  * deliberately collects everything and keeps going.
  *
@@ -75,5 +76,14 @@ export function loadWorkingRegistry(
     process.exit(1)
   }
 
-  return buildSchemaRegistry(parsedSchemas, parsedRoutes, parsedRoles)
+  const registry = buildSchemaRegistry(parsedSchemas, parsedRoutes, parsedRoles)
+  // The checks across schemas that `manguito validate` runs. version:create
+  // freezes this registry into a snapshot, and a snapshot is never
+  // cross-validated again, so an error must stop here.
+  const crossRefErrors = validateCrossReferences(registry, config.api.media?.max_file_size)
+  if (crossRefErrors.length > 0) {
+    printValidationErrors(crossRefErrors, 'Schema reference errors', command)
+    process.exit(1)
+  }
+  return registry
 }

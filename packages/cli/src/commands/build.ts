@@ -12,6 +12,7 @@ import {
   buildSchemaRegistry,
   findSchemaDeprecations,
   loadSchemaFile,
+  validateCrossReferences,
   type ParseError,
   type ParsedSchema,
 } from '@bobbykim/manguito-cms-core'
@@ -107,6 +108,14 @@ export async function runBuild(
     parsedRoles!
   )
   printSchemaDeprecations(findSchemaDeprecations(registry))
+  // References between schemas (unknown or wrong-type targets, circular
+  // paragraphs, media size limits, unsupported relations), the same checks
+  // `manguito validate` runs. Before any codegen write, like the parse errors.
+  const crossRefErrors = validateCrossReferences(registry, config.api.media?.max_file_size)
+  if (crossRefErrors.length > 0) {
+    printValidationErrors(crossRefErrors, 'Schema reference errors', 'manguito build')
+    process.exit(1)
+  }
 
   // Checked BEFORE any codegen write: a failed build must leave nothing half
   // written under dist/generated.
