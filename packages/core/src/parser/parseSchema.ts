@@ -210,6 +210,27 @@ function checkDuplicateFieldNames(
   return errors
 }
 
+// A paragraph type cannot hold a many-to-many reference (#65, ADR core/0009).
+// A paragraph row belongs to one parent and is replaced on every save, so it
+// cannot own link tables; nothing would store the links.
+function checkParagraphRelations(
+  fields: RawField[],
+  sourceFile: string,
+  schemaName: string
+): ParseError[] {
+  return fields
+    .filter((f) => f.type === 'reference' && f.rel === 'many-to-many')
+    .map((f) => ({
+      file: sourceFile,
+      code: 'UNSUPPORTED_RELATION' as const,
+      message:
+        `Field "${f.name}" in "${schemaName}" is a many-to-many reference, which paragraph types ` +
+        `do not support: a paragraph belongs to one parent and is replaced on every save, so it ` +
+        `cannot own links. Use "rel": "one-to-one" for a single item, or move the field to the ` +
+        `content or taxonomy type that embeds this paragraph.`,
+    }))
+}
+
 // Whether a raw field will end up with a storage column, decided from the raw
 // shape because this check runs before the builders do. Mirrors
 // isColumnBacked's rule at the raw level: paragraph and programmatic fields
@@ -520,6 +541,7 @@ function parseParagraphType(raw: unknown, sourceFile: string): ParseResult {
   const dupErrors = [
     ...checkDuplicateFieldNames(v.fields, sourceFile, v.name),
     ...checkDuplicateColumns(v.fields, sourceFile, v.name),
+    ...checkParagraphRelations(v.fields, sourceFile, v.name),
   ]
   if (dupErrors.length > 0) return { ok: false, errors: dupErrors }
 

@@ -166,7 +166,8 @@ export const RawParagraphFieldSchema = RawFieldBase.extend({
   max: z.number().int().positive().optional(),
 })
 
-// Reference: supports all three relation types.
+// Reference: supports all three relation types, except many-to-many on a
+// paragraph type (UNSUPPORTED_RELATION, checked in parseParagraphType).
 // target must be a content-type or taxonomy-type.
 export const RawReferenceFieldSchema = RawFieldBase.extend({
   type: z.literal('reference'),

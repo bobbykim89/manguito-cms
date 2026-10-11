@@ -19,6 +19,12 @@ export function findSchemaDeprecations(registry: SchemaRegistry): SchemaDeprecat
     ...Object.values(registry.paragraph_types),
   ]
   for (const owner of owners) {
+    // A paragraph type cannot hold a list of references (UNSUPPORTED_RELATION),
+    // so its advice must not suggest one.
+    const instead =
+      owner.schema_type === 'paragraph-type'
+        ? 'Use "one-to-one": a paragraph type cannot hold a many-to-many reference.'
+        : 'Use "one-to-one" for a single item, or "many-to-many" for a list.'
     for (const field of owner.fields as ParsedField[]) {
       if (field.field_type !== 'reference') continue
       const c = field.ui_component
@@ -27,7 +33,7 @@ export function findSchemaDeprecations(registry: SchemaRegistry): SchemaDeprecat
         source_file: owner.source_file,
         type_name: owner.name,
         field_name: field.name,
-        message: `${owner.name}.${field.name} uses "one-to-many", which is deprecated for references. It holds a single item, the same as "one-to-one". Use "one-to-one" for a single item, or "many-to-many" for a list.`,
+        message: `${owner.name}.${field.name} uses "one-to-many", which is deprecated for references. It holds a single item, the same as "one-to-one". ${instead}`,
       })
     }
   }

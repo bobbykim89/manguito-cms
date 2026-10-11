@@ -466,6 +466,7 @@ Either `ref` (standalone enum) or `values` (inline enum) must be present. Both n
 | `UNKNOWN_BASE_PATH` | `default_base_path` not found in `routes.json` |
 | `UNKNOWN_REF` | `ref` or `target` points to a non-existent schema |
 | `INVALID_REF_TARGET` | e.g. paragraph referencing a content type |
+| `UNSUPPORTED_RELATION` | A paragraph type declares a `many-to-many` reference (ADR core/0009) |
 | `DUPLICATE_FIELD_NAME` | Two fields in the same schema share a name |
 | `DUPLICATE_SCHEMA_NAME` | Two schema files share the same machine name |
 | `INVALID_MACHINE_NAME` | Machine name does not match `[type]--[name]` convention |

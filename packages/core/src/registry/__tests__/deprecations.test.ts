@@ -83,6 +83,16 @@ describe('findSchemaDeprecations', () => {
     )
   })
 
+  it('on a paragraph type, suggests only "one-to-one"', () => {
+    // MUTATION: give paragraph types the content message. Following its
+    // "many-to-many for a list" then fails to parse (UNSUPPORTED_RELATION, #65).
+    // Following this one clears the warning: see the next test.
+    const d = findSchemaDeprecations(registryWith(true)).find((x) => x.field_name === 'target')!
+    expect(d.message).toBe(
+      'paragraph--card.target uses "one-to-many", which is deprecated for references. It holds a single item, the same as "one-to-one". Use "one-to-one": a paragraph type cannot hold a many-to-many reference.'
+    )
+  })
+
   it('flags nothing when no reference uses one-to-many', () => {
     // MUTATION: flag `rel !== 'one-to-one'`. The many-to-many field is flagged.
     expect(findSchemaDeprecations(registryWith(false))).toEqual([])

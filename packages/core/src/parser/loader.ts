@@ -42,6 +42,7 @@ export type ParseErrorCode =
   | 'FALLBACK_WITHOUT_TOMBSTONE'
   | 'VERSION_COLUMN_MISSING'
   | 'ORPHANED_TOMBSTONE'
+  | 'UNSUPPORTED_RELATION'
 
 export type ParseError = {
   file: string
