@@ -212,10 +212,12 @@ There are three relation values in the system: `one-to-one`, `one-to-many`,
   `one-to-one`, and `manguito validate` warns about it. Use `one-to-one` for a
   single item, or `many-to-many` for a list.
 - **On a paragraph type**, a `reference` field cannot be `many-to-many`
-  (`UNSUPPORTED_RELATION`). A paragraph belongs to one parent and is replaced
-  on every save, so it cannot own links. Use `one-to-one`, or put the
-  many-to-many field on the content or taxonomy type that embeds the
-  paragraph.
+  (`UNSUPPORTED_RELATION`, reported by `manguito validate`, `dev` and
+  `build`). A paragraph belongs to one parent and is replaced on every save,
+  so it cannot own links. For a single item, use `one-to-one`. For a list, put
+  the many-to-many field on the content or taxonomy type the paragraph
+  appears in, or make the paragraph field `one-to-many` with a `one-to-one`
+  reference in each item.
 
 Whether a field holds one item or a list is the same in the admin, the REST
 API and GraphQL:

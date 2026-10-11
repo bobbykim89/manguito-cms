@@ -27,6 +27,7 @@ vi.mock('@bobbykim/manguito-cms-core', () => ({
   hashPassword: vi.fn().mockResolvedValue('hashed-pw'),
   loadVersionSnapshots: vi.fn().mockReturnValue({ ok: true, value: [] }),
   findSchemaDeprecations: vi.fn().mockReturnValue([]),
+  validateCrossReferences: vi.fn().mockReturnValue([]),
   computeVersionModel: vi.fn().mockReturnValue({
     ok: true,
     value: { current: 'v1', live: ['v1'], union: {}, projections: {} },
@@ -82,8 +83,10 @@ import {
   loadVersionSnapshots,
   computeVersionModel,
   findSchemaDeprecations,
+  validateCrossReferences,
 } from '@bobbykim/manguito-cms-core'
 import { createCmsApp } from '@bobbykim/manguito-cms-api'
+import { runDevMigration } from '@bobbykim/manguito-cms-db'
 import { createServer as createViteServer } from 'vite'
 import { createServer as httpCreateServer } from 'node:http'
 import { generateDrizzleConfig } from '../src/codegen/drizzle-config.js'
@@ -145,6 +148,7 @@ describe('runDev', () => {
       value: { current: 'v1', live: ['v1'], union: {}, projections: {} },
     } as never)
     vi.mocked(findSchemaDeprecations).mockReturnValue([])
+    vi.mocked(validateCrossReferences).mockReturnValue([])
     vi.mocked(reduceVersionModel).mockImplementation(
       (model: { current: string; live: string[]; projections: unknown }) => ({
         current: model.current,
@@ -240,6 +244,24 @@ describe('runDev', () => {
 
     expect(exitSpy).toHaveBeenCalledWith(1)
     expect(createViteServer).not.toHaveBeenCalled()
+    expect(httpCreateServer).not.toHaveBeenCalled()
+    exitSpy.mockRestore()
+  })
+
+  it('stops on schema reference errors before migrating the database', async () => {
+    // MUTATION: skip validateCrossReferences at dev startup (only `manguito
+    // validate` ran it before #65), or run it after runDevMigration. Dev then
+    // serves a paragraph many-to-many reference whose links are dropped.
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('process.exit') })
+    const db = makeDb([{ rows: [{ count: 1 }] }])
+    vi.mocked(connectDb).mockResolvedValue(db as never)
+    vi.mocked(validateCrossReferences).mockReturnValue([{ file: 'schemas/paragraph-types/paragraph--card.json', code: 'UNSUPPORTED_RELATION', message: 'Field "tags" in "paragraph--card" is a many-to-many reference' }] as never)
+
+    await expect(runDev({}, { cwd: FAKE_CWD })).rejects.toThrow('process.exit')
+
+    expect(exitSpy).toHaveBeenCalledWith(1)
+    expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining('paragraph--card'))
+    expect(runDevMigration).not.toHaveBeenCalled()
     expect(httpCreateServer).not.toHaveBeenCalled()
     exitSpy.mockRestore()
   })

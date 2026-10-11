@@ -292,35 +292,17 @@ describe('parseSchema — content-type', () => {
 // ─── Paragraph type ───────────────────────────────────────────────────────────
 
 describe('parseSchema — paragraph-type', () => {
-  // #65: a paragraph row belongs to one parent and is replaced on every save,
-  // so it cannot own link tables. A many-to-many reference on one is refused.
-  const cardWith = (field: Record<string, unknown>) => ({
-    name: 'paragraph--card',
-    label: 'Card',
-    type: 'paragraph-type',
-    fields: [field],
-  })
-  const tagsRef = { name: 'tags', label: 'Tags', type: 'reference', target: 'taxonomy--tag', required: false }
-
-  it('refuses a many-to-many reference (#65)', () => {
-    // MUTATION: drop the check. The type then parses, codegen creates no link
-    // table, and the links an editor picks are silently dropped on save.
-    const result = parseSchema(cardWith({ ...tagsRef, rel: 'many-to-many' }), 'paragraph-type', 'card.json')
-    expect(result.ok).toBe(false)
-    if (result.ok) return
-    expect(result.errors).toHaveLength(1)
-    expect(result.errors[0]).toMatchObject({ file: 'card.json', code: 'UNSUPPORTED_RELATION' })
-    expect(result.errors[0]!.message).toContain('"tags"')
-    expect(result.errors[0]!.message).toContain('"one-to-one"')
-    expect(result.errors[0]!.message).toContain('content or taxonomy type')
-  })
-
-  it('accepts both fixes the error message suggests', () => {
-    // MUTATION: refuse every reference on a paragraph type. Neither suggested
-    // fix would then clear the error.
-    expect(parseSchema(cardWith({ ...tagsRef, rel: 'one-to-one' }), 'paragraph-type').ok).toBe(true)
-    const moved = { name: 'taxonomy--topic', label: 'Topic', type: 'taxonomy-type', fields: [{ ...tagsRef, rel: 'many-to-many' }] }
-    expect(parseSchema(moved, 'taxonomy-type').ok).toBe(true)
+  it('parses a many-to-many reference: validateCrossReferences refuses it, not the parser', () => {
+    // MUTATION: refuse it in parseParagraphType. Version snapshots are parsed
+    // but never cross-validated, so a version cut with such a field would then
+    // fail to load, and no edit to the current schema could clear it (#65).
+    const card = {
+      name: 'paragraph--card',
+      label: 'Card',
+      type: 'paragraph-type',
+      fields: [{ name: 'tags', label: 'Tags', type: 'reference', target: 'taxonomy--tag', rel: 'many-to-many', required: false }],
+    }
+    expect(parseSchema(card, 'paragraph-type').ok).toBe(true)
   })
 
   it('parses a minimal valid paragraph type', () => {
