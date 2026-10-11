@@ -1,5 +1,13 @@
 # @bobbykim/manguito-cms-api
 
+## 0.8.4
+
+### Patch Changes
+
+- Updated dependencies [c8a3423]
+  - @bobbykim/manguito-cms-core@0.9.0
+  - @bobbykim/manguito-cms-db@0.1.9
+
 ## 0.8.3
 
 ### Patch Changes
