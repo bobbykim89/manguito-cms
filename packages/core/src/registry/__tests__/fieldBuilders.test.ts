@@ -165,6 +165,8 @@ describe('field builders — reference', () => {
   })
 
   it('many-to-many — junction table named from owner + field, no FK column', () => {
+    // MUTATION: order_column false (as before #57). Codegen then gives the link
+    // table no order column, and a list loses the order the editor gave it.
     const raw: RawReferenceField = { name: 'related', label: 'Related', type: 'reference', required: false, target: 'content--blog_post', rel: 'many-to-many', max: 10 }
     const built = fieldTypeRegistry['reference'](raw, ctx)
     expect(built.db_column).toEqual({
@@ -176,7 +178,7 @@ describe('field builders — reference', () => {
         left_column: 'left_id',
         right_column: 'right_id',
         right_table: 'content_blog_post',
-        order_column: false,
+        order_column: true,
       },
     })
     expect(built.validation).toEqual({ required: false, max_items: 10 })

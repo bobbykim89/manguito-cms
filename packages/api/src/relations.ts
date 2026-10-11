@@ -1,5 +1,5 @@
 import crypto from 'node:crypto'
-import { sql } from 'drizzle-orm'
+import { sql, type SQL } from 'drizzle-orm'
 import type { ParsedField, ParsedParagraphType, SchemaRegistry } from '@bobbykim/manguito-cms-core'
 import { relationCardinality, type Cardinality } from '@bobbykim/manguito-cms-core'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
@@ -203,19 +203,42 @@ export async function deleteParagraphField(
 }
 
 // Replaces every junction row for one many-to-many field of one parent.
+// Replaces an item's links. A repeated id is stored once, at its first
+// position; UUIDs compare case-insensitively, as Postgres stores them. With an
+// order column, each link keeps its position in the list (#57).
 export async function persistJunctionField(
   db: DrizzlePostgresInstance,
   itemId: string,
-  junction: { table_name: string; left_column: string; right_column: string },
+  junction: { table_name: string; left_column: string; right_column: string; order_column: boolean },
   relatedIds: string[]
 ): Promise<void> {
   const tbl = sql.raw(quoteIdent(junction.table_name))
   const left = sql.raw(quoteIdent(junction.left_column))
   const right = sql.raw(quoteIdent(junction.right_column))
+  const seen = new Set<string>()
+  const ids = relatedIds.filter((id) => {
+    const key = id.toLowerCase()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
   await db.execute(sql`DELETE FROM ${tbl} WHERE ${left} = ${itemId}`)
-  for (const rid of relatedIds) {
-    await db.execute(sql`INSERT INTO ${tbl} (${left}, ${right}) VALUES (${itemId}, ${rid})`)
+  for (const [position, rid] of ids.entries()) {
+    await db.execute(
+      junction.order_column
+        ? sql`INSERT INTO ${tbl} (${left}, ${right}, "order") VALUES (${itemId}, ${rid}, ${position})`
+        : sql`INSERT INTO ${tbl} (${left}, ${right}) VALUES (${itemId}, ${rid})`
+    )
   }
+}
+
+// How every read lists an item's links: by the position saved with each link,
+// then by the linked id. The id breaks ties between links saved before
+// positions were (all 0), and orders a table without an order column, so a
+// list reads the same way every time.
+export function junctionOrderBy(junction: { right_column: string; order_column: boolean }): SQL {
+  const right = sql.raw(quoteIdent(junction.right_column))
+  return junction.order_column ? sql` ORDER BY "order" ASC, ${right} ASC` : sql` ORDER BY ${right} ASC`
 }
 
 // ─── Relation descriptors and resolution (read side) ──────────────────────────
@@ -431,9 +454,8 @@ export async function resolveRelationField(
   } else if (rel.type === 'junction') {
     const parentIds = batch.map((r) => r['id'] as string)
     const inList = sql.join(parentIds.map((id) => sql`${id}`), sql`, `)
-    const orderBy = rel.order_column ? sql` ORDER BY "order" ASC` : sql``
     const junctionResult = await db.execute(
-      sql`SELECT * FROM ${sql.raw(quoteIdent(rel.junction_table))} WHERE ${sql.raw(quoteIdent(rel.left_column))} IN (${inList})${orderBy}`
+      sql`SELECT * FROM ${sql.raw(quoteIdent(rel.junction_table))} WHERE ${sql.raw(quoteIdent(rel.left_column))} IN (${inList})${junctionOrderBy(rel)}`
     )
     const jRows = junctionResult.rows as Record<string, unknown>[]
     const rightIds = [...new Set(jRows.map((r) => r[rel.right_column] as string))]
@@ -508,7 +530,7 @@ export async function resolveRelationBareIds(
     const parentIds = rows.map((r) => r['id'] as string)
     const inList = sql.join(parentIds.map((id) => sql`${id}`), sql`, `)
     const result = await db.execute(
-      sql`SELECT ${sql.raw(quoteIdent(rel.left_column))} AS left_id, ${sql.raw(quoteIdent(rel.right_column))} AS right_id FROM ${sql.raw(quoteIdent(rel.junction_table))} WHERE ${sql.raw(quoteIdent(rel.left_column))} IN (${inList})`
+      sql`SELECT ${sql.raw(quoteIdent(rel.left_column))} AS left_id, ${sql.raw(quoteIdent(rel.right_column))} AS right_id FROM ${sql.raw(quoteIdent(rel.junction_table))} WHERE ${sql.raw(quoteIdent(rel.left_column))} IN (${inList})${junctionOrderBy(rel)}`
     )
     const byLeft = groupBy(result.rows as Record<string, unknown>[], 'left_id')
     for (const row of rows) {
