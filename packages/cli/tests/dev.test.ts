@@ -132,6 +132,23 @@ const mockPrompt = {
   select: vi.fn().mockResolvedValue(''),
 }
 
+// The schema watcher yields one schema-file edit, then ends: drives dev's
+// reload path (onSchemaFileChange) once.
+function watchOneSchemaEdit(): void {
+  let sent = false
+  vi.mocked(fsWatch).mockReturnValue({
+    [Symbol.asyncIterator]() {
+      return {
+        next: async () => {
+          if (sent) return { done: true as const, value: undefined }
+          sent = true
+          return { done: false as const, value: { eventType: 'change', filename: 'paragraph-types/paragraph--card.json' } }
+        },
+      }
+    },
+  } as never)
+}
+
 describe('runDev', () => {
   beforeEach(() => {
     vi.resetAllMocks()
@@ -272,18 +289,7 @@ describe('runDev', () => {
     // reference added while dev runs drops its links again (#65).
     const db = makeDb([{ rows: [{ count: 1 }] }])
     vi.mocked(connectDb).mockResolvedValue(db as never)
-    let sent = false
-    vi.mocked(fsWatch).mockReturnValue({
-      [Symbol.asyncIterator]() {
-        return {
-          next: async () => {
-            if (sent) return { done: true as const, value: undefined }
-            sent = true
-            return { done: false as const, value: { eventType: 'change', filename: 'paragraph-types/paragraph--card.json' } }
-          },
-        }
-      },
-    } as never)
+    watchOneSchemaEdit()
     vi.mocked(validateCrossReferences)
       .mockReturnValueOnce([])
       .mockReturnValue([{ file: 'schemas/paragraph-types/paragraph--card.json', code: 'UNSUPPORTED_RELATION', message: 'Field "tags" in "paragraph--card" is a many-to-many reference' }] as never)
@@ -293,6 +299,45 @@ describe('runDev', () => {
 
     expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining('Changes not applied'))
     expect(generateRoutes).toHaveBeenCalledTimes(1) // startup only
+  })
+
+  it('keeps running when an edit has a schema parse error', async () => {
+    // MUTATION: let parseAllSchemas call process.exit(1) again, as it did when
+    // the reload's try/catch could never fire. A typo saved while dev runs then
+    // stops the dev server (#72).
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('process.exit') })
+    vi.mocked(connectDb).mockResolvedValue(makeDb([{ rows: [{ count: 1 }] }]) as never)
+    watchOneSchemaEdit()
+    vi.mocked(walkSchemaDirectory)
+      .mockReturnValueOnce({ ok: true, value: [] })
+      .mockReturnValue({ ok: false, errors: [{ file: 'schemas/x.json', message: 'bad json' }] } as never)
+
+    await runDev({}, { cwd: FAKE_CWD })
+    await vi.waitFor(() => expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining('Changes not applied')))
+
+    expect(exitSpy).not.toHaveBeenCalled()
+    expect(generateRoutes).toHaveBeenCalledTimes(1) // startup only
+    exitSpy.mockRestore()
+  })
+
+  it('regenerates nothing when an edit breaks the version model', async () => {
+    // MUTATION: check the version model after regenerating the .manguito
+    // artifacts (the old order). They then describe the rejected schema while
+    // the server keeps serving the previous one (#72).
+    vi.mocked(connectDb).mockResolvedValue(makeDb([{ rows: [{ count: 1 }] }]) as never)
+    watchOneSchemaEdit()
+    vi.mocked(computeVersionModel)
+      .mockReturnValueOnce({ ok: true, value: { current: 'v1', live: ['v1'], union: {}, projections: {} } } as never)
+      .mockReturnValue({
+        ok: false,
+        errors: [{ file: 'schemas/versions/v1', code: 'FIELD_TYPE_CHANGED_WHILE_LIVE', message: 'type changed' }],
+      } as never)
+
+    await runDev({}, { cwd: FAKE_CWD })
+    await vi.waitFor(() => expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining('Changes not applied')))
+
+    expect(generateRoutes).toHaveBeenCalledTimes(1) // startup only
+    expect(generateForms).toHaveBeenCalledTimes(1)
   })
 
   it('forwards config.api.rateLimit to createCmsApp', async () => {
