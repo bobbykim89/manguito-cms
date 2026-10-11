@@ -191,7 +191,8 @@ function checkParagraphRelations(registry: SchemaRegistry): ParseError[] {
   const errors: ParseError[] = []
   for (const paragraph of Object.values(registry.paragraph_types)) {
     for (const field of paragraph.fields) {
-      if (!field.db_column?.junction) continue
+      // A reference that needs a link table: what the message describes.
+      if (field.field_type !== 'reference' || !field.db_column?.junction) continue
       errors.push({
         file: paragraph.source_file,
         code: 'UNSUPPORTED_RELATION',

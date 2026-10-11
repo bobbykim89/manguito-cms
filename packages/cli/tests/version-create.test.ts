@@ -91,6 +91,29 @@ describe('version:create', () => {
     expect(result.stdout).toContain('After creating v2, these versions are live: v1 v2 v3.')
   })
 
+  it('refuses to freeze a schema reference error, and writes nothing', async () => {
+    // MUTATION: drop validateCrossReferences from loadWorkingRegistry. The
+    // snapshot is then written with the error, and snapshots are never
+    // cross-validated again, so it would load forever (#65).
+    fs.writeFileSync(
+      path.join(project.schemas, 'taxonomy-types', 'taxonomy--tag.json'),
+      JSON.stringify({ name: 'taxonomy--tag', label: 'Tag', type: 'taxonomy-type', fields: [] })
+    )
+    fs.writeFileSync(
+      path.join(project.schemas, 'paragraph-types', 'paragraph--card.json'),
+      JSON.stringify({
+        name: 'paragraph--card', label: 'Card', type: 'paragraph-type',
+        fields: [{ name: 'tags', label: 'Tags', type: 'reference', target: 'taxonomy--tag', rel: 'many-to-many', required: false }],
+      })
+    )
+
+    const result = await run(create)
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('Field "tags" in "paragraph--card" is a many-to-many reference')
+    expect(fs.existsSync(versionsDir())).toBe(false)
+  })
+
   it('refuses a second create with nothing changed, and writes nothing', async () => {
     // Review Focus #3. MUTATION: remove the `change.identical` refusal.
     // versions/v2 then gets written.

@@ -266,6 +266,35 @@ describe('runDev', () => {
     exitSpy.mockRestore()
   })
 
+  it('keeps the last good schema when an edit introduces a reference error', async () => {
+    // MUTATION: drop the validateCrossReferences check in onSchemaFileChange.
+    // The edit is then regenerated and hot-swapped, so a paragraph many-to-many
+    // reference added while dev runs drops its links again (#65).
+    const db = makeDb([{ rows: [{ count: 1 }] }])
+    vi.mocked(connectDb).mockResolvedValue(db as never)
+    let sent = false
+    vi.mocked(fsWatch).mockReturnValue({
+      [Symbol.asyncIterator]() {
+        return {
+          next: async () => {
+            if (sent) return { done: true as const, value: undefined }
+            sent = true
+            return { done: false as const, value: { eventType: 'change', filename: 'paragraph-types/paragraph--card.json' } }
+          },
+        }
+      },
+    } as never)
+    vi.mocked(validateCrossReferences)
+      .mockReturnValueOnce([])
+      .mockReturnValue([{ file: 'schemas/paragraph-types/paragraph--card.json', code: 'UNSUPPORTED_RELATION', message: 'Field "tags" in "paragraph--card" is a many-to-many reference' }] as never)
+
+    await runDev({}, { cwd: FAKE_CWD })
+    await vi.waitFor(() => expect(validateCrossReferences).toHaveBeenCalledTimes(2))
+
+    expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining('Changes not applied'))
+    expect(generateRoutes).toHaveBeenCalledTimes(1) // startup only
+  })
+
   it('forwards config.api.rateLimit to createCmsApp', async () => {
     vi.mocked(resolveConfig).mockResolvedValue({
       ...MOCK_CONFIG,

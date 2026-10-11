@@ -356,7 +356,8 @@ async function onSchemaFileChange(args: OnSchemaFileChangeArgs): Promise<void> {
     process.stderr.write('⚠ Schema parse error — changes not applied.\n')
     return
   }
-  // Keep serving the last good state, as for the version model below.
+  // Checked before anything is regenerated: on an error, the .manguito
+  // artifacts and the served app both stay at the last good schema.
   const crossRefErrors = validateCrossReferences(registry, config.api.media?.max_file_size)
   if (crossRefErrors.length > 0) {
     printValidationErrors(crossRefErrors, 'Schema reference errors', 'manguito validate')

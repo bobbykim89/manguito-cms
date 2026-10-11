@@ -107,6 +107,7 @@ export async function runBuild(
     parsedRoutesDef!,
     parsedRoles!
   )
+  printSchemaDeprecations(findSchemaDeprecations(registry))
   // References between schemas (unknown or wrong-type targets, circular
   // paragraphs, media size limits, unsupported relations), the same checks
   // `manguito validate` runs. Before any codegen write, like the parse errors.
@@ -115,7 +116,6 @@ export async function runBuild(
     printValidationErrors(crossRefErrors, 'Schema reference errors', 'manguito build')
     process.exit(1)
   }
-  printSchemaDeprecations(findSchemaDeprecations(registry))
 
   // Checked BEFORE any codegen write: a failed build must leave nothing half
   // written under dist/generated.

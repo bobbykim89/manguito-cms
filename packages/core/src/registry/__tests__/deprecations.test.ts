@@ -85,7 +85,8 @@ describe('findSchemaDeprecations', () => {
 
   it('on a paragraph type, suggests only "one-to-one"', () => {
     // MUTATION: give paragraph types the content message. Following its
-    // "many-to-many for a list" then fails to parse (UNSUPPORTED_RELATION, #65).
+    // "many-to-many for a list" is then refused by validateCrossReferences
+    // (UNSUPPORTED_RELATION, #65).
     // Following this one clears the warning: see the next test.
     const d = findSchemaDeprecations(registryWith(true)).find((x) => x.field_name === 'target')!
     expect(d.message).toBe(
