@@ -136,11 +136,11 @@ The run for the merge commit must show `success` (wait with `gh run watch <id>` 
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm turbo run build --filter="./packages/*"   # the same build CI runs; see below
+pnpm build:packages   # the same build CI runs; see below
 pnpm release          # runs `changeset publish`
 ```
 
-Build with this filter, not the root scripts. It is the build CI runs, and it covers all six published packages. `pnpm build` also builds `apps/sandbox`, which needs real storage credentials in `apps/sandbox/.env` and is irrelevant to a release. `pnpm build:packages` skips `@bobbykim/create-manguito`, and that package has no prepublish build. Its published `files` are only `dist`, so publishing after `build:packages` alone would ship it without its compiled code.
+`build:packages` runs the build CI runs (`turbo run build --filter="./packages/*"`), which covers all six published packages. Don't use `pnpm build`: it also builds `apps/sandbox`, which needs real storage credentials in `apps/sandbox/.env` and is irrelevant to a release. No package builds itself at publish time, so `pnpm release` ships whatever is in each `dist`: build first.
 
 `pnpm release` publishes each public package whose version is not yet on npm, replaces `workspace:*` dependencies with real versions, and creates a git tag per published package (e.g. `@bobbykim/manguito-cms-cli@0.1.1`). Private packages are skipped. If 2FA is enabled, enter the OTP when prompted (once per package).
 

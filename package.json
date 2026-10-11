@@ -14,12 +14,12 @@
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
-    "build:packages": "pnpm --filter @bobbykim/manguito-cms-core run build && pnpm --filter @bobbykim/manguito-cms-db run build && pnpm --filter @bobbykim/manguito-cms-api run build && pnpm --filter @bobbykim/manguito-cms-admin run build && pnpm --filter @bobbykim/manguito-cms-cli run build && pnpm install --frozen-lockfile",
+    "build:packages": "turbo run build --filter=\"./packages/*\" && pnpm install --frozen-lockfile",
     "test": "turbo run test --concurrency=1",
     "smoke": "pnpm --filter sandbox smoke",
     "lint": "turbo run lint",
     "lint:plans": "bash scripts/lint-plan.sh",
-    "typecheck": "pnpm --filter @bobbykim/manguito-cms-core run typecheck && pnpm --filter @bobbykim/manguito-cms-api run typecheck && pnpm --filter @bobbykim/manguito-cms-cli run typecheck",
+    "typecheck": "turbo run typecheck",
     "changeset": "changeset",
     "version": "changeset version",
     "release": "changeset publish",
@@ -40,9 +40,11 @@
     "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.45.2",
     "eslint": "^10.6.0",
+    "eslint-plugin-vue": "^10.11.1",
     "turbo": "latest",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.63.0",
-    "vitest": "latest"
+    "vitest": "latest",
+    "vue-eslint-parser": "^10.4.1"
   }
 }

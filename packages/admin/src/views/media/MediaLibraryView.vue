@@ -182,7 +182,8 @@ function uploadDirect(file: File, alt: string): Promise<MediaItem> {
     xhr.onload = () => {
       try {
         const json = JSON.parse(xhr.responseText) as { ok: boolean; data?: MediaItem; error?: { message: string } }
-        json.ok && json.data ? resolve(json.data) : reject(new Error(json.error?.message ?? 'Upload failed'))
+        if (json.ok && json.data) resolve(json.data)
+        else reject(new Error(json.error?.message ?? 'Upload failed'))
       } catch {
         reject(new Error('Invalid server response'))
       }

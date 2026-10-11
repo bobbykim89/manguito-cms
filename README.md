@@ -480,8 +480,8 @@ pnpm test
 
 **`pnpm build:packages` is not optional on a fresh clone.** `apps/sandbox` runs the
 `manguito` CLI by name, and pnpm can only link that bin once `packages/cli/dist`
-exists — which it does not in a clone. `build:packages` builds the five packages in
-dependency order and then re-runs `pnpm install` to link the bins. Skip it and
+exists — which it does not in a clone. `build:packages` builds every package under
+`packages/` (the same build CI runs) and then re-runs `pnpm install` to link the bins. Skip it and
 `pnpm build` fails with `sh: 1: manguito: not found`.
 
 The integration suites read `DB_URL` from the repo-root `.env.test`, which is
@@ -505,8 +505,8 @@ goes through a pull request:
 `ci` ([`.github/workflows/ci.yml`](./.github/workflows/ci.yml)) runs on every pull
 request and every push to `master`, against a throwaway Postgres 16. Its steps:
 `pnpm install --frozen-lockfile`, `pnpm lint`,
-`pnpm turbo run build --filter="./packages/*"`, `pnpm typecheck`, `pnpm test`, then
-`pnpm smoke`. Running those locally before you push predicts the result. The ruleset
+`pnpm turbo run build --filter="./packages/*"` (what `pnpm build:packages` runs),
+`pnpm typecheck`, `pnpm test`, then `pnpm smoke`. Running those locally before you push predicts the result. The ruleset
 lives in [`.github/rulesets/master.json`](./.github/rulesets/master.json); see
 [ADR 0006](./docs/adr/0006-protected-master-and-ci-gate.md) for the reasoning and the
 recovery steps if CI is ever broken from outside.
@@ -522,8 +522,9 @@ package development use `pnpm build:packages`, which is self-contained.
 
 `pnpm install` warns about a cyclic workspace dependency between `packages/api` and
 `packages/test-utils` — `api` uses `test-utils` for its tests while `test-utils` uses
-`api` for its request helpers. It is why `build:packages` orders the builds explicitly
-rather than leaving it to Turborepo. Harmless today, worth untangling eventually.
+`api` for its request helpers. Turborepo builds through it, but `turbo.json` makes the
+`db` and `api` typecheck wait for their own build, because their tests reach their own
+`dist` through `test-utils`. Harmless today, worth untangling eventually.
 
 Releases are cut with Changesets. The version bump goes through a pull request like any other change, then publishing runs from `master`. See [RELEASE.md](./RELEASE.md) for the step-by-step process.
 

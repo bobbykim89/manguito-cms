@@ -26,7 +26,7 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "dotenv -e ../../.env.test -- vitest run",
-    "lint": "eslint src",
+    "lint": "eslint src tests",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -143,6 +143,11 @@ plus a `pnpm install` to fix the `manguito` bin symlink (same reason as
 "build:packages": "pnpm --filter @bobbykim/manguito-cms-core run build && pnpm --filter @bobbykim/manguito-cms-db run build && pnpm --filter @bobbykim/manguito-cms-api run build && pnpm --filter @bobbykim/manguito-cms-admin run build && pnpm --filter @bobbykim/manguito-cms-cli run build && pnpm install --frozen-lockfile"
 ```
 
+> **Later (#48):** `build:packages` is now `turbo run build --filter="./packages/*"
+> && pnpm install --frozen-lockfile`, the build CI runs from a clean checkout on
+> every push. It also builds `create-manguito`. Turborepo orders the packages, so
+> the explicit chain above is gone; the Dockerfile keeps its own.
+
 `vercel.json`'s `buildCommand` calls `pnpm run build:packages` before
 building sandbox. (This was first inlined directly into `buildCommand`, but
 that hit a separate limit — see issue 3.)
