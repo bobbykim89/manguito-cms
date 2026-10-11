@@ -56,6 +56,9 @@ vi.mock('node:http', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:http')>()
   return { ...actual, createServer: vi.fn().mockReturnValue({ listen: vi.fn() }) }
 })
+vi.mock('../src/utils/programmatic-loader.js', () => ({
+  loadProgrammaticResolvers: vi.fn().mockResolvedValue(new Map()),
+}))
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
   return {
@@ -96,7 +99,8 @@ import { generateForms } from '../src/codegen/forms.js'
 import { generateNav } from '../src/codegen/nav.js'
 import { reduceVersionModel } from '../src/codegen/version-model.js'
 import { resolveSchemaConfig } from '../src/utils/schema-config.js'
-import { watch as fsWatch } from 'node:fs/promises'
+import { watch as fsWatch, writeFile } from 'node:fs/promises'
+import { loadProgrammaticResolvers } from '../src/utils/programmatic-loader.js'
 
 const FAKE_CWD = '/fake/project'
 const MOCK_CONFIG = {
@@ -132,6 +136,23 @@ const mockPrompt = {
   select: vi.fn().mockResolvedValue(''),
 }
 
+// The schema watcher yields one schema-file edit, then ends: drives dev's
+// reload path (onSchemaFileChange) once.
+function watchOneSchemaEdit(): void {
+  let sent = false
+  vi.mocked(fsWatch).mockReturnValue({
+    [Symbol.asyncIterator]() {
+      return {
+        next: async () => {
+          if (sent) return { done: true as const, value: undefined }
+          sent = true
+          return { done: false as const, value: { eventType: 'change', filename: 'paragraph-types/paragraph--card.json' } }
+        },
+      }
+    },
+  } as never)
+}
+
 describe('runDev', () => {
   beforeEach(() => {
     vi.resetAllMocks()
@@ -161,6 +182,7 @@ describe('runDev', () => {
     vi.mocked(generateRoutes).mockResolvedValue(undefined)
     vi.mocked(generateForms).mockResolvedValue(undefined)
     vi.mocked(generateNav).mockResolvedValue(undefined)
+    vi.mocked(loadProgrammaticResolvers).mockResolvedValue(new Map())
     vi.mocked(createCmsApp).mockReturnValue({ app: { fetch: vi.fn() } } as never)
     vi.mocked(createViteServer).mockResolvedValue({ middlewares: vi.fn() } as never)
     vi.mocked(httpCreateServer).mockReturnValue({ listen: vi.fn() } as never)
@@ -272,18 +294,7 @@ describe('runDev', () => {
     // reference added while dev runs drops its links again (#65).
     const db = makeDb([{ rows: [{ count: 1 }] }])
     vi.mocked(connectDb).mockResolvedValue(db as never)
-    let sent = false
-    vi.mocked(fsWatch).mockReturnValue({
-      [Symbol.asyncIterator]() {
-        return {
-          next: async () => {
-            if (sent) return { done: true as const, value: undefined }
-            sent = true
-            return { done: false as const, value: { eventType: 'change', filename: 'paragraph-types/paragraph--card.json' } }
-          },
-        }
-      },
-    } as never)
+    watchOneSchemaEdit()
     vi.mocked(validateCrossReferences)
       .mockReturnValueOnce([])
       .mockReturnValue([{ file: 'schemas/paragraph-types/paragraph--card.json', code: 'UNSUPPORTED_RELATION', message: 'Field "tags" in "paragraph--card" is a many-to-many reference' }] as never)
@@ -293,6 +304,78 @@ describe('runDev', () => {
 
     expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining('Changes not applied'))
     expect(generateRoutes).toHaveBeenCalledTimes(1) // startup only
+  })
+
+  it('keeps running when an edit has a schema parse error', async () => {
+    // MUTATION: let parseAllSchemas call process.exit(1) again, as it did when
+    // the reload's try/catch could never fire. A typo saved while dev runs then
+    // stops the dev server (#72).
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('process.exit') })
+    vi.mocked(connectDb).mockResolvedValue(makeDb([{ rows: [{ count: 1 }] }]) as never)
+    watchOneSchemaEdit()
+    vi.mocked(walkSchemaDirectory)
+      .mockReturnValueOnce({ ok: true, value: [] })
+      .mockReturnValue({ ok: false, errors: [{ file: 'schemas/x.json', message: 'bad json' }] } as never)
+
+    try {
+      await runDev({}, { cwd: FAKE_CWD })
+      await vi.waitFor(() => expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining('Changes not applied')))
+
+      expect(exitSpy).not.toHaveBeenCalled()
+      expect(generateRoutes).toHaveBeenCalledTimes(1) // startup only
+    } finally {
+      exitSpy.mockRestore()
+    }
+  })
+
+  it('regenerates nothing when an edit breaks the version model', async () => {
+    // MUTATION: check the version model after regenerating the .manguito
+    // artifacts (the old order). They then describe the rejected schema while
+    // the server keeps serving the previous one (#72).
+    vi.mocked(connectDb).mockResolvedValue(makeDb([{ rows: [{ count: 1 }] }]) as never)
+    watchOneSchemaEdit()
+    vi.mocked(computeVersionModel)
+      .mockReturnValueOnce({ ok: true, value: { current: 'v1', live: ['v1'], union: {}, projections: {} } } as never)
+      .mockReturnValue({
+        ok: false,
+        errors: [{ file: 'schemas/versions/v1', code: 'FIELD_TYPE_CHANGED_WHILE_LIVE', message: 'type changed' }],
+      } as never)
+
+    await runDev({}, { cwd: FAKE_CWD })
+    await vi.waitFor(() => expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining('Changes not applied')))
+
+    // Each regeneration step, the push and the hot-swap ran once: at startup.
+    expect(generateDrizzleConfig).toHaveBeenCalledTimes(1)
+    expect(writeFile).toHaveBeenCalledTimes(1)
+    expect(generateSchemaRegistry).toHaveBeenCalledTimes(1)
+    expect(generateRoutes).toHaveBeenCalledTimes(1)
+    expect(generateForms).toHaveBeenCalledTimes(1)
+    expect(generateNav).toHaveBeenCalledTimes(1)
+    expect(runDevMigration).toHaveBeenCalledTimes(1)
+    expect(createCmsApp).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps running when a reload throws, such as a broken resolver file', async () => {
+    // MUTATION: call onSchemaFileChange from the watcher without reloadSafely.
+    // The throw then rejects the watcher loop: an unhandled rejection that
+    // ends dev, and the loop stops watching either way.
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('process.exit') })
+    vi.mocked(connectDb).mockResolvedValue(makeDb([{ rows: [{ count: 1 }] }]) as never)
+    watchOneSchemaEdit()
+    vi.mocked(loadProgrammaticResolvers)
+      .mockResolvedValueOnce(new Map())
+      .mockRejectedValue(new Error('x.ts does not default-export a programmaticField()'))
+
+    try {
+      await runDev({}, { cwd: FAKE_CWD })
+      await vi.waitFor(() => expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining('Reload failed')))
+
+      expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining('does not default-export'))
+      expect(exitSpy).not.toHaveBeenCalled()
+      expect(createCmsApp).toHaveBeenCalledTimes(1) // startup only: no hot-swap
+    } finally {
+      exitSpy.mockRestore()
+    }
   })
 
   it('forwards config.api.rateLimit to createCmsApp', async () => {
@@ -326,6 +409,9 @@ describe('runDev', () => {
     expect(exitSpy).toHaveBeenCalledWith(1)
     expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining('manguito validate'))
     expect(process.stderr.write).not.toHaveBeenCalledWith(expect.stringContaining('version:diff'))
+    // Refused before the database is migrated to a schema dev will not serve.
+    // MUTATION: check the version model after runDevMigration (the old order).
+    expect(runDevMigration).not.toHaveBeenCalled()
     exitSpy.mockRestore()
   })
 })
