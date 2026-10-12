@@ -1,5 +1,22 @@
 # @bobbykim/manguito-cms-cli
 
+## 0.11.0
+
+### Minor Changes
+
+- 7f0bfc6: Ships ordered `many-to-many` lists (core and api). **Run `manguito migrate` before deploying this version**: it adds an `order` column to each link table, which every read and write of those types now uses.
+
+### Patch Changes
+
+- Updated dependencies [56bfb56]
+- Updated dependencies [7f0bfc6]
+- Updated dependencies [7f0bfc6]
+- Updated dependencies [53ae9ec]
+  - @bobbykim/manguito-cms-admin@0.5.4
+  - @bobbykim/manguito-cms-api@0.9.0
+  - @bobbykim/manguito-cms-core@0.10.0
+  - @bobbykim/manguito-cms-db@0.1.10
+
 ## 0.10.1
 
 ### Patch Changes

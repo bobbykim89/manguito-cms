@@ -1,5 +1,11 @@
 # @bobbykim/manguito-cms-core
 
+## 0.10.0
+
+### Minor Changes
+
+- 7f0bfc6: Every `many-to-many` reference's link table now has an `order` column (`junction.order_column` is `true`), so a list can keep the order it was saved in. Run `manguito migrate` before deploying: it adds the column to each existing link table, a non-destructive change.
+
 ## 0.9.0
 
 ### Minor Changes
