@@ -249,7 +249,8 @@ export const fieldTypeRegistry: FieldTypeRegistry = {
               left_column: 'left_id',
               right_column: 'right_id',
               right_table: targetTableName,
-              order_column: false,
+              // Every list keeps the order the editor gave it (#57).
+              order_column: true,
             },
           }
         : {

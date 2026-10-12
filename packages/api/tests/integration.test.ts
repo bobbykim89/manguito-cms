@@ -104,6 +104,11 @@ beforeAll(async () => {
       right_id UUID NOT NULL
     )
   `))
+  // Every link table has an order column (#57). Added separately so a test
+  // database that already has the table from an earlier run gets it too.
+  await db.execute(sql.raw(
+    `ALTER TABLE junction_content_article_tags ADD COLUMN IF NOT EXISTS "order" integer NOT NULL DEFAULT 0`
+  ))
 
   app = createTestApp(testParsedSchema, db)
 }, 30_000)
