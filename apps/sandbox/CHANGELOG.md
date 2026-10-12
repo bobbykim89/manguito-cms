@@ -1,5 +1,20 @@
 # sandbox
 
+## 0.0.27
+
+### Patch Changes
+
+- Updated dependencies [56bfb56]
+- Updated dependencies [7f0bfc6]
+- Updated dependencies [7f0bfc6]
+- Updated dependencies [7f0bfc6]
+- Updated dependencies [53ae9ec]
+  - @bobbykim/manguito-cms-admin@0.5.4
+  - @bobbykim/manguito-cms-api@0.9.0
+  - @bobbykim/manguito-cms-cli@0.11.0
+  - @bobbykim/manguito-cms-core@0.10.0
+  - @bobbykim/manguito-cms-db@0.1.10
+
 ## 0.0.26
 
 ### Patch Changes
