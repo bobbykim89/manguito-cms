@@ -199,6 +199,62 @@ describe('many-to-many links keep their order and store each id once', () => {
   })
 })
 
+// #57: values are checked against their columns and declared rules before any
+// write, so a bad value cannot fail in Postgres part-way through a save.
+describe('values checked before writing', () => {
+  const cardRows = (postId: string) => countRows(db, fx.tables.card, `parent_id = '${postId}' AND parent_field = 'cards'`)
+
+  it('refuses a bad value inside a paragraph item before deleting the old items', async () => {
+    // MUTATION: drop checkFieldValues from relationInputError. Postgres then
+    // refuses the long heading (22001) after the post's old cards are deleted:
+    // a 500, and the card the editor had is gone.
+    const { body } = await create({ cards: [{ heading: 'kept', card_tag: tagA }] })
+    const id = body.data!.id
+    const res = await authenticatedRequest(app, 'admin', 'PATCH', `${POSTS()}/${id}`, {
+      body: { cards: [{ heading: 'x'.repeat(256), card_tag: tagA }] },
+    })
+    expect(res.status).toBe(422)
+    const err = ((await res.json()) as { error: { code: string; details: Array<{ field: string }> } }).error
+    expect(err.code).toBe('VALIDATION_ERROR')
+    expect(err.details.map((d) => d.field)).toEqual(['cards[0].heading'])
+    expect(await cardRows(id)).toBe(1)
+  })
+
+  it('refuses a bad top-level value with 422, and enforces declared rules', async () => {
+    // MUTATION: as above. A title over its column length is then a 500, and a
+    // rating outside its declared 1 to 5 is stored.
+    const long = await create({ title: 'x'.repeat(256) })
+    expect(long.status).toBe(422)
+    expect(long.body.error!.details!.map((d) => d.field)).toEqual(['title'])
+    const outOfRange = await create({ rating: 9 })
+    expect(outOfRange.status).toBe(422)
+    expect(outOfRange.body.error!.details!.map((d) => d.field)).toEqual(['rating'])
+  })
+
+  it('accepts an item read back and sent unchanged, as the admin form does', async () => {
+    // MUTATION: accept floats only as numbers. Postgres returns the stored
+    // score as "9.9900" and the form sends it back, so every later save of the
+    // item would be refused.
+    const { body } = await create({ score: 9.99, rating: 3, published_on: '2026-10-11T09:30:00.000Z', cards: [{ heading: 'h', card_tag: tagA }] })
+    const id = body.data!.id
+    const read = await authenticatedRequest(app, 'admin', 'GET', `${POSTS()}/${id}`)
+    const data = ((await read.json()) as { data: Record<string, unknown> }).data
+    expect(typeof data['score']).toBe('string') // what makes this test matter
+    const { id: _id, created_at: _c, updated_at: _u, base_path_id: _b, ...sendBack } = data
+    expect((await patch(id, sendBack)).status).toBe(200)
+  })
+
+  it('stores a cleared date ("") as null', async () => {
+    // MUTATION: read the PATCH body without emptyValuesToNull. The admin
+    // form's cleared date ('') is then refused, where it used to be a 500.
+    const { body } = await create({ published_on: '2026-10-11T00:00:00.000Z' })
+    const id = body.data!.id
+    expect((await patch(id, { published_on: '' })).status).toBe(200)
+    const read = await authenticatedRequest(app, 'admin', 'GET', `${POSTS()}/${id}`)
+    expect(((await read.json()) as { data: Record<string, unknown> }).data['published_on']).toBeNull()
+  })
+})
+
 describe('taxonomy writes', () => {
   const TAGS = () => `/admin/api/taxonomy/${fx.names.tag}`
 

@@ -238,6 +238,15 @@ that appears twice in a save is stored once, at its first position. Links saved
 before an upgrade to this behaviour read in id order, and any duplicates they
 hold stay until the item is next saved.
 
+Every value in an admin write is checked before anything is written, at the
+top level and inside paragraph items: its type, what its column can hold (text
+up to its `limit`, 255 characters by default; whole numbers for `integer`;
+`float` below 1,000,000 in size; an ISO date for `date`), and the rules the
+schema declares (`pattern`, `min` and `max`, an enum's values, `max` items).
+A failing value is rejected with 422 `VALIDATION_ERROR`, each detail naming
+its field by path, such as `cards[0].heading`. An empty string (`""`) sent for
+a `date`, number or `enum` field means no value and is stored as `null`.
+
 Older admin releases let a `one-to-one` paragraph hold several items; such a
 field reads as its first item and keeps only that one the next time it is
 saved, so change its `rel` to `one-to-many` wherever a list was intended.

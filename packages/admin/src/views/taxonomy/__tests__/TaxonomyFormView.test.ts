@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import type { ParsedField, ParsedTaxonomyType } from '@bobbykim/manguito-cms-core'
 import { useSchemaStore } from '../../../stores/schema'
+import { useAuthStore } from '../../../stores/auth'
 import TaxonomyFormView from '../TaxonomyFormView.vue'
 import ParagraphEmbed from '../../../components/fields/ParagraphEmbed.vue'
 import ReferenceSelect from '../../../components/fields/ReferenceSelect.vue'
@@ -44,6 +45,10 @@ const tagType = {
 
 let pinia: ReturnType<typeof createPinia>
 
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
 beforeEach(() => {
   pinia = createPinia()
   setActivePinia(pinia)
@@ -59,6 +64,37 @@ describe('TaxonomyFormView', () => {
     expect(w.findComponent(MediaUpload).exists()).toBe(true)
     expect(w.findAllComponents(ReferenceSelect)).toHaveLength(2)
     expect(w.findComponent(ParagraphEmbed).exists()).toBe(true)
+  })
+
+  it('shows VALIDATION_ERROR details from a save: on the field, or in the banner for a paragraph path', async () => {
+    // MUTATION: merge details only for PUBLISH_VALIDATION_ERROR (before #57).
+    // The editor then sees only "Some values are not valid", with no field.
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        ok: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Some values are not valid',
+          details: [
+            { field: 'name', message: 'name can be at most 255 characters.' },
+            { field: 'blurb.text', message: 'blurb.text is required.' },
+          ],
+        },
+      }), { status: 422, headers: { 'Content-Type': 'application/json' } })
+    ))
+    // An editor allowed to create terms, so the Save button renders.
+    useSchemaStore().setRoles([{ name: 'editor', label: 'Editor', hierarchy_level: 1, permissions: ['taxonomy:create'] }] as never)
+    useAuthStore().setUser({ id: 'u1', email: 'e@example.com', role: 'editor' })
+    const w = mount(TaxonomyFormView, { global: { plugins: [pinia] } })
+    await flushPromises()
+    const save = w.findAll('button').find((b) => b.text() === 'Save')!
+    await save.trigger('click')
+    await flushPromises()
+
+    // The field's own error, and the form's banner, are both alerts.
+    const alerts = w.findAll('[role="alert"]').map((a) => a.text())
+    expect(alerts).toContain('name can be at most 255 characters.')
+    expect(alerts).toContain('Some values are not valid blurb.text is required.')
   })
 
   it('gives the paragraph editor its paragraph form', async () => {
