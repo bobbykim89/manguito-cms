@@ -233,6 +233,11 @@ Writes must use the same shapes, and reference ids must be UUIDs. A wrong shape
 is rejected with 422, naming the field. An update leaves out relation fields it
 does not mention.
 
+A `many-to-many` list keeps the order it was saved in, on every read. An id
+that appears twice in a save is stored once, at its first position. Links saved
+before an upgrade to this behaviour read in id order, and any duplicates they
+hold stay until the item is next saved.
+
 Every value in an admin write is checked before anything is written, at the
 top level and inside paragraph items: its type, what its column can hold (text
 up to its `limit`, 255 characters by default; whole numbers for `integer`;

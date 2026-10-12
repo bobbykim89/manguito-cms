@@ -28,6 +28,7 @@ import {
   persistParagraphField,
   deleteParagraphField,
   persistJunctionField,
+  junctionOrderBy,
   oneOrMany,
   paragraphItems,
 } from '../../relations.js'
@@ -109,7 +110,7 @@ async function loadRelationsForEdit(
     } else if (f.db_column.junction) {
       const j = f.db_column.junction
       const r = await db.execute(
-        sql`SELECT ${sql.raw(quoteIdent(j.right_column))} FROM ${sql.raw(quoteIdent(j.table_name))} WHERE ${sql.raw(quoteIdent(j.left_column))} = ${id}`
+        sql`SELECT ${sql.raw(quoteIdent(j.right_column))} FROM ${sql.raw(quoteIdent(j.table_name))} WHERE ${sql.raw(quoteIdent(j.left_column))} = ${id}${junctionOrderBy(j)}`
       )
       row[f.name] = r.rows.map((linked) => (linked as Record<string, unknown>)[j.right_column] as string)
     }

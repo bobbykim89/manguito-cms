@@ -453,7 +453,7 @@ describe('parseSchema — taxonomy-type', () => {
         left_column: 'left_id',
         right_column: 'right_id',
         right_table: 'taxonomy_tag',
-        order_column: false,
+        order_column: true,
       },
     ])
   })

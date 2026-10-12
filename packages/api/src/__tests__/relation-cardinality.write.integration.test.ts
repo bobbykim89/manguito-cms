@@ -150,6 +150,55 @@ describe('writing references', () => {
   })
 })
 
+// #57: a many-to-many list keeps the order the editor gave it, on every read,
+// and stores each linked item once.
+describe('many-to-many links keep their order and store each id once', () => {
+  const tagLinks = (postId: string) => countRows(db, fx.tables.tags, `left_id = '${postId}'`)
+  // The editor's order is the reverse of id order, so a read that sorts by id
+  // (or returns rows in any other order) is caught.
+  const editorOrder = () => [tagA, tagB].sort().reverse()
+
+  async function editRead(id: string) {
+    const res = await authenticatedRequest(app, 'admin', 'GET', `${POSTS()}/${id}`)
+    return ((await res.json()) as { data: Record<string, unknown> }).data
+  }
+  async function publicRead(slug: string, query = '') {
+    const res = await app.request(`/api/${fx.basePath}/${slug}${query}`)
+    return ((await res.json()) as { data: Record<string, unknown> }).data
+  }
+
+  it('reads links in the order they were saved: admin edit read and both public reads', async () => {
+    // MUTATION: insert links without their position. Every link then holds 0,
+    // and the list comes back in id order. (A read with no ORDER BY at all is
+    // caught by the test for links saved before positions existed.)
+    const order = editorOrder()
+    const { status, body } = await create({ slug: 'ordered-links', tags: order, published: true })
+    expect(status).toBe(201)
+    expect((await editRead(body.data!.id))['tags']).toEqual(order)
+    expect((await publicRead('ordered-links'))['tags']).toEqual(order)
+    const included = (await publicRead('ordered-links', '?include=tags'))['tags'] as Array<{ id: string }>
+    expect(included.map((t) => t.id)).toEqual(order)
+  })
+
+  it('stores a repeated id once, at its first position', async () => {
+    // MUTATION: insert every id as sent. [B, A, B] then stores three links, and
+    // a public include returns the B tag twice.
+    const [first, second] = editorOrder() as [string, string]
+    const { body } = await create({ tags: [first, second, first.toUpperCase()] })
+    expect(await tagLinks(body.data!.id)).toBe(2)
+    expect((await editRead(body.data!.id))['tags']).toEqual([first, second])
+  })
+
+  it('reads links saved before positions existed in id order', async () => {
+    // MUTATION: order by "order" alone, or drop junctionOrderBy. Links that all
+    // hold position 0 (the migration's default) then come back in storage
+    // order, which can change.
+    const { body } = await create({ tags: editorOrder() })
+    await db.execute(sql.raw(`UPDATE "${fx.tables.tags}" SET "order" = 0 WHERE left_id = '${body.data!.id}'`))
+    expect((await editRead(body.data!.id))['tags']).toEqual([tagA, tagB].sort())
+  })
+})
+
 // #57: values are checked against their columns and declared rules before any
 // write, so a bad value cannot fail in Postgres part-way through a save.
 describe('values checked before writing', () => {
