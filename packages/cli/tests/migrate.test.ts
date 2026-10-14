@@ -21,6 +21,8 @@ vi.mock('../src/commands/build.js', () => ({
 vi.mock('@bobbykim/manguito-cms-db', () => ({
   getMigrationStatus: vi.fn().mockResolvedValue({ applied: [], pending: [] }),
   generateMigration: vi.fn().mockResolvedValue([]),
+  previewMigration: vi.fn().mockResolvedValue([]),
+  scanMigrationSql: vi.fn().mockReturnValue({ hasDestructiveOperations: false, operations: [] }),
   applyMigrations: vi.fn().mockResolvedValue({ applied: 0, skipped: 0 }),
   scanMigrationFiles: vi.fn().mockReturnValue({ hasDestructiveOperations: false, operations: [] }),
   seedSystemTables: vi.fn().mockResolvedValue({
@@ -43,8 +45,10 @@ import { runMigrate } from '../src/commands/migrate.js'
 import {
   getMigrationStatus,
   generateMigration,
+  previewMigration,
   applyMigrations,
   scanMigrationFiles,
+  scanMigrationSql,
   seedSystemTables,
 } from '@bobbykim/manguito-cms-db'
 import {
@@ -104,6 +108,8 @@ describe('runMigrate', () => {
     vi.mocked(generateMigration).mockResolvedValue([])
     vi.mocked(applyMigrations).mockResolvedValue({ applied: 0, skipped: 0 })
     vi.mocked(scanMigrationFiles).mockReturnValue({ hasDestructiveOperations: false, operations: [] })
+    vi.mocked(previewMigration).mockResolvedValue([])
+    vi.mocked(scanMigrationSql).mockReturnValue({ hasDestructiveOperations: false, operations: [] })
     vi.mocked(seedSystemTables).mockResolvedValue({
       roles: { inserted: 0, updated: 0, deleted: 0 },
       base_paths: { inserted: 0, updated: 0, deleted: 0 },
@@ -212,6 +218,45 @@ describe('runMigrate', () => {
 
       expect(applyMigrations).not.toHaveBeenCalled()
       expect(seedSystemTables).not.toHaveBeenCalled()
+      exitSpy.mockRestore()
+    })
+
+    it('previews the migration instead of generating it, and prints its SQL', async () => {
+      // MUTATION: generate with generateMigration and print the new files (the
+      // dry run before #72). The .sql, snapshot and journal then stay in
+      // migrations/ although the output says nothing was written.
+      const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('process.exit') })
+      vi.mocked(previewMigration).mockResolvedValue([
+        { name: '0001_add_note.sql', sql: 'ALTER TABLE "content_post" ADD COLUMN "note" varchar(255);' },
+      ])
+
+      await expect(runMigrate({ dryRun: true }, makeDeps())).rejects.toThrow('process.exit')
+
+      expect(previewMigration).toHaveBeenCalledWith(CONFIG_PATH, MIGRATIONS_FOLDER)
+      expect(generateMigration).not.toHaveBeenCalled()
+      const out = vi.mocked(process.stdout.write).mock.calls.map((c) => String(c[0])).join('')
+      expect(out).toContain('ADD COLUMN "note"')
+      expect(out).toContain('no migration files written')
+      expect(exitSpy).toHaveBeenCalledWith(0)
+      exitSpy.mockRestore()
+    })
+
+    it('lists destructive operations without asking to apply them', async () => {
+      // MUTATION: run the destructive-change prompt in a dry run too. It then
+      // asks "Apply anyway?" for a command that applies nothing.
+      const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('process.exit') })
+      vi.mocked(previewMigration).mockResolvedValue([{ name: '0002_drop.sql', sql: 'ALTER TABLE "t" DROP COLUMN "c";' }])
+      vi.mocked(scanMigrationSql).mockReturnValue({
+        hasDestructiveOperations: true,
+        operations: [{ file: '0002_drop.sql', operation: 'DROP COLUMN t.c', pattern: 'DROP_COLUMN' }],
+      })
+      const deps = makeDeps()
+
+      await expect(runMigrate({ dryRun: true }, deps)).rejects.toThrow('process.exit')
+
+      expect(deps.prompt.confirm).not.toHaveBeenCalled()
+      const out = vi.mocked(process.stdout.write).mock.calls.map((c) => String(c[0])).join('')
+      expect(out).toContain('DROP COLUMN t.c')
       exitSpy.mockRestore()
     })
   })

@@ -1,12 +1,13 @@
 // manguito migrate — apply pending database migrations
 import { resolve, join } from 'node:path'
-import { readFile } from 'node:fs/promises'
 import type { Command } from 'commander'
 import {
   getMigrationStatus,
   generateMigration,
+  previewMigration,
   applyMigrations,
   scanMigrationFiles,
+  scanMigrationSql,
   seedSystemTables,
   createPostgresAdapter,
 } from '@bobbykim/manguito-cms-db'
@@ -168,7 +169,40 @@ export async function runMigrate(options: MigrateOptions, deps: MigrateDeps): Pr
   const generatedDir = resolve(cwd, 'dist/generated')
   await generateDrizzleConfig(config, generatedDir)
 
-  // 5. Generate migration SQL files — returns basenames of newly created files
+  // 5. Dry run: what `migrate` would generate, shown without keeping it.
+  //    previewMigration puts migrations/ back exactly as it was, so the real
+  //    run that follows generates the same file. No destructive-change prompt:
+  //    nothing is applied.
+  if (options.dryRun) {
+    const preview = await previewMigration(deps.configPath, migrationsFolder)
+    const scan = scanMigrationSql(preview)
+    printSuccess(
+      preview.length === 0
+        ? 'No new migration would be generated'
+        : `Would generate ${preview.length} migration file${preview.length !== 1 ? 's' : ''}: ${preview.map((m) => m.name).join(', ')}`,
+    )
+    process.stdout.write('\nDry run — no migration files written, no changes applied.\n\n')
+
+    if (preview.length > 0) {
+      process.stdout.write('Generated SQL:\n')
+      process.stdout.write('──────────────────────────────────────────\n')
+      for (const m of preview) process.stdout.write(m.sql)
+      process.stdout.write('\n──────────────────────────────────────────\n\n')
+    }
+
+    if (scan.hasDestructiveOperations) {
+      process.stdout.write('⚠ This migration contains destructive operations:\n')
+      for (const op of scan.operations) process.stdout.write(`  - ${op.operation}\n`)
+      process.stdout.write('\n')
+    } else if (preview.length > 0) {
+      process.stdout.write('No destructive operations detected.\n\n')
+    }
+
+    if (preview.length > 0) process.stdout.write('Run `manguito migrate` to generate and apply this migration.\n')
+    process.exit(0)
+  }
+
+  // 6. Generate migration SQL files — returns basenames of newly created files
   const newFileNames = await generateMigration(deps.configPath, migrationsFolder)
   const newFilePaths = newFileNames.map((f) => join(migrationsFolder, f))
 
@@ -178,13 +212,13 @@ export async function runMigrate(options: MigrateOptions, deps: MigrateDeps): Pr
       : `Generated ${newFileNames.length} migration file${newFileNames.length !== 1 ? 's' : ''}: ${newFileNames.join(', ')}`,
   )
 
-  // 6. Scan new files for destructive operations
+  // 7. Scan new files for destructive operations
   const scanResult =
     newFilePaths.length > 0
       ? scanMigrationFiles(newFilePaths)
       : { hasDestructiveOperations: false, operations: [] as ReturnType<typeof scanMigrationFiles>['operations'] }
 
-  // 7. Destructive operation warning / confirmation
+  // 8. Destructive operation warning / confirmation
   if (scanResult.hasDestructiveOperations) {
     process.stdout.write('⚠ This migration contains destructive operations:\n')
     for (const op of scanResult.operations) {
@@ -208,30 +242,6 @@ export async function runMigrate(options: MigrateOptions, deps: MigrateDeps): Pr
         process.exit(0)
       }
     }
-  }
-
-  // 8. Dry run — print SQL and exit without DB writes
-  if (options.dryRun) {
-    process.stdout.write('\nDry run — no files will be written, no changes applied.\n\n')
-
-    if (newFilePaths.length > 0) {
-      process.stdout.write('Generated SQL:\n')
-      process.stdout.write('──────────────────────────────────────────\n')
-      for (const filePath of newFilePaths) {
-        const sql = await readFile(filePath, 'utf-8')
-        process.stdout.write(sql)
-      }
-      process.stdout.write('──────────────────────────────────────────\n\n')
-    } else {
-      process.stdout.write('No SQL changes generated.\n\n')
-    }
-
-    if (!scanResult.hasDestructiveOperations) {
-      process.stdout.write('No destructive operations detected.\n\n')
-    }
-
-    process.stdout.write('Run `manguito migrate` to generate and apply this migration.\n')
-    process.exit(0)
   }
 
   // 9. Apply pending migrations

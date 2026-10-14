@@ -61,6 +61,67 @@ export async function generateMigration(
   return afterFiles.filter((f) => !beforeSet.has(f))
 }
 
+// A folder's files (path relative to it, and their bytes) and subfolders, or
+// null when the folder does not exist.
+type FolderTree = { files: Map<string, Buffer>; dirs: Set<string> }
+
+async function readTree(dir: string): Promise<FolderTree | null> {
+  try {
+    await fs.access(dir)
+  } catch {
+    return null
+  }
+  const tree: FolderTree = { files: new Map(), dirs: new Set() }
+  for (const entry of await fs.readdir(dir, { recursive: true, withFileTypes: true })) {
+    const rel = path.relative(dir, path.join(entry.parentPath, entry.name))
+    if (entry.isDirectory()) tree.dirs.add(rel)
+    else if (entry.isFile()) tree.files.set(rel, await fs.readFile(path.join(dir, rel)))
+  }
+  return tree
+}
+
+// Puts a folder back as `before` recorded it: files added since are deleted,
+// files changed since are rewritten, and folders added since are removed.
+async function restoreTree(dir: string, before: FolderTree | null): Promise<void> {
+  if (before === null) {
+    await fs.rm(dir, { recursive: true, force: true })
+    return
+  }
+  const after = (await readTree(dir)) ?? { files: new Map<string, Buffer>(), dirs: new Set<string>() }
+  for (const rel of after.files.keys()) {
+    if (!before.files.has(rel)) await fs.rm(path.join(dir, rel), { force: true })
+  }
+  for (const [rel, bytes] of before.files) {
+    const now = after.files.get(rel)
+    if (now && now.equals(bytes)) continue
+    await fs.mkdir(path.dirname(path.join(dir, rel)), { recursive: true })
+    await fs.writeFile(path.join(dir, rel), bytes)
+  }
+  // Deepest first, so a new folder's new subfolders go before it.
+  const added = [...after.dirs].filter((rel) => !before.dirs.has(rel)).sort((a, b) => b.length - a.length)
+  for (const rel of added) await fs.rm(path.join(dir, rel), { recursive: true, force: true })
+}
+
+// The migration `generateMigration` would write, without writing it: it runs
+// drizzle-kit generate as usual, reads the new SQL files, then puts the
+// migrations folder back exactly as it was. That removes the new .sql files,
+// drizzle-kit's snapshot and its journal entry, so a later real run generates
+// the same migration again. The folder is restored even when drizzle-kit fails.
+export async function previewMigration(
+  configPath: string,
+  migrationsFolder: string,
+): Promise<Array<{ name: string; sql: string }>> {
+  const before = await readTree(migrationsFolder)
+  try {
+    const names = await generateMigration(configPath, migrationsFolder)
+    return await Promise.all(
+      names.map(async (name) => ({ name, sql: await fs.readFile(path.join(migrationsFolder, name), 'utf8') })),
+    )
+  } finally {
+    await restoreTree(migrationsFolder, before)
+  }
+}
+
 export async function applyMigrations(
   configPath: string,
   db: DrizzlePostgresInstance,
