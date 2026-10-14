@@ -87,9 +87,9 @@ afterAll(() => {
 
 describe('previewMigration', () => {
   it('returns the first migration and leaves no migrations folder behind', async () => {
-    // MUTATION: return generateMigration's files without restoring the folder
-    // (the dry run before #72). migrations/ then holds the .sql, the snapshot
-    // and the journal, and the next real run generates nothing.
+    // MUTATION: generate into the real folder (the dry run before #72).
+    // migrations/ then holds the .sql, the snapshot and the journal, and the
+    // next real run generates nothing.
     const preview = await previewMigration(CONFIG_PATH, MIGRATIONS_FOLDER)
     expect(preview).toHaveLength(1)
     expect(preview[0]!.sql).toContain('CREATE TABLE "content_prev_test"')
@@ -97,9 +97,9 @@ describe('previewMigration', () => {
   })
 
   it('leaves an existing folder exactly as it was, so a real run generates the same migration', async () => {
-    // MUTATION: delete only the new .sql files. drizzle-kit's snapshot and
-    // journal entry then stay, and the real run that follows the preview
-    // generates nothing, because drizzle-kit thinks the change is recorded.
+    // MUTATION: generate into the real folder and delete only the new .sql
+    // files. drizzle-kit's snapshot and journal entry then stay, and the real
+    // run that follows generates nothing: drizzle-kit thinks it is recorded.
     await generateMigration(CONFIG_PATH, MIGRATIONS_FOLDER)
     writeFileSync(SCHEMA_PATH, generateSchemaFile(registryWith([NOTE])))
     const before = folderState()
@@ -114,9 +114,10 @@ describe('previewMigration', () => {
     expect(readFileSync(path.join(MIGRATIONS_FOLDER, real[0]!), 'utf8')).toBe(preview[0]!.sql)
   })
 
-  it('restores the folder when the preview fails after drizzle-kit has written', async () => {
-    // MUTATION: restore only after a successful read (no finally). The files
-    // drizzle-kit wrote then stay behind when reading them fails.
+  it('never writes to the real folder, and leaves no temporary folder, even when the preview fails', async () => {
+    // MUTATION: generate into the real folder and undo it afterwards, or drop
+    // the finally that removes the temporary folder. A failure after
+    // drizzle-kit has written then leaves its files behind.
     await generateMigration(CONFIG_PATH, MIGRATIONS_FOLDER)
     writeFileSync(SCHEMA_PATH, generateSchemaFile(registryWith([NOTE])))
     const before = folderState()
@@ -139,5 +140,6 @@ describe('previewMigration', () => {
     }
     expect(failed).toBe(true)
     expect(folderState()).toEqual(before)
+    expect(readdirSync(TMP_DIR).filter((f) => f.startsWith('.migration-preview-'))).toEqual([])
   })
 })

@@ -31,13 +31,12 @@ export async function runDevMigration(configPath: string): Promise<void> {
   })
 }
 
-export async function generateMigration(
-  configPath: string,
-  migrationsFolder: string,
-): Promise<string[]> {
+// Runs drizzle-kit generate with `configPath`, from `cwd` (where the config's
+// relative paths resolve), and returns the .sql files it added to `outFolder`.
+async function runGenerate(configPath: string, outFolder: string, cwd: string): Promise<string[]> {
   let beforeFiles: string[] = []
   try {
-    const entries = await fs.readdir(migrationsFolder)
+    const entries = await fs.readdir(outFolder)
     beforeFiles = entries.filter((f) => f.endsWith('.sql'))
   } catch {
     // folder doesn't exist yet — no prior migrations
@@ -45,13 +44,13 @@ export async function generateMigration(
 
   execSync(`drizzle-kit generate --config=${configPath}`, {
     stdio: 'inherit',
-    cwd: path.dirname(configPath),
+    cwd,
     env: resolvedPathEnv(),
   })
 
   let afterFiles: string[] = []
   try {
-    const entries = await fs.readdir(migrationsFolder)
+    const entries = await fs.readdir(outFolder)
     afterFiles = entries.filter((f) => f.endsWith('.sql'))
   } catch {
     // folder still doesn't exist after generate — nothing created
@@ -61,64 +60,50 @@ export async function generateMigration(
   return afterFiles.filter((f) => !beforeSet.has(f))
 }
 
-// A folder's files (path relative to it, and their bytes) and subfolders, or
-// null when the folder does not exist.
-type FolderTree = { files: Map<string, Buffer>; dirs: Set<string> }
-
-async function readTree(dir: string): Promise<FolderTree | null> {
-  try {
-    await fs.access(dir)
-  } catch {
-    return null
-  }
-  const tree: FolderTree = { files: new Map(), dirs: new Set() }
-  for (const entry of await fs.readdir(dir, { recursive: true, withFileTypes: true })) {
-    const rel = path.relative(dir, path.join(entry.parentPath, entry.name))
-    if (entry.isDirectory()) tree.dirs.add(rel)
-    else if (entry.isFile()) tree.files.set(rel, await fs.readFile(path.join(dir, rel)))
-  }
-  return tree
+export async function generateMigration(
+  configPath: string,
+  migrationsFolder: string,
+): Promise<string[]> {
+  return runGenerate(configPath, migrationsFolder, path.dirname(configPath))
 }
 
-// Puts a folder back as `before` recorded it: files added since are deleted,
-// files changed since are rewritten, and folders added since are removed.
-async function restoreTree(dir: string, before: FolderTree | null): Promise<void> {
-  if (before === null) {
-    await fs.rm(dir, { recursive: true, force: true })
-    return
-  }
-  const after = (await readTree(dir)) ?? { files: new Map<string, Buffer>(), dirs: new Set<string>() }
-  for (const rel of after.files.keys()) {
-    if (!before.files.has(rel)) await fs.rm(path.join(dir, rel), { force: true })
-  }
-  for (const [rel, bytes] of before.files) {
-    const now = after.files.get(rel)
-    if (now && now.equals(bytes)) continue
-    await fs.mkdir(path.dirname(path.join(dir, rel)), { recursive: true })
-    await fs.writeFile(path.join(dir, rel), bytes)
-  }
-  // Deepest first, so a new folder's new subfolders go before it.
-  const added = [...after.dirs].filter((rel) => !before.dirs.has(rel)).sort((a, b) => b.length - a.length)
-  for (const rel of added) await fs.rm(path.join(dir, rel), { recursive: true, force: true })
-}
-
-// The migration `generateMigration` would write, without writing it: it runs
-// drizzle-kit generate as usual, reads the new SQL files, then puts the
-// migrations folder back exactly as it was. That removes the new .sql files,
-// drizzle-kit's snapshot and its journal entry, so a later real run generates
-// the same migration again. The folder is restored even when drizzle-kit fails.
+// The migration `generateMigration` would write, without writing it. The
+// migrations folder is copied into a temporary folder beside the config, and
+// drizzle-kit generates there, through a temporary config that imports the
+// real one and only changes `out`. The real folder is never written to, so an
+// interrupted or failed preview cannot leave anything in it; the temporary
+// folder is removed afterwards.
 export async function previewMigration(
   configPath: string,
   migrationsFolder: string,
 ): Promise<Array<{ name: string; sql: string }>> {
-  const before = await readTree(migrationsFolder)
+  const configDir = path.dirname(configPath)
+  const tmp = await fs.mkdtemp(path.join(configDir, '.migration-preview-'))
   try {
-    const names = await generateMigration(configPath, migrationsFolder)
+    const out = path.join(tmp, 'migrations')
+    try {
+      await fs.cp(migrationsFolder, out, { recursive: true })
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+      // no migrations yet: generate the first one into an empty folder
+    }
+    const base = `./${path.basename(configPath).replace(/\.[cm]?[jt]s$/, '')}`
+    const tmpConfig = path.join(tmp, 'drizzle.config.ts')
+    await fs.writeFile(
+      tmpConfig,
+      [
+        `import base from '.${base}'`,
+        // Relative to the real config's folder, where drizzle-kit runs.
+        `export default { ...base, out: './${path.relative(configDir, out).split(path.sep).join('/')}' }`,
+        '',
+      ].join('\n'),
+    )
+    const names = await runGenerate(tmpConfig, out, configDir)
     return await Promise.all(
-      names.map(async (name) => ({ name, sql: await fs.readFile(path.join(migrationsFolder, name), 'utf8') })),
+      names.map(async (name) => ({ name, sql: await fs.readFile(path.join(out, name), 'utf8') })),
     )
   } finally {
-    await restoreTree(migrationsFolder, before)
+    await fs.rm(tmp, { recursive: true, force: true })
   }
 }
 

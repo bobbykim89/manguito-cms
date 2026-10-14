@@ -18,6 +18,10 @@ vi.mock('../src/commands/build.js', () => ({
   runBuild: vi.fn().mockResolvedValue(undefined),
   needsRebuild: vi.fn().mockResolvedValue(false),
 }))
+vi.mock('node:fs/promises', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:fs/promises')>()),
+  readFile: vi.fn(),
+}))
 vi.mock('@bobbykim/manguito-cms-db', () => ({
   getMigrationStatus: vi.fn().mockResolvedValue({ applied: [], pending: [] }),
   generateMigration: vi.fn().mockResolvedValue([]),
@@ -58,6 +62,7 @@ import {
   buildSchemaRegistry,
   loadSchemaFile,
 } from '@bobbykim/manguito-cms-core'
+import { readFile } from 'node:fs/promises'
 import { resolveConfig } from '../src/utils/config.js'
 import { generateDrizzleConfig } from '../src/codegen/drizzle-config.js'
 
@@ -193,6 +198,21 @@ describe('runMigrate', () => {
     })
   })
 
+  describe('pending migrations generated earlier', () => {
+    it('are scanned before applying, though this run generates nothing', async () => {
+      // MUTATION: scan only the files this run generated. A destructive
+      // migration an older --dry-run left in migrations/ is then applied with
+      // no warning and no prompt.
+      vi.mocked(generateMigration).mockResolvedValueOnce([])
+      vi.mocked(getMigrationStatus).mockResolvedValue({ applied: [], pending: ['0001_left_behind.sql'] })
+      const deps = makeDeps()
+
+      await runMigrate({}, deps)
+
+      expect(scanMigrationFiles).toHaveBeenCalledWith([`${MIGRATIONS_FOLDER}/0001_left_behind.sql`])
+    })
+  })
+
   describe('destructive ops with --force', () => {
     it('does not call prompt.confirm and continues immediately', async () => {
       vi.mocked(generateMigration).mockResolvedValueOnce(['0002_drop_col.sql'])
@@ -238,6 +258,27 @@ describe('runMigrate', () => {
       expect(out).toContain('ADD COLUMN "note"')
       expect(out).toContain('no migration files written')
       expect(exitSpy).toHaveBeenCalledWith(0)
+      exitSpy.mockRestore()
+    })
+
+    it('shows a pending migration generated earlier, with its SQL, and flags it when destructive', async () => {
+      // MUTATION: preview only the migration this run would generate. A
+      // pending destructive migration is then missing from the dry run, which
+      // reports "No new migration" although `migrate` would apply it.
+      const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('process.exit') })
+      vi.mocked(getMigrationStatus).mockResolvedValue({ applied: [], pending: ['0001_left_behind.sql'] })
+      vi.mocked(readFile).mockResolvedValue('ALTER TABLE "t" DROP COLUMN "c";' as never)
+      vi.mocked(scanMigrationSql).mockImplementation((ms) => ({
+        hasDestructiveOperations: ms.some((m) => m.sql.includes('DROP COLUMN')),
+        operations: ms.filter((m) => m.sql.includes('DROP COLUMN')).map((m) => ({ file: m.name, operation: 'DROP COLUMN t.c', pattern: 'DROP_COLUMN' as const })),
+      }))
+
+      await expect(runMigrate({ dryRun: true }, makeDeps())).rejects.toThrow('process.exit')
+
+      const out = vi.mocked(process.stdout.write).mock.calls.map((c) => String(c[0])).join('')
+      expect(out).toContain('0001_left_behind.sql')
+      expect(out).toContain('DROP COLUMN "c"')
+      expect(out).toContain('DROP COLUMN t.c')
       exitSpy.mockRestore()
     })
 
