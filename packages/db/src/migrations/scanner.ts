@@ -60,12 +60,18 @@ function formatAlterColumnType(line: string): string {
 }
 
 export function scanMigrationFiles(filePaths: string[]): ScanResult {
+  return scanMigrationSql(
+    filePaths.map((filePath) => ({ name: path.basename(filePath), sql: readFileSync(filePath, 'utf-8') })),
+  )
+}
+
+// The same scan over SQL already in hand, such as a migration previewed with
+// previewMigration, whose files no longer exist.
+export function scanMigrationSql(migrations: Array<{ name: string; sql: string }>): ScanResult {
   const operations: DestructiveOperation[] = []
 
-  for (const filePath of filePaths) {
-    const content = readFileSync(filePath, 'utf-8')
+  for (const { name: filename, sql: content } of migrations) {
     const lines = content.split('\n')
-    const filename = path.basename(filePath)
 
     for (const line of lines) {
       const upper = line.trim().toUpperCase()
