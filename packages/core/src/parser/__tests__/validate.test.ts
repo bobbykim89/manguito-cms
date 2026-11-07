@@ -915,6 +915,71 @@ describe('validateCrossReferences — TABLE_NAME_COLLISION', () => {
     expect(collisions(registryOf(taxonomy('taxonomy--tag', 'x_y'), taxonomy('taxonomy--tag_x', 'z')))).toEqual([])
   })
 
+  const m2m = (name: string, target: string) => ({ name, label: name, type: 'reference', target, rel: 'many-to-many', required: false })
+
+  it('names the field inside its tab for a content type', () => {
+    // MUTATION: use fields[order] for every type. A content type's raw fields
+    // are tab wrappers, so the path would point at the wrong entry.
+    const errors = collisions(
+      registryOf(
+        okSchema<ParsedSchemaAny>(makeContentType('content--tag', [m2m('x_y', 'content--tag')])),
+        okSchema<ParsedSchemaAny>(makeContentType('content--tag_x', [m2m('y', 'content--tag')]))
+      )
+    )
+    expect(errors.map((e) => e.path)).toEqual(['fields[0].tab.fields[0].name'])
+  })
+
+  it('suggests shortening the type when its link-table prefix alone is too long, and that clears it', () => {
+    // MUTATION: always suggest shortening a field. Here every link table of
+    // the type shares its first 63 characters, so no field name can fix it.
+    const typeName = (n: number) => `content--${'b'.repeat(n)}`
+    const withTwoLists = (n: number) =>
+      okSchema<ParsedSchemaAny>(makeContentType(typeName(n), [m2m('tags', typeName(n)), m2m('labels', typeName(n))]))
+    const errors = collisions(registryOf(withTwoLists(46)))
+    expect(errors).toHaveLength(1)
+    expect(errors[0]!.message).toContain(`shorten the name of type "${typeName(46)}"`)
+    expect(collisions(registryOf(withTwoLists(30)))).toEqual([])
+  })
+
+  it('suggests a field length that fits, and shortening to it clears the collision', () => {
+    // MUTATION: suggest a length off by one (the room before 63 characters).
+    // Following the message would then leave the two names colliding.
+    const one = `${'a'.repeat(41)}_one`
+    const two = `${'a'.repeat(41)}_two`
+    // Two lists on one type: link tables junction_taxonomy_tag_<41 a's>_one/_two.
+    const sameType = okSchema<ParsedSchemaAny>(
+      parseSchema(
+        { name: 'taxonomy--tag', label: 'Tag', type: 'taxonomy-type', fields: [m2m(one, 'taxonomy--tag'), m2m(two, 'taxonomy--tag')] },
+        'taxonomy-type',
+        'schemas/taxonomy-types/taxonomy--tag.json'
+      )
+    )
+    const found = collisions(registryOf(sameType))
+    expect(found).toHaveLength(1)
+    const room = Number(/at most (\d+) characters/.exec(found[0]!.message)![1])
+    expect(room).toBe(41)
+    const shortened = `${'a'.repeat(room - 3)}two`
+    const fixed = okSchema<ParsedSchemaAny>(
+      parseSchema(
+        { name: 'taxonomy--tag', label: 'Tag', type: 'taxonomy-type', fields: [m2m(one, 'taxonomy--tag'), m2m(shortened, 'taxonomy--tag')] },
+        'taxonomy-type',
+        'schemas/taxonomy-types/taxonomy--tag.json'
+      )
+    )
+    expect(collisions(registryOf(fixed))).toEqual([])
+  })
+
+  it('does not report link tables of paragraph types, which are never created', () => {
+    // MUTATION: list every field with a junction, paragraph types included.
+    // Their many-to-many fields (already refused as UNSUPPORTED_RELATION) then
+    // also get a collision error about a table codegen never makes.
+    const para = (name: string, field: string) =>
+      okSchema<ParsedSchemaAny>(makeParagraphType(name, [m2m(field, 'taxonomy--tag')]))
+    const registry = registryOf(para('paragraph--p', 'x_y'), para('paragraph--p_x', 'y'), okSchema<ParsedSchemaAny>(makeTaxonomyType('taxonomy--tag')))
+    expect(collisions(registry)).toEqual([])
+    expect(validateCrossReferences(registry).filter((e) => e.code === 'UNSUPPORTED_RELATION')).toHaveLength(2)
+  })
+
   it('refuses two names that are the same in their first 63 characters, and is cleared by shortening one', () => {
     // MUTATION: compare full names. Postgres keeps 63 characters of a name, so
     // these two content types would then share one table.

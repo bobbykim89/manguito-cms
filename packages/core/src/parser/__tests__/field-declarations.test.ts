@@ -212,6 +212,24 @@ describe('field declarations — misuse is rejected', () => {
     expect(err!.message).toContain('blog_title')
   })
 
+  it('rejects two column names that are the same in their first 63 characters, until one is shortened', () => {
+    // MUTATION: compare full column names. Postgres keeps 63 characters of a
+    // name, so these two fields would be one column and the migration fails.
+    const long = 'c'.repeat(62) // first 63 characters: 62 c's and the underscore
+    const errors = parseErrors([
+      { name: `${long}_first`, label: 'First', type: 'text/plain', required: false },
+      { name: `${long}_second`, label: 'Second', type: 'text/plain', required: false },
+    ])
+    const err = errors.find((e) => e.code === 'DUPLICATE_COLUMN')
+    expect(err?.message).toContain('first 63 characters')
+    expect(() =>
+      parseOk([
+        { name: `${long}_first`, label: 'First', type: 'text/plain', required: false },
+        { name: 'short_second', label: 'Second', type: 'text/plain', required: false },
+      ])
+    ).not.toThrow()
+  })
+
   it('does not report a duplicate column for two fields with no storage column', () => {
     // A paragraph field's `name` is not a column, so two of them cannot collide
     // on one. Without the hasStorageColumn filter, a text field with
