@@ -880,6 +880,65 @@ describe('validateCrossReferences — UNSUPPORTED_RELATION', () => {
   })
 })
 
+describe('validateCrossReferences — TABLE_NAME_COLLISION', () => {
+  const registryOf = (...schemas: ParsedSchemaAny[]) => buildSchemaRegistry(schemas, EMPTY_ROUTES, EMPTY_ROLES)
+  const collisions = (registry: SchemaRegistry) =>
+    validateCrossReferences(registry).filter((e) => e.code === 'TABLE_NAME_COLLISION')
+  const taxonomy = (name: string, field: string) =>
+    okSchema<ParsedSchemaAny>(
+      parseSchema(
+        {
+          name,
+          label: name,
+          type: 'taxonomy-type',
+          fields: [{ name: field, label: field, type: 'reference', target: 'taxonomy--tag', rel: 'many-to-many', required: false }],
+        },
+        'taxonomy-type',
+        `schemas/taxonomy-types/${name}.json`
+      )
+    )
+
+  it('refuses two many-to-many fields whose link tables share a name', () => {
+    // MUTATION: drop checkTableNameCollisions. Field `x_y` on `tag` and field
+    // `y` on `tag_x` then both write junction_taxonomy_tag_x_y, mixing links.
+    const errors = collisions(registryOf(taxonomy('taxonomy--tag', 'x_y'), taxonomy('taxonomy--tag_x', 'y')))
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toMatchObject({ file: 'schemas/taxonomy-types/taxonomy--tag_x.json', path: 'fields[0].name' })
+    expect(errors[0]!.message).toContain('"junction_taxonomy_tag_x_y"')
+    expect(errors[0]!.message).toContain('field "x_y" of "taxonomy--tag"')
+  })
+
+  it('is cleared by renaming one of the fields, as the message suggests', () => {
+    // MUTATION: compare a shorter prefix than the 63 characters Postgres keeps.
+    // The distinct link tables junction_taxonomy_tag_x_y and ..._tag_x_z of
+    // related types would then be refused.
+    expect(collisions(registryOf(taxonomy('taxonomy--tag', 'x_y'), taxonomy('taxonomy--tag_x', 'z')))).toEqual([])
+  })
+
+  it('refuses two names that are the same in their first 63 characters, and is cleared by shortening one', () => {
+    // MUTATION: compare full names. Postgres keeps 63 characters of a name, so
+    // these two content types would then share one table.
+    const long = 'a'.repeat(55)
+    const collide = collisions(
+      registryOf(
+        okSchema<ParsedSchemaAny>(makeContentType(`content--${long}_one`)),
+        okSchema<ParsedSchemaAny>(makeContentType(`content--${long}_two`))
+      )
+    )
+    expect(collide).toHaveLength(1)
+    expect(collide[0]!.message).toContain('first 63 characters')
+    const short = 'a'.repeat(40)
+    expect(
+      collisions(
+        registryOf(
+          okSchema<ParsedSchemaAny>(makeContentType(`content--${short}_one`)),
+          okSchema<ParsedSchemaAny>(makeContentType(`content--${short}_two`))
+        )
+      )
+    ).toEqual([])
+  })
+})
+
 describe('validateCrossReferences — no errors on a fully valid registry', () => {
   it('returns an empty error array for a well-formed registry', () => {
     const para = okSchema<ParsedParagraphType>(makeParagraphType('paragraph--photo_card'))

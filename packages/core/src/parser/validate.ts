@@ -156,6 +156,7 @@ export function buildSchemaRegistry(
  * - CIRCULAR_REFERENCE        — paragraph A refs paragraph B which refs paragraph A
  * - MAX_SIZE_EXCEEDS_GLOBAL_LIMIT — field max_size exceeds the global limit
  * - UNSUPPORTED_RELATION      — a paragraph type holds a many-to-many reference
+ * - TABLE_NAME_COLLISION      — two schema types or link tables get the same table
  *
  * @param registry         The assembled SchemaRegistry (from buildSchemaRegistry).
  * @param globalMaxFileSize Global max file size in bytes from api.media.max_file_size.
@@ -171,6 +172,7 @@ export function validateCrossReferences(
   errors.push(...checkFieldRefs(registry))
   errors.push(...checkCircularParagraphRefs(registry))
   errors.push(...checkParagraphRelations(registry))
+  errors.push(...checkTableNameCollisions(registry))
 
   if (globalMaxFileSize !== undefined) {
     errors.push(...checkMaxSizeLimit(registry, globalMaxFileSize))
@@ -205,6 +207,66 @@ function checkParagraphRelations(registry: SchemaRegistry): ParseError[] {
         path: `fields[${field.order}].rel`,
       })
     }
+  }
+  return errors
+}
+
+// ─── TABLE_NAME_COLLISION ─────────────────────────────────────────────────────
+
+// Postgres keeps the first 63 bytes of an identifier and drops the rest
+// without an error. Generated names are ASCII (snake_case), so bytes are
+// characters.
+const POSTGRES_IDENTIFIER_LIMIT = 63
+
+type TableUse = { table: string; file: string; what: string; path?: string }
+
+// Two schema types, or two many-to-many fields, that would get the same table.
+// A link table is `junction_<owner table>_<field>`, so field `x_y` on `tag` and
+// field `y` on `tag_x` share one; and two long names that differ only after 63
+// characters become one table in Postgres. Either way the second silently
+// writes into the first's table (#57).
+function checkTableNameCollisions(registry: SchemaRegistry): ParseError[] {
+  const uses: TableUse[] = []
+  const owners = [
+    ...Object.values(registry.content_types),
+    ...Object.values(registry.taxonomy_types),
+    ...Object.values(registry.paragraph_types),
+  ]
+  for (const owner of owners) {
+    uses.push({ table: owner.db.table_name, file: owner.source_file, what: `type "${owner.name}"` })
+    for (const field of owner.fields) {
+      const junction = field.db_column?.junction
+      if (!junction) continue
+      uses.push({
+        table: junction.table_name,
+        file: owner.source_file,
+        what: `field "${field.name}" of "${owner.name}"`,
+        path: `fields[${field.order}].name`,
+      })
+    }
+  }
+
+  const errors: ParseError[] = []
+  const first = new Map<string, TableUse>()
+  for (const use of uses) {
+    const stored = use.table.slice(0, POSTGRES_IDENTIFIER_LIMIT)
+    const earlier = first.get(stored)
+    if (!earlier) {
+      first.set(stored, use)
+      continue
+    }
+    errors.push({
+      file: use.file,
+      code: 'TABLE_NAME_COLLISION',
+      message:
+        earlier.table === use.table
+          ? `The ${use.what} would store its data in table "${use.table}", the same table as the ` +
+            `${earlier.what}. Rename one of the two so their tables differ.`
+          : `The ${use.what} and the ${earlier.what} would get tables "${use.table}" and ` +
+            `"${earlier.table}". Postgres keeps only the first ${POSTGRES_IDENTIFIER_LIMIT} characters ` +
+            `of a name, which are the same, so they would be one table. Shorten one of the names.`,
+      ...(use.path !== undefined && { path: use.path }),
+    })
   }
   return errors
 }

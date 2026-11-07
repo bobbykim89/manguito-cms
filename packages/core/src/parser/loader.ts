@@ -43,6 +43,7 @@ export type ParseErrorCode =
   | 'VERSION_COLUMN_MISSING'
   | 'ORPHANED_TOMBSTONE'
   | 'UNSUPPORTED_RELATION'
+  | 'TABLE_NAME_COLLISION'
 
 export type ParseError = {
   file: string
