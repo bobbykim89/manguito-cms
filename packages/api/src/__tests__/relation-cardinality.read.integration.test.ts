@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { sql } from 'drizzle-orm'
 import { getTestDb, createTestApp, authenticatedRequest } from '@bobbykim/manguito-cms-test-utils'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import {
@@ -17,6 +18,10 @@ let app: ReturnType<typeof createTestApp>
 let filledId = ''
 let filledLinkId = ''
 let emptyId = ''
+let tiedId = ''
+let twiceId = ''
+let tagA = ''
+let tagB = ''
 
 beforeAll(async () => {
   process.env['AUTH_SECRET'] ??= 'test-secret'
@@ -47,6 +52,28 @@ beforeAll(async () => {
   await insertParagraph(db, fx.tables.link, {
     parentId: legacyId, parentType: fx.tables.post, parentField: 'link', order: 0, values: { url: 'first' },
   })
+
+  // Two cards at one position, the larger id inserted first.
+  tiedId = await insertPost(db, fx, { slug: 'tied', owner: tag })
+  for (const id of ['00000000-0000-4000-8000-000000000002', '00000000-0000-4000-8000-000000000001']) {
+    await insertParagraph(db, fx.tables.card, {
+      parentId: tiedId, parentType: fx.tables.post, parentField: 'cards', order: 0, values: { id, heading: id, card_tag: tag },
+    })
+  }
+
+  // A link stored twice: (A, 0), (B, 1), (A, 2).
+  twiceId = await insertPost(db, fx, { slug: 'twice', owner: tag })
+  tagA = await insertTag(db, fx, 'tag-a')
+  tagB = await insertTag(db, fx, 'tag-b')
+  const post = fx.registry.content_types[fx.names.post]!
+  const j = post.fields.find((f) => f.name === 'tags')!.db_column!.junction!
+  for (const [order, tagId] of [[0, tagA], [1, tagB], [2, tagA]] as const) {
+    await db.execute(
+      j.order_column
+        ? sql`INSERT INTO ${sql.raw(`"${j.table_name}"`)} (${sql.raw(`"${j.left_column}"`)}, ${sql.raw(`"${j.right_column}"`)}, "order") VALUES (${twiceId}, ${tagId}, ${order})`
+        : sql`INSERT INTO ${sql.raw(`"${j.table_name}"`)} (${sql.raw(`"${j.left_column}"`)}, ${sql.raw(`"${j.right_column}"`)}) VALUES (${twiceId}, ${tagId})`
+    )
+  }
 }, 30_000)
 
 afterAll(async () => {
@@ -111,5 +138,31 @@ describe('reading a one-to-one paragraph', () => {
     const res = await authenticatedRequest(app, 'admin', 'GET', `/admin/api/content/${fx.names.post}/${emptyId}`)
     const data = ((await res.json()) as { data: Record<string, unknown> }).data
     expect(data['link']).toBeNull()
+  })
+})
+
+describe('stable relation reads', () => {
+  it('orders paragraph rows with the same position by id, on every read', async () => {
+    // MUTATION: drop the id tiebreaker from ORDER BY "order". Rows with the
+    // same position then come back in storage order.
+    const ids = ['00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000002']
+    const pub = await publicGet('tied?include=cards')
+    expect((pub.body.data['cards'] as Array<Record<string, unknown>>).map((c) => c['id'])).toEqual(ids)
+    const bare = await publicGet('tied')
+    expect(bare.body.data['cards']).toEqual(ids)
+    const res = await authenticatedRequest(app, 'admin', 'GET', `/admin/api/content/${fx.names.post}/${tiedId}`)
+    const data = ((await res.json()) as { data: Record<string, unknown> }).data
+    expect((data['cards'] as Array<Record<string, unknown>>).map((c) => c['id'])).toEqual(ids)
+  })
+
+  it('reads a link stored twice once, keeping first-position order', async () => {
+    // MUTATION: skip firstOfEach in any one of the three reads.
+    const res = await authenticatedRequest(app, 'admin', 'GET', `/admin/api/content/${fx.names.post}/${twiceId}`)
+    const data = ((await res.json()) as { data: Record<string, unknown> }).data
+    expect(data['tags']).toEqual([tagA, tagB])
+    const bare = await publicGet('twice')
+    expect(bare.body.data['tags']).toEqual([tagA, tagB])
+    const inc = await publicGet('twice?include=tags')
+    expect((inc.body.data['tags'] as Array<Record<string, unknown>>).map((t) => t['id'])).toEqual([tagA, tagB])
   })
 })

@@ -29,6 +29,7 @@ import {
   deleteParagraphField,
   persistJunctionField,
   junctionOrderBy,
+  firstOfEach,
   oneOrMany,
   paragraphItems,
 } from '../../relations.js'
@@ -64,7 +65,7 @@ async function loadParagraphRows(
   fieldName: string
 ): Promise<Record<string, unknown>[]> {
   const result = await db.execute(
-    sql`SELECT * FROM ${sql.raw(quoteIdent(pType.db.table_name))} WHERE parent_id = ${parentId} AND parent_field = ${fieldName} ORDER BY "order" ASC`
+    sql`SELECT * FROM ${sql.raw(quoteIdent(pType.db.table_name))} WHERE parent_id = ${parentId} AND parent_field = ${fieldName} ORDER BY "order" ASC, id ASC`
   )
   const rows = result.rows as Record<string, unknown>[]
 
@@ -101,21 +102,26 @@ async function loadRelationsForEdit(
   id: string,
   row: Record<string, unknown>
 ): Promise<void> {
-  for (const f of fields) {
-    if (f.db_column === null) {
-      const comp = f.ui_component as { component: string; ref?: string }
-      if (comp.component !== 'paragraph-embed' || !comp.ref) continue
-      const pType = registry.paragraph_types[comp.ref]
-      if (!pType) continue
-      row[f.name] = oneOrMany(relationCardinality(f) ?? 'many', await loadParagraphRows(db, registry, pType, id, f.name))
-    } else if (f.db_column.junction) {
-      const j = f.db_column.junction
-      const r = await db.execute(
-        sql`SELECT ${sql.raw(quoteIdent(j.right_column))} FROM ${sql.raw(quoteIdent(j.table_name))} WHERE ${sql.raw(quoteIdent(j.left_column))} = ${id}${junctionOrderBy(j)}`
-      )
-      row[f.name] = r.rows.map((linked) => (linked as Record<string, unknown>)[j.right_column] as string)
-    }
-  }
+  await Promise.all(
+    fields.map(async (f) => {
+      if (f.db_column === null) {
+        const comp = f.ui_component as { component: string; ref?: string }
+        if (comp.component !== 'paragraph-embed' || !comp.ref) return
+        const pType = registry.paragraph_types[comp.ref]
+        if (!pType) return
+        row[f.name] = oneOrMany(relationCardinality(f) ?? 'many', await loadParagraphRows(db, registry, pType, id, f.name))
+      } else if (f.db_column.junction) {
+        const j = f.db_column.junction
+        const r = await db.execute(
+          sql`SELECT ${sql.raw(quoteIdent(j.right_column))} FROM ${sql.raw(quoteIdent(j.table_name))} WHERE ${sql.raw(quoteIdent(j.left_column))} = ${id}${junctionOrderBy(j)}`
+        )
+        row[f.name] = firstOfEach(
+          r.rows.map((linked) => (linked as Record<string, unknown>)[j.right_column] as string),
+          (linkedId) => linkedId
+        )
+      }
+    })
+  )
 }
 
 // What a publish check on an update reads: the stored row (label-keyed), with

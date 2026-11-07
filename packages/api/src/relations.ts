@@ -271,6 +271,18 @@ export function junctionOrderBy(junction: { right_column: string; order_column: 
   return junction.order_column ? sql` ORDER BY "order" ASC, ${right} ASC` : sql` ORDER BY ${right} ASC`
 }
 
+// Keeps each key's first item, in order. A link stored twice (rows written
+// before duplicates were dropped) then reads once, at its first position.
+export function firstOfEach<T>(items: T[], key: (item: T) => string): T[] {
+  const seen = new Set<string>()
+  return items.filter((item) => {
+    const k = key(item)
+    if (seen.has(k)) return false
+    seen.add(k)
+    return true
+  })
+}
+
 // ─── Relation descriptors and resolution (read side) ──────────────────────────
 //
 // Relation read resolution. These were lifted out of the repository so that all
@@ -446,7 +458,7 @@ export async function resolveRelationField(
     // same paragraph type share one table, so filtering on the parent alone
     // hands each field the other's rows.
     const result = await db.execute(
-      sql`SELECT * FROM ${sql.raw(quoteIdent(rel.table))} WHERE parent_id IN (${inList}) AND parent_field = ${fieldName} ORDER BY "order" ASC`
+      sql`SELECT * FROM ${sql.raw(quoteIdent(rel.table))} WHERE parent_id IN (${inList}) AND parent_field = ${fieldName} ORDER BY "order" ASC, id ASC`
     )
     const byParent = groupBy(result.rows as Record<string, unknown>[], 'parent_id')
     for (const row of batch) {
@@ -502,7 +514,7 @@ export async function resolveRelationField(
     }
     const byLeft = groupBy(jRows, rel.left_column)
     for (const row of batch) {
-      const jEntries = byLeft[row['id'] as string] ?? []
+      const jEntries = firstOfEach(byLeft[row['id'] as string] ?? [], (jr) => jr[rel.right_column] as string)
       row[fieldName] = jEntries
         .map((jr) => cache.get(`${rel.table}:${jr[rel.right_column] as string}`))
         .filter(Boolean)
@@ -550,7 +562,7 @@ export async function resolveRelationBareIds(
     const parentIds = rows.map((r) => r['id'] as string)
     const inList = sql.join(parentIds.map((id) => sql`${id}`), sql`, `)
     const result = await db.execute(
-      sql`SELECT id, parent_id FROM ${sql.raw(quoteIdent(rel.table))} WHERE parent_id IN (${inList}) AND parent_field = ${fieldName} ORDER BY "order" ASC`
+      sql`SELECT id, parent_id FROM ${sql.raw(quoteIdent(rel.table))} WHERE parent_id IN (${inList}) AND parent_field = ${fieldName} ORDER BY "order" ASC, id ASC`
     )
     const byParent = groupBy(result.rows as Record<string, unknown>[], 'parent_id')
     for (const row of rows) {
@@ -564,7 +576,7 @@ export async function resolveRelationBareIds(
     )
     const byLeft = groupBy(result.rows as Record<string, unknown>[], 'left_id')
     for (const row of rows) {
-      row[fieldName] = (byLeft[row['id'] as string] ?? []).map((r) => r['right_id'])
+      row[fieldName] = firstOfEach(byLeft[row['id'] as string] ?? [], (r) => r['right_id'] as string).map((r) => r['right_id'])
     }
   }
 }
