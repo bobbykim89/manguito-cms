@@ -270,6 +270,24 @@ describe('runDev', () => {
     exitSpy.mockRestore()
   })
 
+  it('prints schema deprecations', async () => {
+    // MUTATION: drop printSchemaDeprecations from loadValidatedSchema. Dev then
+    // serves a deprecated schema construct without telling the author. Warnings
+    // go to stdout.
+    const db = makeDb([{ rows: [{ count: 1 }] }])
+    vi.mocked(connectDb).mockResolvedValue(db as never)
+    vi.mocked(findSchemaDeprecations).mockReturnValue([{
+      source_file: 'schemas/content-types/post.json',
+      type_name: 'post',
+      field_name: 'tags',
+      message: 'uses a deprecated construct',
+    }])
+
+    await runDev({}, { cwd: FAKE_CWD })
+
+    expect(process.stdout.write).toHaveBeenCalledWith(expect.stringContaining('uses a deprecated construct'))
+  })
+
   it('stops on schema reference errors before migrating the database', async () => {
     // MUTATION: skip validateCrossReferences at dev startup (only `manguito
     // validate` ran it before #65), or run it after runDevMigration. Dev then
