@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { mount } from '@vue/test-utils'
-import { defineComponent, h } from 'vue'
+import { mount, flushPromises } from '@vue/test-utils'
+import { defineComponent, h, ref } from 'vue'
 import type { ParsedField } from '@bobbykim/manguito-cms-core'
 import ParagraphEmbed from '../ParagraphEmbed.vue'
 
@@ -60,5 +60,68 @@ describe('ParagraphEmbed, one-to-many (unchanged)', () => {
     const w = mountWith('one-to-many', [])
     await w.get('button').trigger('click')
     expect(w.emitted('update:modelValue')?.[0]).toEqual([[{ order: 0 }]])
+  })
+})
+
+describe('ParagraphEmbed, one-to-many reordering', () => {
+  const three = () => [{ order: 0, url: 'a' }, { order: 1, url: 'b' }, { order: 2, url: 'c' }]
+  const btn = (w: ReturnType<typeof mountWith>, label: string) => w.find(`button[aria-label="${label}"]`)
+
+  it('moves an item earlier or later, renumbering order', async () => {
+    // MUTATION: emit the list unchanged, or skip renumbering order.
+    const w = mountWith('one-to-many', three())
+    await btn(w, 'Move item 2 earlier').trigger('click')
+    expect(w.emitted('update:modelValue')?.[0]).toEqual([
+      [{ order: 0, url: 'b' }, { order: 1, url: 'a' }, { order: 2, url: 'c' }],
+    ])
+    await btn(w, 'Move item 2 later').trigger('click')
+    expect(w.emitted('update:modelValue')?.[1]).toEqual([
+      [{ order: 0, url: 'a' }, { order: 1, url: 'c' }, { order: 2, url: 'b' }],
+    ])
+  })
+
+  it('offers no move past either end', () => {
+    // MUTATION: render both buttons on every item.
+    const w = mountWith('one-to-many', three())
+    expect(btn(w, 'Move item 1 earlier').exists()).toBe(false)
+    expect(btn(w, 'Move item 1 later').exists()).toBe(true)
+    expect(btn(w, 'Move item 3 later').exists()).toBe(false)
+    const single = mountWith('one-to-many', [{ order: 0 }])
+    expect(single.findAll('button[aria-label^="Move item"]')).toHaveLength(0)
+  })
+
+  it('keeps focus on the moved item, on its other button at an end', async () => {
+    // MUTATION: drop the focus step in moveParagraph. Focus falls to <body>
+    // after each move.
+    const Parent = defineComponent({
+      setup() {
+        const items = ref<Record<string, unknown>[]>(three())
+        return () => h(ParagraphEmbed, {
+          field: field('one-to-many'), formComponent: StubForm, modelValue: items.value,
+          'onUpdate:modelValue': (v: unknown) => { items.value = v as Record<string, unknown>[] },
+        })
+      },
+    })
+    const w = mount(Parent, { attachTo: document.body })
+    const press = async (label: string) => {
+      const b = w.get(`button[aria-label="${label}"]`)
+      ;(b.element as HTMLElement).focus()
+      await b.trigger('click')
+      await flushPromises()
+    }
+    const focused = () => document.activeElement?.getAttribute('aria-label')
+    await press('Move item 3 earlier')
+    expect(focused()).toBe('Move item 2 earlier')
+    await press('Move item 2 earlier')
+    expect(focused()).toBe('Move item 1 later')
+    w.unmount()
+  })
+
+  it('hides the move buttons when disabled', () => {
+    // MUTATION: render them regardless of disabled (Remove is already hidden when disabled).
+    const w = mount(ParagraphEmbed, {
+      props: { field: field('one-to-many'), modelValue: three(), formComponent: StubForm, disabled: true },
+    })
+    expect(w.findAll('button[aria-label^="Move item"]')).toHaveLength(0)
   })
 })

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import type { Component } from 'vue'
 import type { ParsedField } from '@bobbykim/manguito-cms-core'
 import { relationCardinality } from '@bobbykim/manguito-cms-core/cardinality'
@@ -82,6 +82,21 @@ function onDrop(toIndex: number) {
   if (items) emit('update:modelValue', items.map((item, i) => ({ ...item, order: i })))
 }
 
+// Keyboard reorder. Focus follows the moved item: onto the button just
+// pressed, or onto its other one when the item reaches an end, so a keyboard
+// user can keep moving it.
+const itemList = ref<HTMLElement | null>(null)
+
+async function moveParagraph(index: number, step: -1 | 1) {
+  const next = moveItem(safeValue.value, index, index + step)
+  if (!next) return
+  emit('update:modelValue', next.map((item, i) => ({ ...item, order: i })))
+  await nextTick()
+  const el = itemList.value?.querySelector<HTMLElement>(`[data-item-index="${index + step}"]`)
+  const same = el?.querySelector<HTMLElement>(`[data-move="${step < 0 ? 'earlier' : 'later'}"]`)
+  ;(same ?? el?.querySelector<HTMLElement>('[data-move]'))?.focus()
+}
+
 function onDragEnd() {
   dragFromIndex.value = null
   dragOverIndex.value = null
@@ -135,11 +150,12 @@ function onDragEnd() {
 
     <!-- One-to-many: an ordered, reorderable list -->
     <template v-else>
-      <div class="mt-1 space-y-2">
+      <div ref="itemList" class="mt-1 space-y-2">
         <div
           v-for="(item, i) in safeValue"
           :key="i"
           draggable="true"
+          :data-item-index="i"
           :class="[
             'rounded-md border bg-white transition-colors',
             dragOverIndex === i && dragFromIndex !== i
@@ -164,15 +180,37 @@ function onDragEnd() {
             <span class="text-xs font-medium text-gray-500">
               Item {{ i + 1 }}
             </span>
+            <div class="ml-auto flex items-center gap-1">
+            <button
+              v-if="i > 0 && !disabled"
+              type="button"
+              data-move="earlier"
+              class="flex h-6 w-6 items-center justify-center rounded text-gray-500 hover:bg-gray-100"
+              :aria-label="`Move item ${i + 1} earlier`"
+              @click="moveParagraph(i, -1)"
+            >
+              <span aria-hidden="true">&uarr;</span>
+            </button>
+            <button
+              v-if="i < safeValue.length - 1 && !disabled"
+              type="button"
+              data-move="later"
+              class="flex h-6 w-6 items-center justify-center rounded text-gray-500 hover:bg-gray-100"
+              :aria-label="`Move item ${i + 1} later`"
+              @click="moveParagraph(i, 1)"
+            >
+              <span aria-hidden="true">&darr;</span>
+            </button>
             <button
               v-if="!disabled"
               type="button"
-              class="ml-auto text-xs text-red-500 hover:text-red-700"
+              class="ml-1 text-xs text-red-500 hover:text-red-700"
               :aria-label="`Remove item ${i + 1}`"
               @click="removeItem(i)"
             >
               Remove
             </button>
+            </div>
           </div>
 
           <!-- Paragraph form rendered via dynamic component -->
