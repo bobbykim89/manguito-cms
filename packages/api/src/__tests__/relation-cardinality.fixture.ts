@@ -95,6 +95,7 @@ export function makeCardinalityFixture(prefix: string): CardinalityFixture {
                   { name: 'published_on', label: 'Published on', type: 'date', required: false },
                   { name: 'rating', label: 'Rating', type: 'integer', min: 1, max: 5, required: false },
                   { name: 'score', label: 'Score', type: 'float', required: false },
+                  { name: 'constructor', label: 'Constructor', type: 'text/plain', required: false },
                 ],
               },
             },

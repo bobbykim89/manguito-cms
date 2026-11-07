@@ -571,7 +571,7 @@ export function registerAdminContentRoutes(
         }
         for (const f of columnBackedFields) {
           const key = f.db_column.column_name
-          if (!(key in storageBody)) continue
+          if (!Object.hasOwn(storageBody, key)) continue
           columnData[key] = storageBody[key]
         }
 
@@ -720,7 +720,7 @@ export function registerAdminContentRoutes(
         if (Object.hasOwn(body, 'published')) patchData['published'] = body['published']
         for (const f of patchColumnBackedFields) {
           const key = f.db_column.column_name
-          if (!(key in storageBody)) continue
+          if (!Object.hasOwn(storageBody, key)) continue
           patchData[key] = storageBody[key]
         }
 
@@ -988,7 +988,7 @@ export function registerAdminContentRoutes(
         }
         for (const f of taxColumnBackedFields) {
           const key = f.db_column.column_name
-          if (!(key in storageBody)) continue
+          if (!Object.hasOwn(storageBody, key)) continue
           taxColumnData[key] = storageBody[key]
         }
 
@@ -1064,7 +1064,7 @@ export function registerAdminContentRoutes(
         if (Object.hasOwn(body, 'published')) taxPatchData['published'] = body['published']
         for (const f of taxPatchColumnBackedFields) {
           const key = f.db_column.column_name
-          if (!(key in storageBody)) continue
+          if (!Object.hasOwn(storageBody, key)) continue
           taxPatchData[key] = storageBody[key]
         }
 

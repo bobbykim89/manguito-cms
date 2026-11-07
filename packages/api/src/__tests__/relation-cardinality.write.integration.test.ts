@@ -49,6 +49,19 @@ async function patch(id: string, body: Record<string, unknown>) {
 const linkRows = (parentId: string, field = 'link') =>
   countRows(db, fx.tables.link, `parent_id = '${parentId}' AND parent_field = '${field}'`)
 
+describe('a column named like an Object.prototype key', () => {
+  it('is left out of a create and a patch whose body omits it', async () => {
+    // MUTATION: keep key in storageBody. The inherited Object constructor is
+    // copied into the insert/patch and the write fails or stores garbage.
+    const { status, body } = await create({})
+    expect(status).toBe(201)
+    const read = () => db.execute(sql.raw(`SELECT "constructor" AS c FROM "${fx.tables.post}" WHERE id = '${body.data!.id}'`))
+    expect((await read()).rows[0]).toEqual({ c: null })
+    expect((await patch(body.data!.id, { title: 'T2' })).status).toBe(200)
+    expect((await read()).rows[0]).toEqual({ c: null })
+  })
+})
+
 describe('writing a one-to-one paragraph', () => {
   it('stores an object', async () => {
     // MUTATION: keep `Array.isArray(body[f.name]) ? … : []` in writeNewItem.
