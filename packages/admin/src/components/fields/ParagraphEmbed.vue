@@ -92,9 +92,13 @@ async function moveParagraph(index: number, step: -1 | 1) {
   if (!next) return
   emit('update:modelValue', next.map((item, i) => ({ ...item, order: i })))
   await nextTick()
-  const el = itemList.value?.querySelector<HTMLElement>(`[data-item-index="${index + step}"]`)
-  const same = el?.querySelector<HTMLElement>(`[data-move="${step < 0 ? 'earlier' : 'later'}"]`)
-  ;(same ?? el?.querySelector<HTMLElement>('[data-move]'))?.focus()
+  // Scoped to this list's own items and headers: an item body can hold a
+  // nested paragraph list with the same attributes.
+  const header = itemList.value?.querySelector<HTMLElement>(
+    `:scope > [data-item-index="${index + step}"] > [data-item-header]`
+  )
+  const same = header?.querySelector<HTMLElement>(`[data-move="${step < 0 ? 'earlier' : 'later'}"]`)
+  ;(same ?? header?.querySelector<HTMLElement>('[data-move]'))?.focus()
 }
 
 function onDragEnd() {
@@ -169,7 +173,7 @@ function onDragEnd() {
           @dragend="onDragEnd"
         >
           <!-- Item header: drag handle + label + remove -->
-          <div class="flex items-center gap-2 border-b border-gray-100 px-3 py-2">
+          <div data-item-header class="flex items-center gap-2 border-b border-gray-100 px-3 py-2">
             <span
               class="cursor-grab select-none text-gray-400"
               title="Drag to reorder"

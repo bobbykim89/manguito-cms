@@ -114,6 +114,44 @@ describe('ParagraphEmbed, one-to-many reordering', () => {
     expect(focused()).toBe('Move item 2 earlier')
     await press('Move item 2 earlier')
     expect(focused()).toBe('Move item 1 later')
+    await press('Move item 1 later')
+    expect(focused()).toBe('Move item 2 later')
+    await press('Move item 2 later') // last: no later button
+    expect(focused()).toBe('Move item 3 earlier')
+    w.unmount()
+  })
+
+  it('moves focus within its own list when items hold nested paragraph lists', async () => {
+    // MUTATION: look the item and its button up with unscoped descendant
+    // selectors. Item 0's nested list also has data-item-index="1", so focus
+    // lands on a nested button instead of the outer item.
+    const NestedForm = defineComponent({
+      props: { modelValue: { type: Object, default: null }, disabled: Boolean },
+      setup(p) {
+        return () => (p.modelValue as { nested?: unknown[] } | null)?.nested
+          ? h(ParagraphEmbed, { field: field('one-to-many'), modelValue: (p.modelValue as { nested: unknown[] }).nested, formComponent: StubForm })
+          : h('span')
+      },
+    })
+    const Parent = defineComponent({
+      setup() {
+        const items = ref<Record<string, unknown>[]>([
+          { order: 0, nested: [{ order: 0 }, { order: 1 }, { order: 2 }] }, { order: 1 }, { order: 2 },
+        ])
+        return () => h(ParagraphEmbed, {
+          field: field('one-to-many'), formComponent: NestedForm, modelValue: items.value,
+          'onUpdate:modelValue': (v: unknown) => { items.value = v as Record<string, unknown>[] },
+        })
+      },
+    })
+    const w = mount(Parent, { attachTo: document.body })
+    const outer = (i: number) => (w.element as HTMLElement).querySelector<HTMLElement>(`:scope > .mt-1 > [data-item-index="${i}"]`)!
+    const b = outer(2).querySelector<HTMLElement>('[data-move="earlier"]')!
+    b.focus()
+    await b.click()
+    await flushPromises()
+    expect(document.activeElement?.closest('[data-item-index]')).toBe(outer(1))
+    expect(document.activeElement?.getAttribute('data-move')).toBe('earlier')
     w.unmount()
   })
 
