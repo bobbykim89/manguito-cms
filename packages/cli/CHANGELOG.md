@@ -1,5 +1,16 @@
 # @bobbykim/manguito-cms-cli
 
+## 0.11.3
+
+### Patch Changes
+
+- 9793dd5: `manguito validate`, `dev`, `build` and the `version:*` commands report two schema types or many-to-many fields that would share a database table (`TABLE_NAME_COLLISION`), and two field names that would share a column. Such a schema used to fail later with a confusing codegen or migration error.
+- Updated dependencies [9793dd5]
+  - @bobbykim/manguito-cms-core@0.11.0
+  - @bobbykim/manguito-cms-admin@0.6.1
+  - @bobbykim/manguito-cms-api@0.9.2
+  - @bobbykim/manguito-cms-db@0.2.1
+
 ## 0.11.2
 
 ### Patch Changes

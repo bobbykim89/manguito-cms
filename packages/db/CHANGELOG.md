@@ -1,5 +1,12 @@
 # @bobbykim/manguito-cms-db
 
+## 0.2.1
+
+### Patch Changes
+
+- Updated dependencies [9793dd5]
+  - @bobbykim/manguito-cms-core@0.11.0
+
 ## 0.2.0
 
 ### Minor Changes
