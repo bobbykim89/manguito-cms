@@ -167,8 +167,9 @@ async function persistRelationFields(
 }
 
 // Removes every paragraph row an item owns, nested rows included, and returns
-// the media they held, all released. Both delete routes call it: paragraph rows
-// have no FK back to their parent, so they would leak otherwise.
+// the media those rows held as removals, for the caller to release. Paragraph
+// rows have no FK back to their parent, so a delete that skipped them would
+// leak them.
 async function deleteOwnParagraphs(
   db: DrizzlePostgresInstance,
   registry: SchemaRegistry,
@@ -182,6 +183,84 @@ async function deleteOwnParagraphs(
     deltas.push(await deleteParagraphField(db, itemId, f.name, pType, registry))
   }
   return deltas
+}
+
+// The media an item's deleted paragraphs held that the item no longer uses,
+// when the item itself survives. Counts are per item (media-references.ts), so
+// an id the item still holds in a top-level media field stays counted.
+function releasedFromParagraphsOnly(paragraphDeltas: MediaDelta[], topLevel: MediaDelta): MediaDelta {
+  const stillHeld = new Set(topLevel.removed)
+  return { added: [], removed: mergeMediaDeltas(...paragraphDeltas).removed.filter((mediaId) => !stillHeld.has(mediaId)) }
+}
+
+// A delete either removed the item or was refused, with the 409's message.
+type DeleteOutcome = { ok: true } | { ok: false; message: string }
+
+// Deletes a content item or taxonomy term that exists, with its paragraph rows
+// and media references. Both delete routes run it after their 404 check, so
+// they refuse and clean up the same way.
+async function deleteItemCascade(
+  db: DrizzlePostgresInstance | undefined,
+  registry: SchemaRegistry,
+  mediaRepo: MediaRepository,
+  target: {
+    typeName: string
+    fields: ParsedField[]
+    mediaFields: ParsedField[]
+    repo: { delete(id: string): Promise<void> }
+    id: string
+    // The stored row, storage-keyed: its top-level media ids.
+    row: Record<string, unknown>
+  }
+): Promise<DeleteOutcome> {
+  const { typeName, fields, mediaFields, repo, id, row } = target
+
+  // Refuse while a required reference still points here (docs/adr/core/0008).
+  // The item's own paragraph rows are not uses: they go with it.
+  const referrers = db
+    ? await findRequiredReferrers(db, registry, typeName, id)
+    : { others: [], fromOwnParagraphs: false }
+  if (referrers.others.length > 0) return { ok: false, message: inUseMessage(referrers.others) }
+
+  const topLevel = topLevelMediaDelta(mediaFields, row, null)
+
+  // Delete the row FIRST. If a use slipped in after the check, RESTRICT
+  // refuses here, before anything else has changed: there are no
+  // transactions, so cleaning up first would lose the paragraphs and media
+  // counts of an item that then survives. Once the row is gone, its paragraph
+  // rows go, and every media reference the item held is released.
+  if (!db || !referrers.fromOwnParagraphs) {
+    try {
+      await repo.delete(id)
+    } catch (err) {
+      if (isForeignKeyViolation(err)) return { ok: false, message: IN_USE_RACE_MESSAGE }
+      throw err
+    }
+    const paragraphDeltas = db ? await deleteOwnParagraphs(db, registry, fields, id) : []
+    await applyMediaReferenceDelta(mergeMediaDeltas(topLevel, ...paragraphDeltas), mediaRepo)
+    return { ok: true }
+  }
+
+  // The exception: one of the item's own paragraphs refers back to it, and
+  // RESTRICT would refuse the row while that paragraph exists. Its paragraphs
+  // go first then. The trade-off: a use added between the check and the
+  // delete, in this case only, leaves the item without its paragraphs.
+  //
+  // Not covered: if deleteOwnParagraphs itself fails partway, some rows are
+  // gone and others remain. Which media the remaining rows still hold is not
+  // known without reading them again, so nothing is released and the error
+  // propagates. Those counts stay too high, which never orphans media in use.
+  const paragraphDeltas = await deleteOwnParagraphs(db, registry, fields, id)
+  try {
+    await repo.delete(id)
+  } catch (err) {
+    // The paragraphs are gone, whatever the error, but the item stays.
+    await applyMediaReferenceDelta(releasedFromParagraphsOnly(paragraphDeltas, topLevel), mediaRepo)
+    if (isForeignKeyViolation(err)) return { ok: false, message: IN_USE_RACE_MESSAGE }
+    throw err
+  }
+  await applyMediaReferenceDelta(mergeMediaDeltas(topLevel, ...paragraphDeltas), mediaRepo)
+  return { ok: true }
 }
 
 async function lookupBasePathId(db: DrizzlePostgresInstance, pathOrName: string): Promise<string | null> {
@@ -794,51 +873,17 @@ export function registerAdminContentRoutes(
           )
         }
 
-        // Refuse while a required reference still points here (docs/adr/core/0008).
-        // The item's own paragraph rows are not uses: they go with it.
-        const referrers = db
-          ? await findRequiredReferrers(db, registry, typeName, id)
-          : { others: [], fromOwnParagraphs: false }
-        if (referrers.others.length > 0) {
-          return c.json({ ok: false, error: { code: 'ITEM_IN_USE', message: inUseMessage(referrers.others) } }, 409)
+        const outcome = await deleteItemCascade(db, registry, mediaRepo, {
+          typeName,
+          fields: contentType.fields,
+          mediaFields,
+          repo,
+          id,
+          row: item as Record<string, unknown>,
+        })
+        if (!outcome.ok) {
+          return c.json({ ok: false, error: { code: 'ITEM_IN_USE', message: outcome.message } }, 409)
         }
-
-        // Delete the row FIRST. If a use slipped in after the check, RESTRICT
-        // refuses here, before anything else has changed: there are no
-        // transactions, so cleaning up first would lose the paragraphs and
-        // media counts of an item that then survives.
-        //
-        // The exception: one of the item's own paragraphs refers back to it,
-        // and RESTRICT would refuse the row while that paragraph exists. Its
-        // paragraphs go first then. The trade-off: a use added between the
-        // check and the delete, in this case only, leaves the item without
-        // its paragraphs.
-        const paragraphDeltas: MediaDelta[] = []
-        if (db && referrers.fromOwnParagraphs) {
-          paragraphDeltas.push(...(await deleteOwnParagraphs(db, registry, contentType.fields, id)))
-        }
-        try {
-          await repo.delete(id)
-        } catch (err) {
-          if (isForeignKeyViolation(err)) {
-            // Paragraphs already removed above held media; release it, as
-            // those rows are gone even though the item stays.
-            await applyMediaReferenceDelta(mergeMediaDeltas(...paragraphDeltas), mediaRepo)
-            return c.json({ ok: false, error: { code: 'ITEM_IN_USE', message: IN_USE_RACE_MESSAGE } }, 409)
-          }
-          throw err
-        }
-
-        // The row is gone. Paragraph rows have no FK back to it, so remove them
-        // now (unless they already went first), and release every media
-        // reference the item held.
-        if (db && !referrers.fromOwnParagraphs) {
-          paragraphDeltas.push(...(await deleteOwnParagraphs(db, registry, contentType.fields, id)))
-        }
-        await applyMediaReferenceDelta(
-          mergeMediaDeltas(topLevelMediaDelta(mediaFields, item as Record<string, unknown>, null), ...paragraphDeltas),
-          mediaRepo
-        )
 
         return c.json({ ok: true })
       }
@@ -1109,51 +1154,17 @@ export function registerAdminContentRoutes(
           )
         }
 
-        // Refuse while a required reference still points here (docs/adr/core/0008).
-        // The item's own paragraph rows are not uses: they go with it.
-        const referrers = db
-          ? await findRequiredReferrers(db, registry, typeName, id)
-          : { others: [], fromOwnParagraphs: false }
-        if (referrers.others.length > 0) {
-          return c.json({ ok: false, error: { code: 'ITEM_IN_USE', message: inUseMessage(referrers.others) } }, 409)
+        const outcome = await deleteItemCascade(db, registry, mediaRepo, {
+          typeName,
+          fields: taxonomyType.fields,
+          mediaFields,
+          repo,
+          id,
+          row: item as Record<string, unknown>,
+        })
+        if (!outcome.ok) {
+          return c.json({ ok: false, error: { code: 'ITEM_IN_USE', message: outcome.message } }, 409)
         }
-
-        // Delete the row FIRST. If a use slipped in after the check, RESTRICT
-        // refuses here, before anything else has changed: there are no
-        // transactions, so cleaning up first would lose the paragraphs and
-        // media counts of an item that then survives.
-        //
-        // The exception: one of the item's own paragraphs refers back to it,
-        // and RESTRICT would refuse the row while that paragraph exists. Its
-        // paragraphs go first then. The trade-off: a use added between the
-        // check and the delete, in this case only, leaves the item without
-        // its paragraphs.
-        const paragraphDeltas: MediaDelta[] = []
-        if (db && referrers.fromOwnParagraphs) {
-          paragraphDeltas.push(...(await deleteOwnParagraphs(db, registry, taxonomyType.fields, id)))
-        }
-        try {
-          await repo.delete(id)
-        } catch (err) {
-          if (isForeignKeyViolation(err)) {
-            // Paragraphs already removed above held media; release it, as
-            // those rows are gone even though the item stays.
-            await applyMediaReferenceDelta(mergeMediaDeltas(...paragraphDeltas), mediaRepo)
-            return c.json({ ok: false, error: { code: 'ITEM_IN_USE', message: IN_USE_RACE_MESSAGE } }, 409)
-          }
-          throw err
-        }
-
-        // The row is gone. Paragraph rows have no FK back to it, so remove them
-        // now (unless they already went first), and release every media
-        // reference the item held.
-        if (db && !referrers.fromOwnParagraphs) {
-          paragraphDeltas.push(...(await deleteOwnParagraphs(db, registry, taxonomyType.fields, id)))
-        }
-        await applyMediaReferenceDelta(
-          mergeMediaDeltas(topLevelMediaDelta(mediaFields, item as Record<string, unknown>, null), ...paragraphDeltas),
-          mediaRepo
-        )
 
         return c.json({ ok: true })
       }

@@ -47,11 +47,16 @@ let selfApp: ReturnType<typeof createTestApp>
 
 // A taxonomy whose own paragraphs hold a required reference back to their type:
 // a block directly, and an inner paragraph nested one level inside the block.
+// The node and the block each hold an image, for the media counts. A content
+// type (page) has its own paragraph (section) refer back the same way.
 const OWN = {
   node: 'taxonomy--rcdelown_node',
   block: 'paragraph--rcdelown_block',
   inner: 'paragraph--rcdelown_inner',
+  page: 'content--rcdelown_page',
+  section: 'paragraph--rcdelown_section',
 }
+const OWN_BASE_PATH = 'rcdelown-pages'
 const ownRegistry = buildSchemaRegistry(
   [
     parseOrThrow(
@@ -61,6 +66,7 @@ const ownRegistry = buildSchemaRegistry(
         type: 'taxonomy-type',
         fields: [
           { name: 'name', label: 'Name', type: 'text/plain', required: false },
+          { name: 'photo', label: 'Photo', type: 'image', required: false },
           { name: 'blocks', label: 'Blocks', type: 'paragraph', ref: OWN.block, rel: 'one-to-many', required: false },
         ],
       },
@@ -73,6 +79,7 @@ const ownRegistry = buildSchemaRegistry(
         type: 'paragraph-type',
         fields: [
           { name: 'back', label: 'Back', type: 'reference', target: OWN.node, rel: 'one-to-one', required: true },
+          { name: 'image', label: 'Image', type: 'image', required: false },
           { name: 'inner', label: 'Inner', type: 'paragraph', ref: OWN.inner, rel: 'one-to-one', required: false },
         ],
       },
@@ -89,6 +96,39 @@ const ownRegistry = buildSchemaRegistry(
       },
       'paragraph-type'
     ),
+    parseOrThrow(
+      {
+        name: OWN.page,
+        label: 'Page',
+        type: 'content-type',
+        default_base_path: OWN_BASE_PATH,
+        only_one: false,
+        fields: [
+          {
+            tab: {
+              name: 'main',
+              label: 'Main',
+              fields: [
+                { name: 'title', label: 'Title', type: 'text/plain', required: false },
+                { name: 'sections', label: 'Sections', type: 'paragraph', ref: OWN.section, rel: 'one-to-many', required: false },
+              ],
+            },
+          },
+        ],
+      },
+      'content-type'
+    ),
+    parseOrThrow(
+      {
+        name: OWN.section,
+        label: 'Section',
+        type: 'paragraph-type',
+        fields: [
+          { name: 'back', label: 'Back', type: 'reference', target: OWN.page, rel: 'one-to-one', required: true },
+        ],
+      },
+      'paragraph-type'
+    ),
   ],
   { base_paths: [] },
   testParsedSchema.roles
@@ -97,13 +137,50 @@ const ownTables = {
   node: ownRegistry.taxonomy_types[OWN.node]!.db.table_name,
   block: ownRegistry.paragraph_types[OWN.block]!.db.table_name,
   inner: ownRegistry.paragraph_types[OWN.inner]!.db.table_name,
+  page: ownRegistry.content_types[OWN.page]!.db.table_name,
+  section: ownRegistry.paragraph_types[OWN.section]!.db.table_name,
 }
 let ownApp: ReturnType<typeof createTestApp>
+// Media rows this file seeds, removed in afterAll.
+const seededMedia: string[] = []
 
 async function dropOwnTables(): Promise<void> {
-  for (const t of [ownTables.inner, ownTables.block, ownTables.node]) {
+  for (const t of [ownTables.section, ownTables.page, ownTables.inner, ownTables.block, ownTables.node]) {
     await db.execute(sql.raw(`DROP TABLE IF EXISTS "${t}" CASCADE`))
   }
+  await db.execute(sql`DELETE FROM base_paths WHERE path = ${OWN_BASE_PATH}`)
+}
+
+// The columns follow the media table admin.integration.test.ts creates.
+async function ensureMediaTable(): Promise<void> {
+  await db.execute(sql.raw(`
+    CREATE TABLE IF NOT EXISTS media (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      type VARCHAR(50) NOT NULL DEFAULT 'image',
+      url VARCHAR(2048) NOT NULL,
+      mime_type VARCHAR(255) NOT NULL,
+      alt VARCHAR(255),
+      file_size INTEGER NOT NULL,
+      width INTEGER, height INTEGER, duration INTEGER,
+      reference_count INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )`))
+}
+
+async function insertMedia(referenceCount: number): Promise<string> {
+  const r = await db.execute(
+    sql`INSERT INTO media (type, url, mime_type, file_size, reference_count)
+        VALUES ('image', 'http://localhost/uploads/rcdel.png', 'image/png', 1, ${referenceCount}) RETURNING id`
+  )
+  const id = (r.rows[0] as { id: string }).id
+  seededMedia.push(id)
+  return id
+}
+
+async function mediaCount(id: string): Promise<number> {
+  const r = await db.execute(sql`SELECT reference_count FROM media WHERE id = ${id}`)
+  return (r.rows[0] as { reference_count: number }).reference_count
 }
 
 beforeAll(async () => {
@@ -117,12 +194,18 @@ beforeAll(async () => {
   await db.execute(sql.raw(tableSql(selfTable, self.system_fields, self.fields)))
   selfApp = createTestApp(selfRegistry, db)
   await dropOwnTables()
+  await ensureMediaTable()
   const node = ownRegistry.taxonomy_types[OWN.node]!
   const block = ownRegistry.paragraph_types[OWN.block]!
   const inner = ownRegistry.paragraph_types[OWN.inner]!
+  const page = ownRegistry.content_types[OWN.page]!
+  const section = ownRegistry.paragraph_types[OWN.section]!
   await db.execute(sql.raw(tableSql(ownTables.node, node.system_fields, node.fields)))
   await db.execute(sql.raw(tableSql(ownTables.block, block.system_fields, block.fields)))
   await db.execute(sql.raw(tableSql(ownTables.inner, inner.system_fields, inner.fields)))
+  await db.execute(sql.raw(tableSql(ownTables.page, page.system_fields, page.fields)))
+  await db.execute(sql.raw(tableSql(ownTables.section, section.system_fields, section.fields)))
+  await db.execute(sql`INSERT INTO base_paths (name, path) VALUES (${OWN_BASE_PATH}, ${OWN_BASE_PATH}) ON CONFLICT (path) DO NOTHING`)
   ownApp = createTestApp(ownRegistry, db)
 }, 30_000)
 
@@ -130,6 +213,7 @@ afterAll(async () => {
   await db.execute(sql.raw(`DROP TABLE IF EXISTS "${EXTRA}"`))
   await db.execute(sql.raw(`DROP TABLE IF EXISTS "${selfTable}" CASCADE`))
   await dropOwnTables()
+  if (seededMedia.length > 0) await db.execute(sql`DELETE FROM media WHERE id = ANY(${sql.param(seededMedia)}::uuid[])`)
   await dropFixtureTables(db, fx)
 })
 
@@ -310,7 +394,8 @@ describe('an item whose own paragraph refers back to it', () => {
 
   it("still refuses while another item's paragraph refers to it, counting only that one", async () => {
     // MUTATION: skip paragraph owners whenever own rows exist. The other
-    // item's use is missed.
+    // item's use is missed. Or delete own paragraphs before the refusal: the
+    // node's own block is then gone although the node stays.
     const node = await insertNode('used')
     await insertBlock(node, node)
     const other = await insertNode('user')
@@ -321,5 +406,104 @@ describe('an item whose own paragraph refers back to it', () => {
       'This item is still used by 1 item: 1 in Block (Back). Remove it from those first.'
     )
     expect(await countRows(db, ownTables.node, `id = '${node}'`)).toBe(1)
+    expect(await countRows(db, ownTables.block, `parent_id = '${node}'`)).toBe(1)
+  })
+
+  it('deletes a content item, with its paragraphs, when only its own paragraph refers back', async () => {
+    // MUTATION: pass no fields to deleteItemCascade from the content route.
+    // Its section is then not removed first, and RESTRICT refuses the row:
+    // the race 409.
+    const bp = await db.execute(sql`SELECT id FROM base_paths WHERE path = ${OWN_BASE_PATH}`)
+    const r = await db.execute(
+      sql`INSERT INTO ${sql.raw(`"${ownTables.page}"`)} (slug, base_path_id, published)
+          VALUES ('own-page', ${(bp.rows[0] as { id: string }).id}, true) RETURNING id`
+    )
+    const page = (r.rows[0] as { id: string }).id
+    const section = await insertParagraph(db, ownTables.section, {
+      parentId: page, parentType: ownTables.page, parentField: 'sections', order: 0, values: { back: page },
+    })
+    expect((await authenticatedRequest(ownApp, 'admin', 'DELETE', `/admin/api/content/${OWN.page}/${page}`)).status).toBe(200)
+    expect(await countRows(db, ownTables.page, `id = '${page}'`)).toBe(0)
+    expect(await countRows(db, ownTables.section, `id = '${section}'`)).toBe(0)
+  })
+})
+
+describe('media counts when the paragraphs go first', () => {
+  const insertNode = async (photo: string): Promise<string> => {
+    const r = await db.execute(
+      sql`INSERT INTO ${sql.raw(`"${ownTables.node}"`)} (name, photo, published) VALUES ('media', ${photo}, true) RETURNING id`
+    )
+    return (r.rows[0] as { id: string }).id
+  }
+  const insertBlock = (parent: string, image: string): Promise<string> =>
+    insertParagraph(db, ownTables.block, {
+      parentId: parent, parentType: ownTables.node, parentField: 'blocks', order: 0, values: { back: parent, image },
+    })
+  const delNode = (id: string) => authenticatedRequest(ownApp, 'admin', 'DELETE', `/admin/api/taxonomy/${OWN.node}/${id}`)
+
+  // A node holding `shared` at top level and in one own block, and
+  // `blockOnly` in another. Each media id counts the node once.
+  const seed = async () => {
+    const shared = await insertMedia(1)
+    const blockOnly = await insertMedia(1)
+    const node = await insertNode(shared)
+    await insertBlock(node, shared)
+    await insertBlock(node, blockOnly)
+    return { shared, blockOnly, node }
+  }
+
+  it('on a foreign-key race, releases only the media the item no longer holds', async () => {
+    // MUTATION: release all paragraph media ids. `shared` then drops to 0
+    // although the node still holds it at top level.
+    await db.execute(sql.raw(`DROP TABLE IF EXISTS "${EXTRA}"`))
+    const { shared, blockOnly, node } = await seed()
+    // A table outside the registry stands in for a use added after the check.
+    await db.execute(
+      sql.raw(`CREATE TABLE "${EXTRA}" (ref uuid NOT NULL REFERENCES "${ownTables.node}"(id) ON DELETE RESTRICT)`)
+    )
+    await db.execute(sql.raw(`INSERT INTO "${EXTRA}" (ref) VALUES ('${node}')`))
+
+    const res = await delNode(node)
+    expect(res.status).toBe(409)
+    expect(((await res.json()) as { error: { message: string } }).error.message).toBe(
+      'This item is still in use. Remove it from the items that use it first.'
+    )
+    expect(await countRows(db, ownTables.node, `id = '${node}'`)).toBe(1)
+    expect(await countRows(db, ownTables.block, `parent_id = '${node}'`)).toBe(0)
+    expect(await mediaCount(shared)).toBe(1)
+    expect(await mediaCount(blockOnly)).toBe(0)
+    await db.execute(sql.raw(`DROP TABLE IF EXISTS "${EXTRA}"`))
+  })
+
+  it('on any other failure of the row delete, still releases the media of the removed paragraphs', async () => {
+    // MUTATION: release only on a foreign-key violation (rethrow other errors
+    // first). `blockOnly` then stays at 1 with no paragraph left to hold it.
+    const { shared, blockOnly, node } = await seed()
+    // A trigger makes the row delete fail with an error that is not 23503.
+    await db.execute(sql.raw(`CREATE OR REPLACE FUNCTION rcdel_refuse() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'refused'; END $$ LANGUAGE plpgsql`))
+    await db.execute(sql.raw(`CREATE TRIGGER rcdel_refuse BEFORE DELETE ON "${ownTables.node}" FOR EACH ROW EXECUTE FUNCTION rcdel_refuse()`))
+    try {
+      expect((await delNode(node)).status).toBe(500)
+    } finally {
+      await db.execute(sql.raw(`DROP TRIGGER IF EXISTS rcdel_refuse ON "${ownTables.node}"`))
+      await db.execute(sql.raw(`DROP FUNCTION IF EXISTS rcdel_refuse()`))
+    }
+    expect(await countRows(db, ownTables.node, `id = '${node}'`)).toBe(1)
+    expect(await countRows(db, ownTables.block, `parent_id = '${node}'`)).toBe(0)
+    expect(await mediaCount(shared)).toBe(1)
+    expect(await mediaCount(blockOnly)).toBe(0)
+  })
+
+  it('on success, releases the media of its own fields and of its paragraphs', async () => {
+    // MUTATION: release only the paragraph media on the paragraphs-first
+    // path. `topOnly` then stays at 1 after the node is gone.
+    const topOnly = await insertMedia(1)
+    const blockOnly = await insertMedia(1)
+    const node = await insertNode(topOnly)
+    await insertBlock(node, blockOnly)
+    expect((await delNode(node)).status).toBe(200)
+    expect(await countRows(db, ownTables.node, `id = '${node}'`)).toBe(0)
+    expect(await mediaCount(topOnly)).toBe(0)
+    expect(await mediaCount(blockOnly)).toBe(0)
   })
 })
