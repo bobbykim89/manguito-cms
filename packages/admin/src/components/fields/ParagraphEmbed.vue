@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, nextTick } from 'vue'
+import { ref, computed, nextTick, watch, toRaw } from 'vue'
 import type { Component } from 'vue'
 import type { ParsedField } from '@bobbykim/manguito-cms-core'
 import { relationCardinality } from '@bobbykim/manguito-cms-core/cardinality'
@@ -44,6 +44,41 @@ const safeValue = computed<Record<string, unknown>[]>(() =>
     : []
 )
 
+// A stable key per item, so an item's field components (a media preview, a
+// reference's loaded label) follow it through a move or a remove instead of
+// staying at its old position. Items are recreated by spreads, so their
+// identity cannot serve; the list's can. Every list this component emits
+// carries the keys it should have, and they take effect when that list comes
+// back as the model. A list replaced from outside keeps the keys when its
+// length is unchanged, and gets fresh ones otherwise.
+let keySeq = 0
+const freshKeys = (n: number) => Array.from({ length: n }, () => keySeq++)
+const itemKeys = ref<number[]>(freshKeys(safeValue.value.length))
+let pending: { list: Record<string, unknown>[]; keys: number[] } | null = null
+
+watch(
+  safeValue,
+  (list) => {
+    if (pending && toRaw(list) === pending.list) itemKeys.value = pending.keys
+    else if (itemKeys.value.length !== list.length) itemKeys.value = freshKeys(list.length)
+    pending = null
+  },
+  { flush: 'sync' }
+)
+
+function emitList(items: Record<string, unknown>[], keys: number[]) {
+  pending = { list: items, keys }
+  emit('update:modelValue', items)
+}
+
+// The list and its keys after moving the item at `from` to `to`, renumbering
+// order; null when nothing moves.
+function moved(from: number, to: number): [Record<string, unknown>[], number[]] | null {
+  const items = moveItem(safeValue.value, from, to)
+  const keys = moveItem(itemKeys.value, from, to)
+  return items && keys ? [items.map((item, i) => ({ ...item, order: i })), keys] : null
+}
+
 // Drag state — not tested (too coupled to DOM / jsdom unreliable).
 const dragFromIndex = ref<number | null>(null)
 const dragOverIndex = ref<number | null>(null)
@@ -51,19 +86,22 @@ const dragOverIndex = ref<number | null>(null)
 function addItem() {
   const items = [...safeValue.value]
   items.push({ order: items.length })
-  emit('update:modelValue', items)
+  emitList(items, [...itemKeys.value, ...freshKeys(1)])
 }
 
 function removeItem(index: number) {
   const items = [...safeValue.value]
   items.splice(index, 1)
-  emit('update:modelValue', items.map((item, i) => ({ ...item, order: i })))
+  emitList(
+    items.map((item, i) => ({ ...item, order: i })),
+    itemKeys.value.filter((_, i) => i !== index)
+  )
 }
 
 function updateItem(index: number, value: Record<string, unknown>) {
   const items = [...safeValue.value]
   items[index] = { ...value, order: index }
-  emit('update:modelValue', items)
+  emitList(items, itemKeys.value)
 }
 
 function onDragStart(index: number) {
@@ -75,11 +113,11 @@ function onDragOver(index: number) {
 }
 
 function onDrop(toIndex: number) {
-  const items = dragFromIndex.value === null ? null : moveItem(safeValue.value, dragFromIndex.value, toIndex)
+  const next = dragFromIndex.value === null ? null : moved(dragFromIndex.value, toIndex)
   dragFromIndex.value = null
   dragOverIndex.value = null
   // null: dropped in place, or a drag index the list no longer has.
-  if (items) emit('update:modelValue', items.map((item, i) => ({ ...item, order: i })))
+  if (next) emitList(...next)
 }
 
 // Keyboard reorder. Focus follows the moved item: onto the button just
@@ -88,9 +126,9 @@ function onDrop(toIndex: number) {
 const itemList = ref<HTMLElement | null>(null)
 
 async function moveParagraph(index: number, step: -1 | 1) {
-  const next = moveItem(safeValue.value, index, index + step)
+  const next = moved(index, index + step)
   if (!next) return
-  emit('update:modelValue', next.map((item, i) => ({ ...item, order: i })))
+  emitList(...next)
   await nextTick()
   // Scoped to this list's own items and headers: an item body can hold a
   // nested paragraph list with the same attributes.
@@ -157,7 +195,7 @@ function onDragEnd() {
       <div ref="itemList" class="mt-1 space-y-2">
         <div
           v-for="(item, i) in safeValue"
-          :key="i"
+          :key="itemKeys[i]"
           draggable="true"
           :data-item-index="i"
           :class="[

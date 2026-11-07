@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
-import { defineComponent, h, ref } from 'vue'
+import { defineComponent, h, ref, type Ref } from 'vue'
 import type { ParsedField } from '@bobbykim/manguito-cms-core'
 import ParagraphEmbed from '../ParagraphEmbed.vue'
 
@@ -153,6 +153,57 @@ describe('ParagraphEmbed, one-to-many reordering', () => {
     expect(document.activeElement?.closest('[data-item-index]')).toBe(outer(1))
     expect(document.activeElement?.getAttribute('data-move')).toBe('earlier')
     w.unmount()
+  })
+
+  // Captures its item's url on mount, as MediaUpload loads its preview and
+  // ReferenceSelect its labels.
+  const CaptureForm = defineComponent({
+    props: { modelValue: { type: Object, default: null }, disabled: Boolean },
+    setup(p) {
+      const captured = (p.modelValue as { url?: string } | null)?.url ?? 'new'
+      return () => h('span', { class: 'captured' }, captured)
+    },
+  })
+  // A parent bound with v-model, as the form views are, over `items`.
+  const mountBound = (items: Ref<Record<string, unknown>[]>) =>
+    mount(defineComponent({
+      setup() {
+        return () => h(ParagraphEmbed, {
+          field: field('one-to-many'), formComponent: CaptureForm, modelValue: items.value,
+          'onUpdate:modelValue': (v: unknown) => { items.value = v as Record<string, unknown>[] },
+        })
+      },
+    }))
+  const shown = (w: ReturnType<typeof mountBound>) => w.findAll('.captured').map((c) => c.text())
+  const click = async (w: ReturnType<typeof mountBound>, label: string) => {
+    await w.get(`button[aria-label="${label}"]`).trigger('click')
+    await flushPromises()
+  }
+
+  it("keeps each item's field state with the item through a move, a remove and an add", async () => {
+    // MUTATION: key by index. Each position then keeps the child mounted for
+    // the item that was there, showing the old item's captured url.
+    const w = mountBound(ref(three()))
+    await click(w, 'Move item 2 earlier')
+    expect(shown(w)).toEqual(['b', 'a', 'c'])
+    await click(w, 'Remove item 1')
+    expect(shown(w)).toEqual(['a', 'c'])
+    await click(w, 'Move item 1 later')
+    expect(shown(w)).toEqual(['c', 'a'])
+    await w.findAll('button').find((b) => b.text().includes('Add Link'))!.trigger('click')
+    await flushPromises()
+    expect(shown(w)).toEqual(['c', 'a', 'new'])
+  })
+
+  it('keys a list loaded from outside, so its items move', async () => {
+    // MUTATION: never resync the keys from the model. A list loaded after
+    // mount (an edit read) then has no keys to move, and the move does nothing.
+    const items = ref<Record<string, unknown>[]>([])
+    const w = mountBound(items)
+    items.value = [{ order: 0, url: 'x' }, { order: 1, url: 'y' }]
+    await flushPromises()
+    await click(w, 'Move item 2 earlier')
+    expect(shown(w)).toEqual(['y', 'x'])
   })
 
   it('hides the move buttons when disabled', () => {
