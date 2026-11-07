@@ -68,9 +68,7 @@ function nestedParagraphFields(
   const out: Array<{ fieldName: string; nType: ParsedParagraphType; field: ParsedField }> = []
   for (const f of pType.fields) {
     if (f.db_column !== null) continue
-    const comp = f.ui_component as { component: string; ref?: string }
-    if (comp.component !== 'paragraph-embed' || !comp.ref) continue
-    const nType = registry.paragraph_types[comp.ref]
+    const nType = paragraphTypeOf(f, registry)
     if (nType) out.push({ fieldName: f.name, nType, field: f })
   }
   return out

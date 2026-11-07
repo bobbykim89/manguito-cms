@@ -12,7 +12,7 @@ import { useContentStore } from '../../stores/content'
 import ConfirmDialog from '../../components/shared/ConfirmDialog.vue'
 import { useTabIndicator } from '../../composables/useTabIndicator'
 import { componentFor, fieldExtraProps } from '../../components/fields/field-registry'
-import { defaultForField } from '../../utils/field-defaults'
+import { initialFormState } from '../../utils/form-state'
 
 const route = useRoute()
 const router = useRouter()
@@ -83,17 +83,8 @@ const slugChanged = computed(
 // ── Form helpers ──────────────────────────────────────────────────────────────
 
 function initForm(source?: Record<string, unknown>) {
-  const f: Record<string, unknown> = {}
-  if (!isSingleton.value) {
-    f.slug = source?.slug ?? ''
-  }
-  for (const field of allFields.value) {
-    // Programmatic fields are computed at read time — never edited or submitted,
-    // so they stay out of the form state (and therefore the save payload).
-    if (field.field_type === 'programmatic') continue
-    f[field.name] = source?.[field.name] ?? defaultForField(field)
-  }
-  form.value = f
+  const state = initialFormState(allFields.value, source)
+  form.value = isSingleton.value ? state : { slug: source?.slug ?? '', ...state }
   isPublished.value = source?.published === true
   if (source?.slug) originalSlug.value = String(source.slug)
 }

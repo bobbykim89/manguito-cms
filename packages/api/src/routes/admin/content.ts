@@ -71,9 +71,7 @@ async function loadParagraphRows(
 
   for (const nf of pType.fields) {
     if (nf.db_column !== null) continue
-    const comp = nf.ui_component as { component: string; ref?: string }
-    if (comp.component !== 'paragraph-embed' || !comp.ref) continue
-    const nType = registry.paragraph_types[comp.ref]
+    const nType = paragraphTypeOf(nf, registry)
     if (!nType) continue
     for (const row of rows) {
       row[nf.name] = oneOrMany(
@@ -105,9 +103,7 @@ async function loadRelationsForEdit(
   await Promise.all(
     fields.map(async (f) => {
       if (f.db_column === null) {
-        const comp = f.ui_component as { component: string; ref?: string }
-        if (comp.component !== 'paragraph-embed' || !comp.ref) return
-        const pType = registry.paragraph_types[comp.ref]
+        const pType = paragraphTypeOf(f, registry)
         if (!pType) return
         row[f.name] = oneOrMany(relationCardinality(f) ?? 'many', await loadParagraphRows(db, registry, pType, id, f.name))
       } else if (f.db_column.junction) {
@@ -158,9 +154,7 @@ async function persistRelationFields(
   for (const f of fields) {
     if (!Object.hasOwn(body, f.name)) continue
     if (f.db_column === null) {
-      const comp = f.ui_component as { component: string; ref?: string }
-      if (comp.component !== 'paragraph-embed' || !comp.ref) continue
-      const pType = registry.paragraph_types[comp.ref]
+      const pType = paragraphTypeOf(f, registry)
       if (!pType) continue
       deltas.push(await persistParagraphField(db, itemId, ownerTable, f.name, pType, paragraphItems(f, body[f.name]), registry))
     } else if (f.db_column.junction) {

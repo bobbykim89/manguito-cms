@@ -1,4 +1,4 @@
-export { getTestDb, teardownTestData } from './db.js'
+export { getTestDb, teardownTestData, seedRoleUsers } from './db.js'
 
 export { testParsedSchema, testRoleUsers } from './fixtures.js'
 export type { TestRoleUser } from './fixtures.js'

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { sql } from 'drizzle-orm'
-import { getTestDb } from '@bobbykim/manguito-cms-test-utils'
+import { getTestDb, seedRoleUsers } from '@bobbykim/manguito-cms-test-utils'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import { createCmsApp } from '../app'
 import { createLocalAdapter } from '../storage/adapters/local'
@@ -8,7 +8,6 @@ import { singleQueryName } from '../graphql/naming'
 import {
   makeCardinalityFixture,
   createFixtureTables,
-  seedTestUsers,
   dropFixtureTables,
   insertTag,
   insertPost,
@@ -34,7 +33,7 @@ async function gql(query: string) {
 beforeAll(async () => {
   process.env['AUTH_SECRET'] ??= 'test-secret'
   db = await getTestDb()
-  await seedTestUsers(db)
+  await seedRoleUsers(db)
   await createFixtureTables(db, fx)
   const owner = await insertTag(db, fx, 'owner-tag')
 

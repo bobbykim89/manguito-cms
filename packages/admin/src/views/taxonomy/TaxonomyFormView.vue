@@ -8,7 +8,7 @@ import { useFormValidation } from '../../composables/useFormValidation'
 import { useNotification } from '../../composables/useNotification'
 import { useSchemaStore } from '../../stores/schema'
 import { useTaxonomyStore } from '../../stores/taxonomy'
-import { initialTaxonomyForm } from '../../utils/taxonomy-form'
+import { initialFormState } from '../../utils/form-state'
 import { componentFor, fieldExtraProps } from '../../components/fields/field-registry'
 import ConfirmDialog from '../../components/shared/ConfirmDialog.vue'
 
@@ -44,7 +44,7 @@ const showDeleteConfirm = ref(false)
 // ── Form helpers ──────────────────────────────────────────────────────────────
 
 function initForm(source?: Record<string, unknown>) {
-  form.value = initialTaxonomyForm(allFields.value, source)
+  form.value = initialFormState(allFields.value, source)
 }
 
 function updateField(name: string, value: unknown) {

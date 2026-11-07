@@ -35,9 +35,11 @@ export type ErrorCode =
   | 'UNSUPPORTED_MIME_TYPE'
   | 'STORAGE_ERROR'
   | 'MEDIA_IN_USE'
-  | 'ITEM_IN_USE'
   | 'PRESIGNED_URL_EXPIRED'
   | 'FILE_TOO_LARGE'
+
+  // Phase 5 — relations
+  | 'ITEM_IN_USE'
 
   // Phase 5 — rate limiting
   | 'RATE_LIMITED'

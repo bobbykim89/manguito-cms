@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { ParsedField } from '@bobbykim/manguito-cms-core'
-import { initialTaxonomyForm } from '../taxonomy-form'
+import { initialFormState } from '../form-state'
 
 const base = { label: 'X', required: false, nullable: true, order: 0, validation: { required: false } }
 
@@ -38,18 +38,18 @@ const fields: ParsedField[] = [
   },
 ] as unknown as ParsedField[]
 
-describe('initialTaxonomyForm', () => {
+describe('initialFormState', () => {
   it('includes relation fields, from the source or their empty default', () => {
     // MUTATION: keep leaving paragraph and many-to-many fields out (before
     // #55). The taxonomy form then cannot show or edit them, although the
     // edit read now returns them.
-    const form = initialTaxonomyForm(fields, {
+    const form = initialFormState(fields, {
       name: 'Tag', parent: 'p-1', blocks: [{ title: 'b' }], hero: { title: 'h' }, related: ['t-2'],
     })
     expect(form).toMatchObject({ blocks: [{ title: 'b' }], hero: { title: 'h' }, related: ['t-2'] })
 
     // Empty defaults follow cardinality: a list for "many", null for "one".
-    expect(initialTaxonomyForm(fields)).toEqual({
+    expect(initialFormState(fields)).toEqual({
       name: '', parent: null, blocks: [], hero: null, related: [],
     })
   })
@@ -57,6 +57,6 @@ describe('initialTaxonomyForm', () => {
   it('leaves programmatic fields out: they are computed and never saved', () => {
     // MUTATION: put programmatic fields into the form. Save would then send a
     // computed value back to the api.
-    expect(initialTaxonomyForm(fields, { name: 'Tag', computed: 'x' })).not.toHaveProperty('computed')
+    expect(initialFormState(fields, { name: 'Tag', computed: 'x' })).not.toHaveProperty('computed')
   })
 })
