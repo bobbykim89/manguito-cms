@@ -131,7 +131,7 @@ async function valuesForPublishCheck(
   body: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
   const stored = { ...storedLabels }
-  if (db) await loadRelationsForEdit(db, registry, requiredFields.filter((f) => !(f.name in body)), id, stored)
+  if (db) await loadRelationsForEdit(db, registry, requiredFields.filter((f) => !Object.hasOwn(body, f.name)), id, stored)
   return { ...stored, ...body }
 }
 
@@ -150,7 +150,7 @@ async function persistRelationFields(
 ): Promise<MediaDelta[]> {
   const deltas: MediaDelta[] = []
   for (const f of fields) {
-    if (!(f.name in body)) continue
+    if (!Object.hasOwn(body, f.name)) continue
     if (f.db_column === null) {
       const comp = f.ui_component as { component: string; ref?: string }
       if (comp.component !== 'paragraph-embed' || !comp.ref) continue
@@ -627,7 +627,7 @@ export function registerAdminContentRoutes(
           )
         }
 
-        if (!contentType.only_one && 'slug' in body) {
+        if (!contentType.only_one && Object.hasOwn(body, 'slug')) {
           const slug = body['slug']
           if (typeof slug !== 'string' || slug.trim() === '') {
             return c.json(
@@ -716,8 +716,8 @@ export function registerAdminContentRoutes(
         // boundary, so each value is found under its column name.
         const patchColumnBackedFields = contentType.fields.filter(isColumnBacked)
         const patchData: Record<string, unknown> = {}
-        if (!contentType.only_one && 'slug' in body) patchData['slug'] = body['slug']
-        if ('published' in body) patchData['published'] = body['published']
+        if (!contentType.only_one && Object.hasOwn(body, 'slug')) patchData['slug'] = body['slug']
+        if (Object.hasOwn(body, 'published')) patchData['published'] = body['published']
         for (const f of patchColumnBackedFields) {
           const key = f.db_column.column_name
           if (!(key in storageBody)) continue
@@ -1061,7 +1061,7 @@ export function registerAdminContentRoutes(
         // boundary, so each value is found under its column name.
         const taxPatchColumnBackedFields = taxonomyType.fields.filter(isColumnBacked)
         const taxPatchData: Record<string, unknown> = {}
-        if ('published' in body) taxPatchData['published'] = body['published']
+        if (Object.hasOwn(body, 'published')) taxPatchData['published'] = body['published']
         for (const f of taxPatchColumnBackedFields) {
           const key = f.db_column.column_name
           if (!(key in storageBody)) continue

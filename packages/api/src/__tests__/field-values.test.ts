@@ -58,6 +58,38 @@ const check = (body: Record<string, unknown>) => checkFieldValues(fields, body, 
 const fieldsWithErrors = (body: Record<string, unknown>) => check(body).map((e) => e.field)
 
 describe('checkFieldValues', () => {
+  it('treats a field named constructor as absent when the body leaves it out', () => {
+    // MUTATION: keep f.name in body. Object.prototype.constructor reads as a
+    // present, non-text value: "must be text".
+    const ctorRegistry = buildSchemaRegistry(
+      [
+        parseOrThrow(
+          {
+            name: 'content--fv_ctor',
+            label: 'Ctor',
+            type: 'content-type',
+            default_base_path: 'ctor',
+            only_one: false,
+            fields: [
+              {
+                tab: {
+                  name: 'main',
+                  label: 'Main',
+                  fields: [{ name: 'constructor', label: 'Constructor', type: 'text/plain', required: true }],
+                },
+              },
+            ],
+          },
+          'content-type'
+        ),
+      ],
+      { base_paths: [] },
+      { roles: [], valid_permissions: [] }
+    )
+    const ctorFields = ctorRegistry.content_types['content--fv_ctor']!.fields
+    expect(checkFieldValues(ctorFields, {}, ctorRegistry)).toEqual([])
+  })
+
   it('accepts a valid value of every type, and leaves absent fields alone', () => {
     // MUTATION: check every field, present or not. A PATCH naming one field
     // would then fail on all the required ones it leaves out.
