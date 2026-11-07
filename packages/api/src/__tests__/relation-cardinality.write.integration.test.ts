@@ -43,7 +43,7 @@ async function create(extra: Record<string, unknown>) {
 
 async function patch(id: string, body: Record<string, unknown>) {
   const res = await authenticatedRequest(app, 'admin', 'PATCH', `${POSTS()}/${id}`, { body })
-  return { status: res.status, body: (await res.json()) as { error?: { code: string } } }
+  return { status: res.status, body: (await res.json()) as { error?: { code: string; details?: Array<{ field: string }> } } }
 }
 
 const linkRows = (parentId: string, field = 'link') =>
@@ -73,10 +73,12 @@ describe('writing a one-to-one paragraph', () => {
 
   it('rejects a list with 422 and stores nothing', async () => {
     // MUTATION: drop the relationShapeError call in writeNewItem.
-    const { status, body } = await create({ link: [{ url: 'u1' }] })
+    const { status, body } = await create({ slug: 'list-refused', link: [{ url: 'u1' }] })
     expect(status).toBe(422)
     expect(body.error!.code).toBe('VALIDATION_ERROR')
     expect(body.error!.details!.map((d) => d.field)).toEqual(['link'])
+    // MUTATION: run the relation check after the insert.
+    expect(await countRows(db, fx.tables.post, `slug = 'list-refused'`)).toBe(0)
   })
 
   it('null clears it on update', async () => {
@@ -141,6 +143,16 @@ describe('writing references', () => {
   it('rejects null for a "many" field', async () => {
     // MUTATION: treat null as []. The request "succeeds" and clears the field.
     expect((await create({ tags: null })).status).toBe(422)
+  })
+
+  it('refuses null for a one-to-many paragraph with 422, keeping the stored cards', async () => {
+    // MUTATION: map null to an empty list for a 'many' paragraph.
+    const { body } = await create({ cards: [{ heading: 'keep', card_tag: tagA }] })
+    const res = await patch(body.data!.id, { cards: null })
+    expect(res.status).toBe(422)
+    expect(res.body.error!.code).toBe('VALIDATION_ERROR')
+    expect(res.body.error!.details!.map((d) => d.field)).toEqual(['cards'])
+    expect(await countRows(db, fx.tables.card, `parent_id = '${body.data!.id}' AND parent_field = 'cards'`)).toBe(1)
   })
 
   it('an update that leaves a many-to-many field out keeps its links', async () => {
@@ -280,6 +292,15 @@ describe('taxonomy writes', () => {
     expect(await linkRows(id, 'tag_link')).toBe(1)
     const patched = await authenticatedRequest(app, 'admin', 'PATCH', `${TAGS()}/${id}`, { body: { name: 't2' } })
     expect(patched.status).toBe(200)
+    expect(await linkRows(id, 'tag_link')).toBe(1)
+  })
+
+  it('a taxonomy PATCH with the wrong shape is refused and erases nothing', async () => {
+    // MUTATION: drop relationInputError from the taxonomy PATCH.
+    const created = await authenticatedRequest(app, 'admin', 'POST', TAGS(), { body: { name: 't', tag_link: { url: 'keep' } } })
+    const id = ((await created.json()) as { data: { id: string } }).data.id
+    const res = await authenticatedRequest(app, 'admin', 'PATCH', `${TAGS()}/${id}`, { body: { tag_link: [{ url: 'x' }] } })
+    expect(res.status).toBe(422)
     expect(await linkRows(id, 'tag_link')).toBe(1)
   })
 

@@ -181,6 +181,28 @@ describe('deleting an item a required reference uses', () => {
     expect(await countRows(db, fx.tables.post, `id = '${post}'`)).toBe(1)
     expect(await countRows(db, fx.tables.link, `parent_id = '${post}'`)).toBe(1)
   })
+
+  it('maps a foreign-key violation on a taxonomy delete to 409, touching nothing', async () => {
+    // MUTATION: delete the taxonomy item's paragraphs before its row. Its link row is then gone.
+    await db.execute(sql.raw(`DROP TABLE IF EXISTS "${EXTRA}"`))
+    const tag = await insertTag(db, fx, 'with-link')
+    await insertParagraph(db, fx.tables.link, {
+      parentId: tag, parentType: fx.tables.tag, parentField: 'tag_link', order: 0, values: { url: 'stay' },
+    })
+    // A table outside the registry stands in for a use added after the check.
+    await db.execute(
+      sql.raw(`CREATE TABLE "${EXTRA}" (ref uuid NOT NULL REFERENCES "${fx.tables.tag}"(id) ON DELETE RESTRICT)`)
+    )
+    await db.execute(sql.raw(`INSERT INTO "${EXTRA}" (ref) VALUES ('${tag}')`))
+
+    const res = await delTag(tag)
+    expect(res.status).toBe(409)
+    expect(((await res.json()) as { error: { message: string } }).error.message).toBe(
+      'This item is still in use. Remove it from the items that use it first.'
+    )
+    expect(await countRows(db, fx.tables.tag, `id = '${tag}'`)).toBe(1)
+    expect(await countRows(db, fx.tables.link, `parent_id = '${tag}'`)).toBe(1)
+  })
 })
 
 describe('deletes that must still succeed', () => {
