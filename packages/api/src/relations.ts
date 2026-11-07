@@ -93,6 +93,8 @@ async function fetchParagraphRowIds(
 // Ids of every paragraph row an item owns: the rows of its paragraph fields and,
 // one level down (ADR core/0005), the rows nested inside those. Rows of
 // different paragraph tables mix in one list; their UUIDs do not collide.
+// One query per paragraph field, and one per nested field covering all of that
+// field's parent rows at once.
 export async function ownParagraphRowIds(
   db: DrizzlePostgresInstance,
   registry: SchemaRegistry,
@@ -105,9 +107,13 @@ export async function ownParagraphRowIds(
     if (!pType) continue
     const rowIds = await fetchParagraphRowIds(db, pType, itemId, f.name)
     ids.push(...rowIds)
+    if (rowIds.length === 0) continue
     for (const n of nestedParagraphFields(pType, registry)) {
-      for (const rowId of rowIds) {
-        ids.push(...(await fetchParagraphRowIds(db, n.nType, rowId, n.fieldName)))
+      const result = await db.execute(
+        sql`SELECT id FROM ${sql.raw(quoteIdent(n.nType.db.table_name))} WHERE parent_id = ANY(${sql.param(rowIds)}::uuid[]) AND parent_field = ${n.fieldName}`
+      )
+      for (const r of result.rows as Record<string, unknown>[]) {
+        if (typeof r['id'] === 'string') ids.push(r['id'])
       }
     }
   }
