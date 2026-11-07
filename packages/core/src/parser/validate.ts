@@ -156,6 +156,7 @@ export function buildSchemaRegistry(
  * - CIRCULAR_REFERENCE        — paragraph A refs paragraph B which refs paragraph A
  * - MAX_SIZE_EXCEEDS_GLOBAL_LIMIT — field max_size exceeds the global limit
  * - UNSUPPORTED_RELATION      — a paragraph type holds a many-to-many reference
+ * - TABLE_NAME_COLLISION      — two schema types or link tables get the same table
  *
  * @param registry         The assembled SchemaRegistry (from buildSchemaRegistry).
  * @param globalMaxFileSize Global max file size in bytes from api.media.max_file_size.
@@ -171,6 +172,7 @@ export function validateCrossReferences(
   errors.push(...checkFieldRefs(registry))
   errors.push(...checkCircularParagraphRefs(registry))
   errors.push(...checkParagraphRelations(registry))
+  errors.push(...checkTableNameCollisions(registry))
 
   if (globalMaxFileSize !== undefined) {
     errors.push(...checkMaxSizeLimit(registry, globalMaxFileSize))
@@ -205,6 +207,98 @@ function checkParagraphRelations(registry: SchemaRegistry): ParseError[] {
         path: `fields[${field.order}].rel`,
       })
     }
+  }
+  return errors
+}
+
+// ─── TABLE_NAME_COLLISION ─────────────────────────────────────────────────────
+
+// Postgres keeps the first 63 bytes of an identifier and drops the rest
+// without an error. Generated names are ASCII (snake_case), so bytes are
+// characters.
+const POSTGRES_IDENTIFIER_LIMIT = 63
+
+type TableUse = {
+  table: string
+  file: string
+  what: string
+  // How to bring this table's name to 63 characters, for the message.
+  shorten: string
+  path?: string
+}
+
+// Where a field sits in its raw schema file: inside a tab for a content type.
+function rawFieldPath(owner: ParsedContentType | ParsedTaxonomyType, field: ParsedField): string {
+  if (owner.schema_type !== 'content-type') return `fields[${field.order}].name`
+  const t = owner.ui.tabs.findIndex((tab) => tab.fields.includes(field.name))
+  const i = t < 0 ? -1 : owner.ui.tabs[t]!.fields.indexOf(field.name)
+  return t < 0 ? `fields[${field.order}].name` : `fields[${t}].tab.fields[${i}].name`
+}
+
+// Two schema types, or two many-to-many fields, that would get the same table
+// (#57). A link table is `junction_<owner table>_<field>`, so field `x_y` on
+// `tag` and field `y` on `tag_x` get one name, and two long names that differ
+// only after 63 characters become one table in Postgres. Such a schema used to
+// fail later and obscurely: generated code declaring one table twice, or a
+// migration refused with "relation already exists". The tables listed are the
+// ones db codegen creates: every type's own table, and the link tables of
+// content and taxonomy types.
+function checkTableNameCollisions(registry: SchemaRegistry): ParseError[] {
+  const uses: TableUse[] = []
+  for (const p of Object.values(registry.paragraph_types)) {
+    uses.push({ table: p.db.table_name, file: p.source_file, what: `type "${p.name}"`, shorten: `shorten the name of type "${p.name}"` })
+  }
+  for (const owner of [...Object.values(registry.content_types), ...Object.values(registry.taxonomy_types)]) {
+    uses.push({
+      table: owner.db.table_name,
+      file: owner.source_file,
+      what: `type "${owner.name}"`,
+      shorten: `shorten the name of type "${owner.name}"`,
+    })
+    for (const jt of owner.db.junction_tables) {
+      const field = owner.fields.find((f) => f.db_column?.junction?.table_name === jt.table_name)
+      if (!field) continue
+      // junction_<owner table>_: what the field's name follows.
+      const prefix = `junction_${owner.db.table_name}_`.length
+      const room = POSTGRES_IDENTIFIER_LIMIT - prefix
+      uses.push({
+        table: jt.table_name,
+        file: owner.source_file,
+        what: `field "${field.name}" of "${owner.name}"`,
+        shorten:
+          room < 1
+            ? `shorten the name of type "${owner.name}": its link table names already have ${prefix} characters before the field name`
+            : `shorten field "${field.name}" to at most ${room} characters, or the name of type "${owner.name}"`,
+        path: rawFieldPath(owner, field),
+      })
+    }
+  }
+
+  const errors: ParseError[] = []
+  const first = new Map<string, TableUse>()
+  for (const use of uses) {
+    const stored = use.table.slice(0, POSTGRES_IDENTIFIER_LIMIT)
+    const earlier = first.get(stored)
+    if (!earlier) {
+      first.set(stored, use)
+      continue
+    }
+    // A truncation collision clears once either name fits in 63 characters;
+    // suggest the one that does not.
+    const tooLong = use.table.length > POSTGRES_IDENTIFIER_LIMIT ? use : earlier
+    errors.push({
+      file: use.file,
+      code: 'TABLE_NAME_COLLISION',
+      message:
+        earlier.table === use.table
+          ? `The ${use.what} would store its data in table "${use.table}", the same table as the ` +
+            `${earlier.what}. Rename one of the two so their tables differ.`
+          : `The ${use.what} and the ${earlier.what} would get tables "${use.table}" and ` +
+            `"${earlier.table}". Postgres keeps only the first ${POSTGRES_IDENTIFIER_LIMIT} characters ` +
+            `of a name, which are the same, so they would be one table. To keep "${tooLong.table}" ` +
+            `within ${POSTGRES_IDENTIFIER_LIMIT} characters, ${tooLong.shorten}.`,
+      ...(use.path !== undefined && { path: use.path }),
+    })
   }
   return errors
 }

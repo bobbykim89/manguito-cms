@@ -230,13 +230,29 @@ function checkDuplicateColumns(
   sourceFile: string,
   schemaName: string
 ): ParseError[] {
-  const owner = new Map<string, string>()
+  // Keyed by the first 63 characters, all Postgres keeps of a column name:
+  // two names that differ only after that are one column too.
+  const owner = new Map<string, { field: string; column: string }>()
   const errors: ParseError[] = []
 
   for (const f of fields) {
     if (!hasStorageColumn(f)) continue
     const column = f.column ?? f.name
-    const first = owner.get(column)
+    const stored = column.slice(0, 63)
+    const firstUse = owner.get(stored)
+    if (firstUse !== undefined && firstUse.column !== column) {
+      errors.push({
+        file: sourceFile,
+        code: 'DUPLICATE_COLUMN',
+        message:
+          `Fields "${firstUse.field}" and "${f.name}" in schema "${schemaName}" resolve to columns ` +
+          `"${firstUse.column}" and "${column}". Postgres keeps only the first 63 characters of a ` +
+          `column name, which are the same, so they would be one column. Shorten one of the field ` +
+          `names to at most 63 characters.`,
+      })
+      continue
+    }
+    const first = firstUse?.field
     if (first !== undefined) {
       errors.push({
         file: sourceFile,
@@ -249,7 +265,7 @@ function checkDuplicateColumns(
       })
       continue
     }
-    owner.set(column, f.name)
+    owner.set(stored, { field: f.name, column })
   }
 
   return errors

@@ -233,6 +233,15 @@ Writes must use the same shapes, and reference ids must be UUIDs. A wrong shape
 is rejected with 422, naming the field. An update leaves out relation fields it
 does not mention.
 
+A `many-to-many` field stores its links in a table named
+`junction_<type's table>_<field>`, so field `x_y` on `taxonomy--tag` and field
+`y` on `taxonomy--tag_x` would share `junction_taxonomy_tag_x_y`. Postgres also
+keeps only the first 63 characters of a table name, so two long names that
+differ only after that would be one table. `manguito validate`, `dev` and
+`build` refuse both (`TABLE_NAME_COLLISION`), and the message says which name
+to rename or shorten. Field names that differ only after 63 characters would
+likewise be one column (`DUPLICATE_COLUMN`).
+
 A `many-to-many` list keeps the order it was saved in, on every read. In the
 admin, each item in the list has buttons to move it earlier or later. An id
 that appears twice in a save is stored once, at its first position. Links saved
