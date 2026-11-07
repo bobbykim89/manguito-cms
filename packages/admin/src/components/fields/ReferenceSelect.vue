@@ -5,6 +5,7 @@ import type { ParsedField } from '@bobbykim/manguito-cms-core'
 import { relationCardinality } from '@bobbykim/manguito-cms-core/cardinality'
 import { useApiClient } from '../../composables/useApiClient'
 import { useSchemaStore } from '../../stores/schema'
+import { moveItem } from '../../utils/move-item'
 
 const props = defineProps<{
   field: ParsedField
@@ -135,6 +136,12 @@ function removeItem(id: string) {
   }
 }
 
+// Moves one chip a place earlier (-1) or later (+1). The list is saved in this
+// order and every read returns it so (#57).
+function moveChip(index: number, step: -1 | 1) {
+  emit('update:modelValue', moveItem(selectedIds.value, index, index + step))
+}
+
 // Fetch display labels for any IDs already present when the component mounts.
 onMounted(async () => {
   for (const id of selectedIds.value) {
@@ -162,11 +169,32 @@ onMounted(async () => {
       class="mt-1.5 flex flex-wrap gap-1.5"
     >
       <span
-        v-for="id in selectedIds"
+        v-for="(id, i) in selectedIds"
         :key="id"
         class="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-800"
       >
+        <!-- Reorder: the list keeps this order when saved. -->
+        <button
+          v-if="i > 0"
+          type="button"
+          :disabled="disabled"
+          class="flex h-3.5 w-3.5 items-center justify-center rounded-full hover:bg-indigo-200 disabled:cursor-not-allowed"
+          :aria-label="`Move ${selectedLabels[id] ?? id} earlier`"
+          @click="moveChip(i, -1)"
+        >
+          <span aria-hidden="true">&lsaquo;</span>
+        </button>
         {{ selectedLabels[id] ?? id }}
+        <button
+          v-if="i < selectedIds.length - 1"
+          type="button"
+          :disabled="disabled"
+          class="flex h-3.5 w-3.5 items-center justify-center rounded-full hover:bg-indigo-200 disabled:cursor-not-allowed"
+          :aria-label="`Move ${selectedLabels[id] ?? id} later`"
+          @click="moveChip(i, 1)"
+        >
+          <span aria-hidden="true">&rsaquo;</span>
+        </button>
         <button
           type="button"
           :disabled="disabled"

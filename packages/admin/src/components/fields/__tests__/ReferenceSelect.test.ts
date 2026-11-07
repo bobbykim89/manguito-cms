@@ -177,6 +177,57 @@ describe('ReferenceSelect', () => {
     expect(lastEmit).toContain('u2')
   })
 
+  describe('reordering many-to-many chips (#57)', () => {
+    const NAMES: Record<string, string> = { u1: 'Alice', u2: 'Bob', u3: 'Cara' }
+    const manyField = () =>
+      makeField({ ui_component: { component: 'typeahead-select', ref: 'content--user', rel: 'many-to-many' } })
+
+    // Chip labels load per id on mount.
+    async function mountWithChips(ids: string[], props: { disabled?: boolean } = {}) {
+      server.use(
+        http.get(`${ADMIN}/api/content/content--user/:id`, ({ params }) =>
+          HttpResponse.json({ ok: true, data: { id: params.id, title: NAMES[String(params.id)] } })
+        )
+      )
+      const wrapper = mount(ReferenceSelect, {
+        global: { plugins: [pinia] },
+        props: { field: manyField(), modelValue: ids, ...props },
+      })
+      await flushPromises()
+      return wrapper
+    }
+    const button = (w: Awaited<ReturnType<typeof mountWithChips>>, label: string) =>
+      w.find(`button[aria-label="${label}"]`)
+
+    it('moves a chip earlier or later, emitting the list in its new order', async () => {
+      // MUTATION: emit selectedIds unchanged from moveChip, or move by the wrong
+      // step. The editor's reorder is then lost or lands in the wrong place.
+      const w = await mountWithChips(['u1', 'u2', 'u3'])
+      await button(w, 'Move Bob earlier').trigger('click')
+      await button(w, 'Move Bob later').trigger('click')
+      expect(w.emitted('update:modelValue')).toEqual([[['u2', 'u1', 'u3']], [['u1', 'u3', 'u2']]])
+    })
+
+    it('offers no move past either end, and none for a single chip', async () => {
+      // MUTATION: render both buttons on every chip. The first chip then has a
+      // "Move earlier" that does nothing.
+      const w = await mountWithChips(['u1', 'u2', 'u3'])
+      expect(button(w, 'Move Alice earlier').exists()).toBe(false)
+      expect(button(w, 'Move Alice later').exists()).toBe(true)
+      expect(button(w, 'Move Cara later').exists()).toBe(false)
+      const single = await mountWithChips(['u1'])
+      expect(single.findAll('button[aria-label^="Move "]')).toHaveLength(0)
+    })
+
+    it('disables the move buttons with the field', async () => {
+      // MUTATION: leave :disabled off the move buttons. A read-only form (no
+      // edit permission) then still lets an editor reorder.
+      const w = await mountWithChips(['u1', 'u2'], { disabled: true })
+      expect(button(w, 'Move Alice later').attributes('disabled')).toBeDefined()
+      expect(button(w, 'Move Bob earlier').attributes('disabled')).toBeDefined()
+    })
+  })
+
   it('input is disabled and counter shows X / Y when max_items is reached', async () => {
     server.use(
       http.get(`${ADMIN}/api/content/content--user/:id`, ({ params }) =>
