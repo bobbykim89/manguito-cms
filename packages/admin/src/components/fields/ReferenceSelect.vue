@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
 import type { ParsedField } from '@bobbykim/manguito-cms-core'
 import { relationCardinality } from '@bobbykim/manguito-cms-core/cardinality'
@@ -41,8 +41,10 @@ const titleField = computed<string>(() => {
 
 const selectedIds = computed<string[]>(() => {
   if (isMulti.value) {
+    // Each id once, at its first position, as the API stores a list. Links
+    // saved before it de-duplicated may still read with repeats.
     return Array.isArray(props.modelValue)
-      ? (props.modelValue as unknown[]).filter((v): v is string => typeof v === 'string')
+      ? [...new Set((props.modelValue as unknown[]).filter((v): v is string => typeof v === 'string'))]
       : []
   }
   return typeof props.modelValue === 'string' ? [props.modelValue] : []
@@ -136,10 +138,20 @@ function removeItem(id: string) {
   }
 }
 
+const chipList = ref<HTMLElement | null>(null)
+
 // Moves one chip a place earlier (-1) or later (+1). The list is saved in this
-// order and every read returns it so (#57).
-function moveChip(index: number, step: -1 | 1) {
-  emit('update:modelValue', moveItem(selectedIds.value, index, index + step))
+// order and every read returns it so (#57). Focus follows the chip, to the
+// same button, or to its other one when the chip reaches an end, so a
+// keyboard user can keep moving it.
+async function moveChip(index: number, step: -1 | 1) {
+  const next = moveItem(selectedIds.value, index, index + step)
+  if (!next) return
+  emit('update:modelValue', next)
+  await nextTick()
+  const chip = chipList.value?.querySelector<HTMLElement>(`[data-chip-index="${index + step}"]`)
+  const same = chip?.querySelector<HTMLElement>(`[data-move="${step < 0 ? 'earlier' : 'later'}"]`)
+  ;(same ?? chip?.querySelector<HTMLElement>('[data-move]'))?.focus()
 }
 
 // Fetch display labels for any IDs already present when the component mounts.
@@ -163,22 +175,25 @@ onMounted(async () => {
       <span v-if="field.required" class="ml-0.5 text-red-500" aria-hidden="true">*</span>
     </label>
 
-    <!-- Removable chips — one-to-many / many-to-many -->
+    <!-- Removable, reorderable chips — many-to-many -->
     <div
       v-if="isMulti && selectedIds.length"
+      ref="chipList"
       class="mt-1.5 flex flex-wrap gap-1.5"
     >
       <span
         v-for="(id, i) in selectedIds"
         :key="id"
+        :data-chip-index="i"
         class="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-800"
       >
         <!-- Reorder: the list keeps this order when saved. -->
         <button
           v-if="i > 0"
           type="button"
+          data-move="earlier"
           :disabled="disabled"
-          class="flex h-3.5 w-3.5 items-center justify-center rounded-full hover:bg-indigo-200 disabled:cursor-not-allowed"
+          class="-my-1 flex h-6 w-6 items-center justify-center rounded-full hover:bg-indigo-200 disabled:cursor-not-allowed"
           :aria-label="`Move ${selectedLabels[id] ?? id} earlier`"
           @click="moveChip(i, -1)"
         >
@@ -188,8 +203,9 @@ onMounted(async () => {
         <button
           v-if="i < selectedIds.length - 1"
           type="button"
+          data-move="later"
           :disabled="disabled"
-          class="flex h-3.5 w-3.5 items-center justify-center rounded-full hover:bg-indigo-200 disabled:cursor-not-allowed"
+          class="-my-1 flex h-6 w-6 items-center justify-center rounded-full hover:bg-indigo-200 disabled:cursor-not-allowed"
           :aria-label="`Move ${selectedLabels[id] ?? id} later`"
           @click="moveChip(i, 1)"
         >
@@ -198,7 +214,7 @@ onMounted(async () => {
         <button
           type="button"
           :disabled="disabled"
-          class="ml-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full hover:bg-indigo-200 disabled:cursor-not-allowed"
+          class="-my-1 ml-0.5 flex h-6 w-6 items-center justify-center rounded-full hover:bg-indigo-200 disabled:cursor-not-allowed"
           :aria-label="`Remove ${selectedLabels[id] ?? id}`"
           @click="removeItem(id)"
         >

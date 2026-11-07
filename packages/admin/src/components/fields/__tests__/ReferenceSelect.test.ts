@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
+import { defineComponent, h, ref } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { http, HttpResponse } from 'msw'
 import type { ParsedField, ParsedContentType } from '@bobbykim/manguito-cms-core'
@@ -217,6 +218,49 @@ describe('ReferenceSelect', () => {
       expect(button(w, 'Move Cara later').exists()).toBe(false)
       const single = await mountWithChips(['u1'])
       expect(single.findAll('button[aria-label^="Move "]')).toHaveLength(0)
+    })
+
+    it('keeps focus on the moved chip, on its other button once it reaches an end', async () => {
+      // MUTATION: drop the focus step in moveChip. The pressed button moves
+      // with its chip (or disappears at an end), focus falls to <body>, and a
+      // keyboard user must tab back from the top for every step.
+      server.use(
+        http.get(`${ADMIN}/api/content/content--user/:id`, ({ params }) =>
+          HttpResponse.json({ ok: true, data: { id: params.id, title: NAMES[String(params.id)] } })
+        )
+      )
+      // A parent with a real v-model, so a move re-renders the list.
+      const Parent = defineComponent({
+        setup() {
+          const ids = ref(['u1', 'u2', 'u3'])
+          return () => h(ReferenceSelect, { field: manyField(), modelValue: ids.value, 'onUpdate:modelValue': (v: unknown) => { ids.value = v as string[] } })
+        },
+      })
+      const w = mount(Parent, { global: { plugins: [pinia] }, attachTo: document.body })
+      await flushPromises()
+      const press = async (label: string) => {
+        const b = w.get(`button[aria-label="${label}"]`)
+        ;(b.element as HTMLElement).focus()
+        await b.trigger('click')
+        await flushPromises()
+      }
+      const focused = () => document.activeElement?.getAttribute('aria-label')
+
+      await press('Move Cara earlier') // Cara is now in the middle
+      expect(focused()).toBe('Move Cara earlier')
+      await press('Move Cara earlier') // Cara is now first: no earlier button
+      expect(focused()).toBe('Move Cara later')
+      w.unmount()
+    })
+
+    it('shows a repeated id once, as the API stores it, and moves the de-duplicated list', async () => {
+      // MUTATION: render modelValue as sent. Links saved before the API
+      // de-duplicated read as [u1, u1, u2]: two chips with the same key, and
+      // two "Move Alice later" buttons a screen reader cannot tell apart.
+      const w = await mountWithChips(['u1', 'u1', 'u2'])
+      expect(w.findAll('button[aria-label^="Remove "]')).toHaveLength(2)
+      await button(w, 'Move Bob earlier').trigger('click')
+      expect(w.emitted('update:modelValue')).toEqual([[['u2', 'u1']]])
     })
 
     it('disables the move buttons with the field', async () => {

@@ -9,13 +9,13 @@ describe('moveItem', () => {
     expect(moveItem(['A', 'B', 'C', 'D'], 0, 2)).toEqual(['B', 'C', 'A', 'D'])
   })
 
-  it('returns an unchanged copy for the same index or an index outside the list', () => {
+  it('returns null when there is nothing to move: the same index, or one outside the list', () => {
     // MUTATION: drop the bounds check. Moving past the end then inserts an
     // `undefined` or loses the item, and an editor's list gains a hole.
     const list = ['A', 'B']
-    expect(moveItem(list, 1, 1)).toEqual(['A', 'B'])
-    expect(moveItem(list, 1, 2)).toEqual(['A', 'B'])
-    expect(moveItem(list, -1, 0)).toEqual(['A', 'B'])
+    expect(moveItem(list, 1, 1)).toBeNull()
+    expect(moveItem(list, 1, 2)).toBeNull()
+    expect(moveItem(list, -1, 0)).toBeNull()
     expect(moveItem(list, 0, 1)).not.toBe(list) // a copy, never the input
     expect(list).toEqual(['A', 'B'])
   })

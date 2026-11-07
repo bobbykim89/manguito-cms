@@ -75,15 +75,11 @@ function onDragOver(index: number) {
 }
 
 function onDrop(toIndex: number) {
-  if (dragFromIndex.value === null || dragFromIndex.value === toIndex) {
-    dragFromIndex.value = null
-    dragOverIndex.value = null
-    return
-  }
-  const items = moveItem(safeValue.value, dragFromIndex.value, toIndex)
-  emit('update:modelValue', items.map((item, i) => ({ ...item, order: i })))
+  const items = dragFromIndex.value === null ? null : moveItem(safeValue.value, dragFromIndex.value, toIndex)
   dragFromIndex.value = null
   dragOverIndex.value = null
+  // null: dropped in place, or a drag index the list no longer has.
+  if (items) emit('update:modelValue', items.map((item, i) => ({ ...item, order: i })))
 }
 
 function onDragEnd() {
