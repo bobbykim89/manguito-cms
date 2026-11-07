@@ -29,7 +29,6 @@ import {
   deleteParagraphField,
   persistJunctionField,
   junctionOrderBy,
-  firstOfEach,
   oneOrMany,
   paragraphItems,
 } from '../../relations.js'
@@ -100,24 +99,26 @@ async function loadRelationsForEdit(
   id: string,
   row: Record<string, unknown>
 ): Promise<void> {
-  await Promise.all(
-    fields.map(async (f) => {
+  // The fields load together, then land on the row in field order, so the
+  // row's keys come out the same way every time.
+  const loaded = await Promise.all(
+    fields.map(async (f): Promise<[string, unknown] | null> => {
       if (f.db_column === null) {
         const pType = paragraphTypeOf(f, registry)
-        if (!pType) return
-        row[f.name] = oneOrMany(relationCardinality(f) ?? 'many', await loadParagraphRows(db, registry, pType, id, f.name))
-      } else if (f.db_column.junction) {
+        if (!pType) return null
+        return [f.name, oneOrMany(relationCardinality(f) ?? 'many', await loadParagraphRows(db, registry, pType, id, f.name))]
+      }
+      if (f.db_column.junction) {
         const j = f.db_column.junction
         const r = await db.execute(
           sql`SELECT ${sql.raw(quoteIdent(j.right_column))} FROM ${sql.raw(quoteIdent(j.table_name))} WHERE ${sql.raw(quoteIdent(j.left_column))} = ${id}${junctionOrderBy(j)}`
         )
-        row[f.name] = firstOfEach(
-          r.rows.map((linked) => (linked as Record<string, unknown>)[j.right_column] as string),
-          (linkedId) => linkedId
-        )
+        return [f.name, [...new Set(r.rows.map((linked) => (linked as Record<string, unknown>)[j.right_column] as string))]]
       }
+      return null
     })
   )
+  for (const entry of loaded) if (entry) row[entry[0]] = entry[1]
 }
 
 // What a publish check on an update reads: the stored row (label-keyed), with
