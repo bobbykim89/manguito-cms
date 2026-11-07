@@ -4,6 +4,7 @@ import type { ParsedField, ParsedParagraphType, SchemaRegistry } from '@bobbykim
 import { relationCardinality, type Cardinality } from '@bobbykim/manguito-cms-core'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import type { MediaDelta } from './media-references.js'
+import { paragraphTypeOf } from './relation-input.js'
 
 // ─── Relation persistence ─────────────────────────────────────────────────────
 //
@@ -89,6 +90,30 @@ async function fetchParagraphRowIds(
   return (result.rows as Record<string, unknown>[])
     .map((r) => r['id'])
     .filter((id): id is string => typeof id === 'string')
+}
+
+// Ids of every paragraph row an item owns: the rows of its paragraph fields and,
+// one level down (ADR core/0005), the rows nested inside those. Rows of
+// different paragraph tables mix in one list; their UUIDs do not collide.
+export async function ownParagraphRowIds(
+  db: DrizzlePostgresInstance,
+  registry: SchemaRegistry,
+  fields: ParsedField[],
+  itemId: string
+): Promise<string[]> {
+  const ids: string[] = []
+  for (const f of fields) {
+    const pType = paragraphTypeOf(f, registry)
+    if (!pType) continue
+    const rowIds = await fetchParagraphRowIds(db, pType, itemId, f.name)
+    ids.push(...rowIds)
+    for (const n of nestedParagraphFields(pType, registry)) {
+      for (const rowId of rowIds) {
+        ids.push(...(await fetchParagraphRowIds(db, n.nType, rowId, n.fieldName)))
+      }
+    }
+  }
+  return ids
 }
 
 // Replaces every paragraph row for one field of one parent (delete + reinsert),

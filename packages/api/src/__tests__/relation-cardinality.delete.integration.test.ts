@@ -46,6 +46,67 @@ const selfRegistry = buildSchemaRegistry(
 const selfTable = selfRegistry.taxonomy_types[SELF]!.db.table_name
 let selfApp: ReturnType<typeof createTestApp>
 
+// A taxonomy whose own paragraphs hold a required reference back to their type:
+// a block directly, and an inner paragraph nested one level inside the block.
+const OWN = {
+  node: 'taxonomy--rcdelown_node',
+  block: 'paragraph--rcdelown_block',
+  inner: 'paragraph--rcdelown_inner',
+}
+const ownRegistry = buildSchemaRegistry(
+  [
+    parseOrThrow(
+      {
+        name: OWN.node,
+        label: 'Node',
+        type: 'taxonomy-type',
+        fields: [
+          { name: 'name', label: 'Name', type: 'text/plain', required: false },
+          { name: 'blocks', label: 'Blocks', type: 'paragraph', ref: OWN.block, rel: 'one-to-many', required: false },
+        ],
+      },
+      'taxonomy-type'
+    ),
+    parseOrThrow(
+      {
+        name: OWN.block,
+        label: 'Block',
+        type: 'paragraph-type',
+        fields: [
+          { name: 'back', label: 'Back', type: 'reference', target: OWN.node, rel: 'one-to-one', required: true },
+          { name: 'inner', label: 'Inner', type: 'paragraph', ref: OWN.inner, rel: 'one-to-one', required: false },
+        ],
+      },
+      'paragraph-type'
+    ),
+    parseOrThrow(
+      {
+        name: OWN.inner,
+        label: 'Inner',
+        type: 'paragraph-type',
+        fields: [
+          { name: 'back', label: 'Back', type: 'reference', target: OWN.node, rel: 'one-to-one', required: true },
+        ],
+      },
+      'paragraph-type'
+    ),
+  ],
+  { base_paths: [] },
+  testParsedSchema.roles
+)
+const ownTables = {
+  node: ownRegistry.taxonomy_types[OWN.node]!.db.table_name,
+  block: ownRegistry.paragraph_types[OWN.block]!.db.table_name,
+  inner: ownRegistry.paragraph_types[OWN.inner]!.db.table_name,
+}
+let ownApp: ReturnType<typeof createTestApp>
+
+async function dropOwnTables(): Promise<void> {
+  for (const t of [ownTables.inner, ownTables.block, ownTables.node]) {
+    await db.execute(sql.raw(`DROP TABLE IF EXISTS "${t}" CASCADE`))
+  }
+}
+
 beforeAll(async () => {
   process.env['AUTH_SECRET'] ??= 'test-secret'
   db = await getTestDb()
@@ -56,11 +117,20 @@ beforeAll(async () => {
   await db.execute(sql.raw(`DROP TABLE IF EXISTS "${selfTable}" CASCADE`))
   await db.execute(sql.raw(tableSql(selfTable, self.system_fields, self.fields)))
   selfApp = createTestApp(selfRegistry, db)
+  await dropOwnTables()
+  const node = ownRegistry.taxonomy_types[OWN.node]!
+  const block = ownRegistry.paragraph_types[OWN.block]!
+  const inner = ownRegistry.paragraph_types[OWN.inner]!
+  await db.execute(sql.raw(tableSql(ownTables.node, node.system_fields, node.fields)))
+  await db.execute(sql.raw(tableSql(ownTables.block, block.system_fields, block.fields)))
+  await db.execute(sql.raw(tableSql(ownTables.inner, inner.system_fields, inner.fields)))
+  ownApp = createTestApp(ownRegistry, db)
 }, 30_000)
 
 afterAll(async () => {
   await db.execute(sql.raw(`DROP TABLE IF EXISTS "${EXTRA}"`))
   await db.execute(sql.raw(`DROP TABLE IF EXISTS "${selfTable}" CASCADE`))
+  await dropOwnTables()
   await dropFixtureTables(db, fx)
 })
 
@@ -176,5 +246,59 @@ describe('a required reference to its own type', () => {
     expect(await countRows(db, selfTable, `id = '${root}'`)).toBe(1)
     expect((await delNode(child)).status).toBe(200)
     expect((await delNode(root)).status).toBe(200)
+  })
+})
+
+describe('an item whose own paragraph refers back to it', () => {
+  const insertNode = async (name: string): Promise<string> => {
+    const r = await db.execute(
+      sql`INSERT INTO ${sql.raw(`"${ownTables.node}"`)} (name, published) VALUES (${name}, true) RETURNING id`
+    )
+    return (r.rows[0] as { id: string }).id
+  }
+  const insertBlock = (parent: string, back: string): Promise<string> =>
+    insertParagraph(db, ownTables.block, {
+      parentId: parent, parentType: ownTables.node, parentField: 'blocks', order: 0, values: { back },
+    })
+  const delNode = (id: string) => authenticatedRequest(ownApp, 'admin', 'DELETE', `/admin/api/taxonomy/${OWN.node}/${id}`)
+
+  it('deletes it, with its paragraphs, when only its own paragraph refers back', async () => {
+    // MUTATION: count own paragraph rows as uses (today's findRequiredReferrers).
+    // The delete is a 409.
+    const node = await insertNode('alone')
+    const block = await insertBlock(node, node)
+    expect((await delNode(node)).status).toBe(200)
+    expect(await countRows(db, ownTables.node, `id = '${node}'`)).toBe(0)
+    expect(await countRows(db, ownTables.block, `id = '${block}'`)).toBe(0)
+  })
+
+  it('deletes it when the reference back is in a nested paragraph', async () => {
+    // MUTATION: collect only direct paragraph rows in ownParagraphRowIds. The
+    // nested row counts as a use: 409.
+    const node = await insertNode('nested')
+    const other = await insertNode('other')
+    const block = await insertBlock(node, other)
+    const inner = await insertParagraph(db, ownTables.inner, {
+      parentId: block, parentType: ownTables.block, parentField: 'inner', order: 0, values: { back: node },
+    })
+    expect((await delNode(node)).status).toBe(200)
+    expect(await countRows(db, ownTables.node, `id = '${node}'`)).toBe(0)
+    expect(await countRows(db, ownTables.block, `id = '${block}'`)).toBe(0)
+    expect(await countRows(db, ownTables.inner, `id = '${inner}'`)).toBe(0)
+  })
+
+  it("still refuses while another item's paragraph refers to it, counting only that one", async () => {
+    // MUTATION: skip paragraph owners whenever own rows exist. The other
+    // item's use is missed.
+    const node = await insertNode('used')
+    await insertBlock(node, node)
+    const other = await insertNode('user')
+    await insertBlock(other, node)
+    const res = await delNode(node)
+    expect(res.status).toBe(409)
+    expect(((await res.json()) as { error: { message: string } }).error.message).toBe(
+      'This item is still used by 1 item: 1 in Block (Back). Remove it from those first.'
+    )
+    expect(await countRows(db, ownTables.node, `id = '${node}'`)).toBe(1)
   })
 })
