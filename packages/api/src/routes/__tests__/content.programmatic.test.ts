@@ -7,7 +7,7 @@ import type {
   SchemaRegistry,
   PaginatedResult,
 } from '@bobbykim/manguito-cms-core'
-import { registerPublicContentRoutes } from '../content'
+import { registerPublicContentRoutes, pickProgrammatic } from '../content'
 import { createProgrammaticResolver, resolverKey } from '../../programmatic/resolve'
 import { createFieldKeyMap, createFieldKeyMapFromProjection } from '../../field-keys'
 import { buildProjectors } from '../../projector'
@@ -327,5 +327,16 @@ describe('programmatic resolution on an older version (#4)', () => {
     const body = (await res.json()) as { data: Record<string, unknown>[] }
 
     expect(body.data[0]).toEqual({ id: '1', slug: 'a', published: true, legacy_title: 'Hi', live: 'L:Hi' })
+  })
+})
+
+describe('pickProgrammatic', () => {
+  it('leaves out a skipped field named constructor', () => {
+    // MUTATION: keep `name in resolved`. The inherited Object.prototype.constructor
+    // is then picked as the field's value. JSON drops a function, so no route
+    // response shows it; the picked object does.
+    const resolved = { live: 'L' }
+    expect(pickProgrammatic(resolved, ['live', 'constructor'])).toEqual({ live: 'L' })
+    expect(Object.hasOwn(pickProgrammatic(resolved, ['constructor']), 'constructor')).toBe(false)
   })
 })
