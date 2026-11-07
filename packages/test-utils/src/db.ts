@@ -1,6 +1,4 @@
-import { createPostgresAdapter } from '@bobbykim/manguito-cms-db'
-import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
-import { seedSystemTables } from '@bobbykim/manguito-cms-db'
+import { createPostgresAdapter, seedSystemTables, type DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import { hashPassword } from '@bobbykim/manguito-cms-core'
 import { sql } from 'drizzle-orm'
 import { testParsedSchema, testRoleUsers } from './fixtures.js'
