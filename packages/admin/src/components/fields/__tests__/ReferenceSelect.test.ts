@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
+import { defineComponent, h, ref } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { http, HttpResponse } from 'msw'
 import type { ParsedField, ParsedContentType } from '@bobbykim/manguito-cms-core'
@@ -175,6 +176,100 @@ describe('ReferenceSelect', () => {
     const lastEmit = emitted[emitted.length - 1]![0] as string[]
     expect(lastEmit).toContain('u1')
     expect(lastEmit).toContain('u2')
+  })
+
+  describe('reordering many-to-many chips (#57)', () => {
+    const NAMES: Record<string, string> = { u1: 'Alice', u2: 'Bob', u3: 'Cara' }
+    const manyField = () =>
+      makeField({ ui_component: { component: 'typeahead-select', ref: 'content--user', rel: 'many-to-many' } })
+
+    // Chip labels load per id on mount.
+    async function mountWithChips(ids: string[], props: { disabled?: boolean } = {}) {
+      server.use(
+        http.get(`${ADMIN}/api/content/content--user/:id`, ({ params }) =>
+          HttpResponse.json({ ok: true, data: { id: params.id, title: NAMES[String(params.id)] } })
+        )
+      )
+      const wrapper = mount(ReferenceSelect, {
+        global: { plugins: [pinia] },
+        props: { field: manyField(), modelValue: ids, ...props },
+      })
+      await flushPromises()
+      return wrapper
+    }
+    const button = (w: Awaited<ReturnType<typeof mountWithChips>>, label: string) =>
+      w.find(`button[aria-label="${label}"]`)
+
+    it('moves a chip earlier or later, emitting the list in its new order', async () => {
+      // MUTATION: emit selectedIds unchanged from moveChip, or move by the wrong
+      // step. The editor's reorder is then lost or lands in the wrong place.
+      const w = await mountWithChips(['u1', 'u2', 'u3'])
+      await button(w, 'Move Bob earlier').trigger('click')
+      await button(w, 'Move Bob later').trigger('click')
+      expect(w.emitted('update:modelValue')).toEqual([[['u2', 'u1', 'u3']], [['u1', 'u3', 'u2']]])
+    })
+
+    it('offers no move past either end, and none for a single chip', async () => {
+      // MUTATION: render both buttons on every chip. The first chip then has a
+      // "Move earlier" that does nothing.
+      const w = await mountWithChips(['u1', 'u2', 'u3'])
+      expect(button(w, 'Move Alice earlier').exists()).toBe(false)
+      expect(button(w, 'Move Alice later').exists()).toBe(true)
+      expect(button(w, 'Move Cara later').exists()).toBe(false)
+      const single = await mountWithChips(['u1'])
+      expect(single.findAll('button[aria-label^="Move "]')).toHaveLength(0)
+    })
+
+    it('keeps focus on the moved chip, on its other button once it reaches an end', async () => {
+      // MUTATION: drop the focus step in moveChip. The pressed button moves
+      // with its chip (or disappears at an end), focus falls to <body>, and a
+      // keyboard user must tab back from the top for every step.
+      server.use(
+        http.get(`${ADMIN}/api/content/content--user/:id`, ({ params }) =>
+          HttpResponse.json({ ok: true, data: { id: params.id, title: NAMES[String(params.id)] } })
+        )
+      )
+      // A parent with a real v-model, so a move re-renders the list.
+      const Parent = defineComponent({
+        setup() {
+          const ids = ref(['u1', 'u2', 'u3'])
+          return () => h(ReferenceSelect, { field: manyField(), modelValue: ids.value, 'onUpdate:modelValue': (v: unknown) => { ids.value = v as string[] } })
+        },
+      })
+      const w = mount(Parent, { global: { plugins: [pinia] }, attachTo: document.body })
+      await flushPromises()
+      const press = async (label: string) => {
+        const b = w.get(`button[aria-label="${label}"]`)
+        ;(b.element as HTMLElement).focus()
+        await b.trigger('click')
+        await flushPromises()
+      }
+      const focused = () => document.activeElement?.getAttribute('aria-label')
+
+      await press('Move Cara earlier') // Cara is now in the middle
+      expect(focused()).toBe('Move Cara earlier')
+      await press('Move Cara earlier') // Cara is now first: no earlier button
+      expect(focused()).toBe('Move Cara later')
+      w.unmount()
+    })
+
+    it('shows a repeated id once, as the API stores it, and moves the de-duplicated list', async () => {
+      // MUTATION: render modelValue as sent. Links saved before the API
+      // de-duplicated read as [u1, u1, u2]: two chips with the same key, and
+      // two "Move Alice later" buttons a screen reader cannot tell apart.
+      const w = await mountWithChips(['u1', 'u1', 'u2'])
+      expect(w.findAll('button[aria-label^="Remove "]')).toHaveLength(2)
+      await button(w, 'Move Bob earlier').trigger('click')
+      expect(w.emitted('update:modelValue')).toEqual([[['u2', 'u1']]])
+    })
+
+    it('disables the move buttons with the field', async () => {
+      // MUTATION: leave :disabled off the move buttons. A read-only form (no
+      // edit permission) then still lets an editor reorder.
+      const w = await mountWithChips(['u1', 'u2'], { disabled: true })
+      expect(button(w, 'Move Alice later').attributes('disabled')).toBeDefined()
+      expect(button(w, 'Move Bob earlier').attributes('disabled')).toBeDefined()
+    })
   })
 
   it('input is disabled and counter shows X / Y when max_items is reached', async () => {

@@ -233,7 +233,8 @@ Writes must use the same shapes, and reference ids must be UUIDs. A wrong shape
 is rejected with 422, naming the field. An update leaves out relation fields it
 does not mention.
 
-A `many-to-many` list keeps the order it was saved in, on every read. An id
+A `many-to-many` list keeps the order it was saved in, on every read. In the
+admin, each item in the list has buttons to move it earlier or later. An id
 that appears twice in a save is stored once, at its first position. Links saved
 before an upgrade to this behaviour read in id order, and any duplicates they
 hold stay until the item is next saved.

@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import type { Component } from 'vue'
 import type { ParsedField } from '@bobbykim/manguito-cms-core'
 import { relationCardinality } from '@bobbykim/manguito-cms-core/cardinality'
+import { moveItem } from '../../utils/move-item'
 
 const props = defineProps<{
   field: ParsedField
@@ -74,18 +75,11 @@ function onDragOver(index: number) {
 }
 
 function onDrop(toIndex: number) {
-  if (dragFromIndex.value === null || dragFromIndex.value === toIndex) {
-    dragFromIndex.value = null
-    dragOverIndex.value = null
-    return
-  }
-  const items = [...safeValue.value]
-  const [moved] = items.splice(dragFromIndex.value, 1)
-  if (moved === undefined) return
-  items.splice(toIndex, 0, moved)
-  emit('update:modelValue', items.map((item, i) => ({ ...item, order: i })))
+  const items = dragFromIndex.value === null ? null : moveItem(safeValue.value, dragFromIndex.value, toIndex)
   dragFromIndex.value = null
   dragOverIndex.value = null
+  // null: dropped in place, or a drag index the list no longer has.
+  if (items) emit('update:modelValue', items.map((item, i) => ({ ...item, order: i })))
 }
 
 function onDragEnd() {
