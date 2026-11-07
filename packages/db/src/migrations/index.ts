@@ -31,13 +31,12 @@ export async function runDevMigration(configPath: string): Promise<void> {
   })
 }
 
-export async function generateMigration(
-  configPath: string,
-  migrationsFolder: string,
-): Promise<string[]> {
+// Runs drizzle-kit generate with `configPath`, from `cwd` (where the config's
+// relative paths resolve), and returns the .sql files it added to `outFolder`.
+async function runGenerate(configPath: string, outFolder: string, cwd: string): Promise<string[]> {
   let beforeFiles: string[] = []
   try {
-    const entries = await fs.readdir(migrationsFolder)
+    const entries = await fs.readdir(outFolder)
     beforeFiles = entries.filter((f) => f.endsWith('.sql'))
   } catch {
     // folder doesn't exist yet — no prior migrations
@@ -45,13 +44,13 @@ export async function generateMigration(
 
   execSync(`drizzle-kit generate --config=${configPath}`, {
     stdio: 'inherit',
-    cwd: path.dirname(configPath),
+    cwd,
     env: resolvedPathEnv(),
   })
 
   let afterFiles: string[] = []
   try {
-    const entries = await fs.readdir(migrationsFolder)
+    const entries = await fs.readdir(outFolder)
     afterFiles = entries.filter((f) => f.endsWith('.sql'))
   } catch {
     // folder still doesn't exist after generate — nothing created
@@ -59,6 +58,53 @@ export async function generateMigration(
 
   const beforeSet = new Set(beforeFiles)
   return afterFiles.filter((f) => !beforeSet.has(f))
+}
+
+export async function generateMigration(
+  configPath: string,
+  migrationsFolder: string,
+): Promise<string[]> {
+  return runGenerate(configPath, migrationsFolder, path.dirname(configPath))
+}
+
+// The migration `generateMigration` would write, without writing it. The
+// migrations folder is copied into a temporary folder beside the config, and
+// drizzle-kit generates there, through a temporary config that imports the
+// real one and only changes `out`. The real folder is never written to, so an
+// interrupted or failed preview cannot leave anything in it; the temporary
+// folder is removed afterwards.
+export async function previewMigration(
+  configPath: string,
+  migrationsFolder: string,
+): Promise<Array<{ name: string; sql: string }>> {
+  const configDir = path.dirname(configPath)
+  const tmp = await fs.mkdtemp(path.join(configDir, '.migration-preview-'))
+  try {
+    const out = path.join(tmp, 'migrations')
+    try {
+      await fs.cp(migrationsFolder, out, { recursive: true })
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+      // no migrations yet: generate the first one into an empty folder
+    }
+    const base = `./${path.basename(configPath).replace(/\.[cm]?[jt]s$/, '')}`
+    const tmpConfig = path.join(tmp, 'drizzle.config.ts')
+    await fs.writeFile(
+      tmpConfig,
+      [
+        `import base from '.${base}'`,
+        // Relative to the real config's folder, where drizzle-kit runs.
+        `export default { ...base, out: './${path.relative(configDir, out).split(path.sep).join('/')}' }`,
+        '',
+      ].join('\n'),
+    )
+    const names = await runGenerate(tmpConfig, out, configDir)
+    return await Promise.all(
+      names.map(async (name) => ({ name, sql: await fs.readFile(path.join(out, name), 'utf8') })),
+    )
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true })
+  }
 }
 
 export async function applyMigrations(
