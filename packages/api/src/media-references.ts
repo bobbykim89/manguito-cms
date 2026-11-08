@@ -45,7 +45,7 @@ export function topLevelMediaDelta(
 
     // On a partial update, a media field not present in the patch is untouched.
     // (after === null is a delete — every field is in scope.)
-    if (after !== null && !(key in after)) continue
+    if (after !== null && !Object.hasOwn(after, key)) continue
 
     const oldId = before ? extractMediaId(before[key]) : null
     const newId = after ? extractMediaId(after[key]) : null

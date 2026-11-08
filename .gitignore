@@ -11,7 +11,7 @@ coverage/
 .DS_Store
 *.log
 uploads/
-.tmp-globalsetup/
+.tmp-*/
 .manguito/
 .superpowers/
 .vercel/

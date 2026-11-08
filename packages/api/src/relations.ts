@@ -4,6 +4,7 @@ import type { ParsedField, ParsedParagraphType, SchemaRegistry } from '@bobbykim
 import { relationCardinality, type Cardinality } from '@bobbykim/manguito-cms-core'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import type { MediaDelta } from './media-references.js'
+import { paragraphTypeOf } from './relation-input.js'
 
 // ─── Relation persistence ─────────────────────────────────────────────────────
 //
@@ -67,9 +68,7 @@ function nestedParagraphFields(
   const out: Array<{ fieldName: string; nType: ParsedParagraphType; field: ParsedField }> = []
   for (const f of pType.fields) {
     if (f.db_column !== null) continue
-    const comp = f.ui_component as { component: string; ref?: string }
-    if (comp.component !== 'paragraph-embed' || !comp.ref) continue
-    const nType = registry.paragraph_types[comp.ref]
+    const nType = paragraphTypeOf(f, registry)
     if (nType) out.push({ fieldName: f.name, nType, field: f })
   }
   return out
@@ -89,6 +88,36 @@ async function fetchParagraphRowIds(
   return (result.rows as Record<string, unknown>[])
     .map((r) => r['id'])
     .filter((id): id is string => typeof id === 'string')
+}
+
+// Ids of every paragraph row an item owns: the rows of its paragraph fields and,
+// one level down (ADR core/0005), the rows nested inside those. Rows of
+// different paragraph tables mix in one list; their UUIDs do not collide.
+// One query per paragraph field, and one per nested field covering all of that
+// field's parent rows at once.
+export async function ownParagraphRowIds(
+  db: DrizzlePostgresInstance,
+  registry: SchemaRegistry,
+  fields: ParsedField[],
+  itemId: string
+): Promise<string[]> {
+  const ids: string[] = []
+  for (const f of fields) {
+    const pType = paragraphTypeOf(f, registry)
+    if (!pType) continue
+    const rowIds = await fetchParagraphRowIds(db, pType, itemId, f.name)
+    ids.push(...rowIds)
+    if (rowIds.length === 0) continue
+    for (const n of nestedParagraphFields(pType, registry)) {
+      const result = await db.execute(
+        sql`SELECT id FROM ${sql.raw(quoteIdent(n.nType.db.table_name))} WHERE parent_id = ANY(${sql.param(rowIds)}::uuid[]) AND parent_field = ${n.fieldName}`
+      )
+      for (const r of result.rows as Record<string, unknown>[]) {
+        if (typeof r['id'] === 'string') ids.push(r['id'])
+      }
+    }
+  }
+  return ids
 }
 
 // Replaces every paragraph row for one field of one parent (delete + reinsert),
@@ -244,6 +273,18 @@ export async function persistJunctionField(
 export function junctionOrderBy(junction: { right_column: string; order_column: boolean }): SQL {
   const right = sql.raw(quoteIdent(junction.right_column))
   return junction.order_column ? sql` ORDER BY "order" ASC, ${right} ASC` : sql` ORDER BY ${right} ASC`
+}
+
+// Keeps each key's first item, in order. A link stored twice (rows written
+// before duplicates were dropped) then reads once, at its first position.
+export function firstOfEach<T>(items: T[], key: (item: T) => string): T[] {
+  const seen = new Set<string>()
+  return items.filter((item) => {
+    const k = key(item)
+    if (seen.has(k)) return false
+    seen.add(k)
+    return true
+  })
 }
 
 // ─── Relation descriptors and resolution (read side) ──────────────────────────
@@ -421,7 +462,7 @@ export async function resolveRelationField(
     // same paragraph type share one table, so filtering on the parent alone
     // hands each field the other's rows.
     const result = await db.execute(
-      sql`SELECT * FROM ${sql.raw(quoteIdent(rel.table))} WHERE parent_id IN (${inList}) AND parent_field = ${fieldName} ORDER BY "order" ASC`
+      sql`SELECT * FROM ${sql.raw(quoteIdent(rel.table))} WHERE parent_id IN (${inList}) AND parent_field = ${fieldName} ORDER BY "order" ASC, id ASC`
     )
     const byParent = groupBy(result.rows as Record<string, unknown>[], 'parent_id')
     for (const row of batch) {
@@ -477,7 +518,7 @@ export async function resolveRelationField(
     }
     const byLeft = groupBy(jRows, rel.left_column)
     for (const row of batch) {
-      const jEntries = byLeft[row['id'] as string] ?? []
+      const jEntries = firstOfEach(byLeft[row['id'] as string] ?? [], (jr) => jr[rel.right_column] as string)
       row[fieldName] = jEntries
         .map((jr) => cache.get(`${rel.table}:${jr[rel.right_column] as string}`))
         .filter(Boolean)
@@ -525,7 +566,7 @@ export async function resolveRelationBareIds(
     const parentIds = rows.map((r) => r['id'] as string)
     const inList = sql.join(parentIds.map((id) => sql`${id}`), sql`, `)
     const result = await db.execute(
-      sql`SELECT id, parent_id FROM ${sql.raw(quoteIdent(rel.table))} WHERE parent_id IN (${inList}) AND parent_field = ${fieldName} ORDER BY "order" ASC`
+      sql`SELECT id, parent_id FROM ${sql.raw(quoteIdent(rel.table))} WHERE parent_id IN (${inList}) AND parent_field = ${fieldName} ORDER BY "order" ASC, id ASC`
     )
     const byParent = groupBy(result.rows as Record<string, unknown>[], 'parent_id')
     for (const row of rows) {
@@ -539,7 +580,7 @@ export async function resolveRelationBareIds(
     )
     const byLeft = groupBy(result.rows as Record<string, unknown>[], 'left_id')
     for (const row of rows) {
-      row[fieldName] = (byLeft[row['id'] as string] ?? []).map((r) => r['right_id'])
+      row[fieldName] = firstOfEach(byLeft[row['id'] as string] ?? [], (r) => r['right_id'] as string).map((r) => r['right_id'])
     }
   }
 }

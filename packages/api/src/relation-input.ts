@@ -36,7 +36,7 @@ export function checkRelationInput(
 ): RelationInputError[] {
   const errors: RelationInputError[] = []
   for (const field of fields) {
-    if (!(field.name in body)) continue
+    if (!Object.hasOwn(body, field.name)) continue
     const cardinality = relationCardinality(field)
     if (cardinality === null) continue
     const value = body[field.name]
@@ -108,7 +108,7 @@ export function paragraphItemsIn(
 ): Array<{ item: Record<string, unknown>; fields: ParsedField[]; prefix: string }> {
   const out: Array<{ item: Record<string, unknown>; fields: ParsedField[]; prefix: string }> = []
   for (const field of fields) {
-    if (field.field_type !== 'paragraph' || !(field.name in body)) continue
+    if (field.field_type !== 'paragraph' || !Object.hasOwn(body, field.name)) continue
     const pType = paragraphTypeOf(field, registry)
     if (!pType) continue
     const value = body[field.name]
@@ -178,7 +178,7 @@ function collectReferences(
   out: ReferenceUse[],
 ): void {
   for (const f of fields) {
-    if (!(f.name in body) || !f.db_column) continue
+    if (!Object.hasOwn(body, f.name) || !f.db_column) continue
     const table = f.db_column.junction ? f.db_column.junction.right_table : f.db_column.foreign_key?.table
     if (!table) continue
     const value = body[f.name]

@@ -55,8 +55,9 @@ afterAll(() => rmSync(TMP_DIR, { recursive: true, force: true }))
 describe('drizzle-kit and a reference delete-rule change', () => {
   it('emits a migration that re-creates the FK with ON DELETE restrict', async () => {
     // MUTATION (in core): keep SET NULL for required references (revert Task 2's
-    // fieldTypeRegistry change). The second migration then has no restrict
-    // clause, and this test fails.
+    // fieldTypeRegistry change). The FK statement then reads ON DELETE set null,
+    // failing the first assertion, while the NOT NULL one still passes: the
+    // NOT NULL change alone can no longer satisfy the delete-rule check.
     rmSync(TMP_DIR, { recursive: true, force: true })
     mkdirSync(TMP_DIR, { recursive: true })
     writeFileSync(
@@ -82,6 +83,9 @@ describe('drizzle-kit and a reference delete-rule change', () => {
 
     // generateMigration returns the new .sql file NAMES (packages/db/src/migrations/index.ts).
     const text = readFileSync(path.join(MIGRATIONS_FOLDER, second[0]!), 'utf8')
-    expect(text).toMatch(/ON DELETE restrict/i)
+    expect(text).toMatch(
+      /ADD CONSTRAINT "content_od_post_owner_taxonomy_od_tag_id_fk" FOREIGN KEY \("owner"\)[^;]*ON DELETE restrict/
+    )
+    expect(text).toMatch(/ALTER COLUMN "owner" SET NOT NULL/)
   })
 })

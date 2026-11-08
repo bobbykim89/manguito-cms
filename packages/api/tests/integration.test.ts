@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest'
 import { sql } from 'drizzle-orm'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
-import { seedSystemTables } from '@bobbykim/manguito-cms-db'
 import { hashPassword } from '@bobbykim/manguito-cms-core'
 import { signToken } from '../src/auth/jwt'
 import {
@@ -9,6 +8,7 @@ import {
   teardownTestData,
   testParsedSchema,
   testRoleUsers,
+  seedRoleUsers,
   createTestApp,
   authenticatedRequest,
 } from '@bobbykim/manguito-cms-test-utils'
@@ -55,17 +55,7 @@ beforeAll(async () => {
   // Re-seed system tables defensively: other test files (auth.integration.test.ts)
   // truncate roles and users in their own setup, which would leave this suite
   // without any data to work with.
-  await seedSystemTables(db, testParsedSchema)
-
-  for (const user of testRoleUsers) {
-    const hash = await hashPassword(user.password)
-    await db.execute(
-      sql`INSERT INTO users (id, email, password_hash, role_id, token_version, must_change_password)
-          SELECT ${user.id}, ${user.email}, ${hash}, r.id, ${user.token_version}, ${user.must_change_password}
-          FROM roles r WHERE r.name = ${user.role}
-          ON CONFLICT (email) DO NOTHING`,
-    )
-  }
+  await seedRoleUsers(db)
 
   // Resolve the 'blog' base path ID seeded by globalSetup / seedSystemTables.
   // Content articles need base_path_id (NOT NULL column) on insert.

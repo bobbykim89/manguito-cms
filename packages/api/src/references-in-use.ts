@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm'
 import { relationCardinality } from '@bobbykim/manguito-cms-core'
 import type { ParsedField, SchemaRegistry } from '@bobbykim/manguito-cms-core'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
+import { ownParagraphRowIds } from './relations.js'
 
 // Which required references still point at an item about to be deleted. A
 // required single-column reference RESTRICTs deletes of its target
@@ -26,32 +27,69 @@ function isRequiredSingleReferenceTo(f: ParsedField, targetType: string): boolea
   )
 }
 
+// Every required single reference to `targetType` the owners declare, with its owner.
+function requiredReferencesTo<O extends { fields: ParsedField[] }>(
+  owners: O[],
+  targetType: string
+): Array<{ owner: O; f: ParsedField }> {
+  return owners.flatMap((owner) =>
+    owner.fields.filter((f) => isRequiredSingleReferenceTo(f, targetType)).map((f) => ({ owner, f }))
+  )
+}
+
+// The required uses of an item, split in two. `others` lists the rows that
+// make a delete refuse. The item's own paragraph rows (direct and nested) are
+// not among them: they go with the item. `fromOwnParagraphs` says one of those
+// rows refers back to the item, so the delete routes must remove the
+// paragraphs before the row, which RESTRICT would refuse otherwise.
+export type RequiredReferrers = { others: ReferrerCount[]; fromOwnParagraphs: boolean }
+
 export async function findRequiredReferrers(
   db: DrizzlePostgresInstance,
   registry: SchemaRegistry,
   targetType: string,
   id: string
-): Promise<ReferrerCount[]> {
-  const owners = [
-    ...Object.values(registry.content_types),
-    ...Object.values(registry.taxonomy_types),
-    ...Object.values(registry.paragraph_types),
-  ]
-  const out: ReferrerCount[] = []
-  for (const owner of owners) {
-    for (const f of owner.fields) {
-      if (!isRequiredSingleReferenceTo(f, targetType)) continue
-      // A reference to its own type may point at the item itself. Postgres
-      // deletes such a row under RESTRICT, so it is not a use to refuse.
-      const notSelf = owner.name === targetType ? sql` AND id <> ${id}` : sql``
-      const r = await db.execute(
-        sql`SELECT count(*)::int AS n FROM ${sql.raw(quoteIdent(owner.db.table_name))} WHERE ${sql.raw(quoteIdent(f.db_column!.column_name))} = ${id}${notSelf}`
-      )
-      const n = (r.rows[0] as { n: number }).n
-      if (n > 0) out.push({ type_label: owner.label, field_label: f.label, count: n })
-    }
+): Promise<RequiredReferrers> {
+  const targetFields =
+    registry.content_types[targetType]?.fields ?? registry.taxonomy_types[targetType]?.fields ?? []
+  const itemOwners = [...Object.values(registry.content_types), ...Object.values(registry.taxonomy_types)]
+  const itemFields = requiredReferencesTo(itemOwners, targetType)
+  const paragraphFields = requiredReferencesTo(Object.values(registry.paragraph_types), targetType)
+
+  // Paragraph rows are counted apart: the item's own rows against everyone
+  // else's. The own ids are read once, and only when a paragraph field refers.
+  const ownIds = paragraphFields.length > 0 ? await ownParagraphRowIds(db, registry, targetFields, id) : []
+
+  // Each count is independent, so they run together. Promise.all keeps their
+  // order, so the refusal lists its locations in schema order.
+  const [itemCounts, paragraphCounts] = await Promise.all([
+    Promise.all(
+      itemFields.map(async ({ owner, f }) => {
+        // A reference to its own type may point at the item itself. Postgres
+        // deletes such a row under RESTRICT, so it is not a use to refuse.
+        const notSelf = owner.name === targetType ? sql` AND id <> ${id}` : sql``
+        const r = await db.execute(
+          sql`SELECT count(*)::int AS n FROM ${sql.raw(quoteIdent(owner.db.table_name))} WHERE ${sql.raw(quoteIdent(f.db_column!.column_name))} = ${id}${notSelf}`
+        )
+        return { owner, f, n: (r.rows[0] as { n: number }).n, own: 0 }
+      })
+    ),
+    Promise.all(
+      paragraphFields.map(async ({ owner, f }) => {
+        const r = await db.execute(
+          sql`SELECT count(*)::int AS n, count(*) FILTER (WHERE id = ANY(${sql.param(ownIds)}::uuid[]))::int AS own FROM ${sql.raw(quoteIdent(owner.db.table_name))} WHERE ${sql.raw(quoteIdent(f.db_column!.column_name))} = ${id}`
+        )
+        const { n, own } = r.rows[0] as { n: number; own: number }
+        return { owner, f, n, own }
+      })
+    ),
+  ])
+
+  const others: ReferrerCount[] = []
+  for (const { owner, f, n, own } of [...itemCounts, ...paragraphCounts]) {
+    if (n - own > 0) others.push({ type_label: owner.label, field_label: f.label, count: n - own })
   }
-  return out
+  return { others, fromOwnParagraphs: paragraphCounts.some((c) => c.own > 0) }
 }
 
 export function inUseMessage(referrers: ReferrerCount[]): string {

@@ -42,4 +42,14 @@ describe('errorHandler', () => {
     expect(res.status).toBe(404)
     expect(await res.json()).toEqual({ ok: false, error: { code: 'NOT_FOUND', message: 'No such post' } })
   })
+
+  it('hides an error whose code is a prototype key', async () => {
+    // MUTATION: keep `in ERROR_STATUS_MAP`. toString is then "deliberate" and
+    // its message is sent.
+    const res = await appThrowing(Object.assign(new Error('internal detail'), { code: 'toString' })).request('/boom')
+    expect(res.status).toBe(500)
+    const text = await res.text()
+    expect(JSON.parse(text)).toEqual({ ok: false, error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } })
+    expect(text).not.toContain('internal detail')
+  })
 })

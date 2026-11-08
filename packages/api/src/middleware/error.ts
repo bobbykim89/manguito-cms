@@ -39,7 +39,7 @@ export const errorHandler: ErrorHandler = (err, c) => {
   // driver's code such as Postgres SQLSTATE '23503') may carry SQL, values or
   // internals: the client gets a generic message and the log keeps the rest.
   const raw = (err as ApiError).code
-  const deliberate = raw !== undefined && raw !== 'INTERNAL_ERROR' && (raw as string) in ERROR_STATUS_MAP
+  const deliberate = raw !== undefined && raw !== 'INTERNAL_ERROR' && Object.hasOwn(ERROR_STATUS_MAP, raw as string)
   if (!deliberate) {
     return c.json({ ok: false, error: { code: 'INTERNAL_ERROR', message: 'Internal server error' } }, 500)
   }

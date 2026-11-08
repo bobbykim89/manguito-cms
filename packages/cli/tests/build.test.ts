@@ -138,6 +138,21 @@ describe('runBuild', () => {
     exitSpy.mockRestore()
   })
 
+  it('prints schema deprecations', async () => {
+    // MUTATION: drop printSchemaDeprecations from runBuild. A deprecated schema
+    // construct then builds without telling the author. Warnings go to stdout.
+    vi.mocked(findSchemaDeprecations).mockReturnValue([{
+      source_file: 'schemas/content-types/post.json',
+      type_name: 'post',
+      field_name: 'tags',
+      message: 'uses a deprecated construct',
+    }])
+
+    await runBuild({}, { cwd: FAKE_CWD })
+
+    expect(process.stdout.write).toHaveBeenCalledWith(expect.stringContaining('uses a deprecated construct'))
+  })
+
   it('stops on schema reference errors before any codegen write', async () => {
     // MUTATION: skip validateCrossReferences in runBuild (only `manguito
     // validate` ran it before #65). A paragraph many-to-many reference then

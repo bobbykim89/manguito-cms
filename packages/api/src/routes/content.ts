@@ -18,6 +18,19 @@ import {
 
 export type ContentRepos = Record<string, ContentRepository<unknown>>
 
+// The programmatic values a resolver set, by field name. Presence, not
+// `!== undefined`: resolveList sets only on_list fields, and a field it skipped
+// must stay absent rather than become a present undefined. Own keys only: a
+// skipped field named `constructor` must not pick up Object.prototype's.
+export function pickProgrammatic(
+  resolved: Record<string, unknown>,
+  names: readonly string[]
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const name of names) if (Object.hasOwn(resolved, name)) out[name] = resolved[name]
+  return out
+}
+
 // ─── Response projection order ────────────────────────────────────────────────
 //
 // Every read response is projected from the raw row exactly once, with the served
@@ -59,17 +72,6 @@ export function registerPublicContentRoutes(
   // their names are the same in both. (A computed field that reuses a live
   // version's field name is an authoring mistake; see the 2f spec's Residuals.)
   const forResolver = resolverProjectors ?? projectors
-
-  function pickProgrammatic(
-    resolved: Record<string, unknown>,
-    names: readonly string[]
-  ): Record<string, unknown> {
-    const out: Record<string, unknown> = {}
-    // `in`, not `!== undefined`: resolveList sets only on_list fields, and a
-    // field it skipped must stay absent rather than become a present undefined.
-    for (const name of names) if (name in resolved) out[name] = resolved[name]
-    return out
-  }
 
   async function respondItem(
     row: Record<string, unknown>,

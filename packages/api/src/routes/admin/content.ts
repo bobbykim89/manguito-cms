@@ -37,6 +37,7 @@ import {
   checkRequiredInParagraphItems,
   findMissingReferences,
   isMissing,
+  paragraphTypeOf,
   type RelationInputError,
 } from '../../relation-input.js'
 import type { createPermissionMiddleware } from '../../middleware/permission.js'
@@ -63,15 +64,13 @@ async function loadParagraphRows(
   fieldName: string
 ): Promise<Record<string, unknown>[]> {
   const result = await db.execute(
-    sql`SELECT * FROM ${sql.raw(quoteIdent(pType.db.table_name))} WHERE parent_id = ${parentId} AND parent_field = ${fieldName} ORDER BY "order" ASC`
+    sql`SELECT * FROM ${sql.raw(quoteIdent(pType.db.table_name))} WHERE parent_id = ${parentId} AND parent_field = ${fieldName} ORDER BY "order" ASC, id ASC`
   )
   const rows = result.rows as Record<string, unknown>[]
 
   for (const nf of pType.fields) {
     if (nf.db_column !== null) continue
-    const comp = nf.ui_component as { component: string; ref?: string }
-    if (comp.component !== 'paragraph-embed' || !comp.ref) continue
-    const nType = registry.paragraph_types[comp.ref]
+    const nType = paragraphTypeOf(nf, registry)
     if (!nType) continue
     for (const row of rows) {
       row[nf.name] = oneOrMany(
@@ -100,21 +99,26 @@ async function loadRelationsForEdit(
   id: string,
   row: Record<string, unknown>
 ): Promise<void> {
-  for (const f of fields) {
-    if (f.db_column === null) {
-      const comp = f.ui_component as { component: string; ref?: string }
-      if (comp.component !== 'paragraph-embed' || !comp.ref) continue
-      const pType = registry.paragraph_types[comp.ref]
-      if (!pType) continue
-      row[f.name] = oneOrMany(relationCardinality(f) ?? 'many', await loadParagraphRows(db, registry, pType, id, f.name))
-    } else if (f.db_column.junction) {
-      const j = f.db_column.junction
-      const r = await db.execute(
-        sql`SELECT ${sql.raw(quoteIdent(j.right_column))} FROM ${sql.raw(quoteIdent(j.table_name))} WHERE ${sql.raw(quoteIdent(j.left_column))} = ${id}${junctionOrderBy(j)}`
-      )
-      row[f.name] = r.rows.map((linked) => (linked as Record<string, unknown>)[j.right_column] as string)
-    }
-  }
+  // The fields load together, then land on the row in field order, so the
+  // row's keys come out the same way every time.
+  const loaded = await Promise.all(
+    fields.map(async (f): Promise<[string, unknown] | null> => {
+      if (f.db_column === null) {
+        const pType = paragraphTypeOf(f, registry)
+        if (!pType) return null
+        return [f.name, oneOrMany(relationCardinality(f) ?? 'many', await loadParagraphRows(db, registry, pType, id, f.name))]
+      }
+      if (f.db_column.junction) {
+        const j = f.db_column.junction
+        const r = await db.execute(
+          sql`SELECT ${sql.raw(quoteIdent(j.right_column))} FROM ${sql.raw(quoteIdent(j.table_name))} WHERE ${sql.raw(quoteIdent(j.left_column))} = ${id}${junctionOrderBy(j)}`
+        )
+        return [f.name, [...new Set(r.rows.map((linked) => (linked as Record<string, unknown>)[j.right_column] as string))]]
+      }
+      return null
+    })
+  )
+  for (const entry of loaded) if (entry) row[entry[0]] = entry[1]
 }
 
 // What a publish check on an update reads: the stored row (label-keyed), with
@@ -130,7 +134,7 @@ async function valuesForPublishCheck(
   body: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
   const stored = { ...storedLabels }
-  if (db) await loadRelationsForEdit(db, registry, requiredFields.filter((f) => !(f.name in body)), id, stored)
+  if (db) await loadRelationsForEdit(db, registry, requiredFields.filter((f) => !Object.hasOwn(body, f.name)), id, stored)
   return { ...stored, ...body }
 }
 
@@ -149,11 +153,9 @@ async function persistRelationFields(
 ): Promise<MediaDelta[]> {
   const deltas: MediaDelta[] = []
   for (const f of fields) {
-    if (!(f.name in body)) continue
+    if (!Object.hasOwn(body, f.name)) continue
     if (f.db_column === null) {
-      const comp = f.ui_component as { component: string; ref?: string }
-      if (comp.component !== 'paragraph-embed' || !comp.ref) continue
-      const pType = registry.paragraph_types[comp.ref]
+      const pType = paragraphTypeOf(f, registry)
       if (!pType) continue
       deltas.push(await persistParagraphField(db, itemId, ownerTable, f.name, pType, paragraphItems(f, body[f.name]), registry))
     } else if (f.db_column.junction) {
@@ -163,6 +165,103 @@ async function persistRelationFields(
     }
   }
   return deltas
+}
+
+// Removes every paragraph row an item owns, nested rows included, and returns
+// the media those rows held as removals, for the caller to release. Paragraph
+// rows have no FK back to their parent, so a delete that skipped them would
+// leak them.
+async function deleteOwnParagraphs(
+  db: DrizzlePostgresInstance,
+  registry: SchemaRegistry,
+  fields: ParsedField[],
+  itemId: string
+): Promise<MediaDelta[]> {
+  const deltas: MediaDelta[] = []
+  for (const f of fields) {
+    const pType = paragraphTypeOf(f, registry)
+    if (!pType) continue
+    deltas.push(await deleteParagraphField(db, itemId, f.name, pType, registry))
+  }
+  return deltas
+}
+
+// The media an item's deleted paragraphs held that the item no longer uses,
+// when the item itself survives. Counts are per item (media-references.ts), so
+// an id the item still holds in a top-level media field stays counted.
+function releasedFromParagraphsOnly(paragraphDeltas: MediaDelta[], topLevel: MediaDelta): MediaDelta {
+  const stillHeld = new Set(topLevel.removed)
+  return { added: [], removed: mergeMediaDeltas(...paragraphDeltas).removed.filter((mediaId) => !stillHeld.has(mediaId)) }
+}
+
+// A delete either removed the item or was refused, with the 409's message.
+type DeleteOutcome = { ok: true } | { ok: false; message: string }
+
+// Deletes a content item or taxonomy term that exists, with its paragraph rows
+// and media references. Both delete routes run it after their 404 check, so
+// they refuse and clean up the same way.
+async function deleteItemCascade(
+  db: DrizzlePostgresInstance | undefined,
+  registry: SchemaRegistry,
+  mediaRepo: MediaRepository,
+  target: {
+    typeName: string
+    fields: ParsedField[]
+    mediaFields: ParsedField[]
+    repo: { delete(id: string): Promise<void> }
+    id: string
+    // The stored row, storage-keyed: its top-level media ids.
+    row: Record<string, unknown>
+  }
+): Promise<DeleteOutcome> {
+  const { typeName, fields, mediaFields, repo, id, row } = target
+
+  // Refuse while a required reference still points here (docs/adr/core/0008).
+  // The item's own paragraph rows are not uses: they go with it.
+  const referrers = db
+    ? await findRequiredReferrers(db, registry, typeName, id)
+    : { others: [], fromOwnParagraphs: false }
+  if (referrers.others.length > 0) return { ok: false, message: inUseMessage(referrers.others) }
+
+  const topLevel = topLevelMediaDelta(mediaFields, row, null)
+
+  // Delete the row FIRST. If a use slipped in after the check, RESTRICT
+  // refuses here, before anything else has changed: there are no
+  // transactions, so cleaning up first would lose the paragraphs and media
+  // counts of an item that then survives. Once the row is gone, its paragraph
+  // rows go, and every media reference the item held is released.
+  if (!db || !referrers.fromOwnParagraphs) {
+    try {
+      await repo.delete(id)
+    } catch (err) {
+      if (isForeignKeyViolation(err)) return { ok: false, message: IN_USE_RACE_MESSAGE }
+      throw err
+    }
+    const paragraphDeltas = db ? await deleteOwnParagraphs(db, registry, fields, id) : []
+    await applyMediaReferenceDelta(mergeMediaDeltas(topLevel, ...paragraphDeltas), mediaRepo)
+    return { ok: true }
+  }
+
+  // The exception: one of the item's own paragraphs refers back to it, and
+  // RESTRICT would refuse the row while that paragraph exists. Its paragraphs
+  // go first then. The trade-off: a use added between the check and the
+  // delete, in this case only, leaves the item without its paragraphs.
+  //
+  // Not covered: if deleteOwnParagraphs itself fails partway, some rows are
+  // gone and others remain. Which media the remaining rows still hold is not
+  // known without reading them again, so nothing is released and the error
+  // propagates. Those counts stay too high, which never orphans media in use.
+  const paragraphDeltas = await deleteOwnParagraphs(db, registry, fields, id)
+  try {
+    await repo.delete(id)
+  } catch (err) {
+    // The paragraphs are gone, whatever the error, but the item stays.
+    await applyMediaReferenceDelta(releasedFromParagraphsOnly(paragraphDeltas, topLevel), mediaRepo)
+    if (isForeignKeyViolation(err)) return { ok: false, message: IN_USE_RACE_MESSAGE }
+    throw err
+  }
+  await applyMediaReferenceDelta(mergeMediaDeltas(topLevel, ...paragraphDeltas), mediaRepo)
+  return { ok: true }
 }
 
 async function lookupBasePathId(db: DrizzlePostgresInstance, pathOrName: string): Promise<string | null> {
@@ -358,8 +457,6 @@ export function registerAdminContentRoutes(
       (f) => f.field_type === 'image' || f.field_type === 'video' || f.field_type === 'file'
     )
 
-    const paragraphFieldDefs = contentType.fields.filter((f) => f.db_column === null)
-
     // Free-text search target — text/plain fields (mirrors the "first text field is
     // the title" convention the admin frontend already uses) plus slug, when present.
     // Singleton (only_one) content types have no slug column at all.
@@ -554,7 +651,7 @@ export function registerAdminContentRoutes(
         }
         for (const f of columnBackedFields) {
           const key = f.db_column.column_name
-          if (!(key in storageBody)) continue
+          if (!Object.hasOwn(storageBody, key)) continue
           columnData[key] = storageBody[key]
         }
 
@@ -610,7 +707,7 @@ export function registerAdminContentRoutes(
           )
         }
 
-        if (!contentType.only_one && 'slug' in body) {
+        if (!contentType.only_one && Object.hasOwn(body, 'slug')) {
           const slug = body['slug']
           if (typeof slug !== 'string' || slug.trim() === '') {
             return c.json(
@@ -699,11 +796,11 @@ export function registerAdminContentRoutes(
         // boundary, so each value is found under its column name.
         const patchColumnBackedFields = contentType.fields.filter(isColumnBacked)
         const patchData: Record<string, unknown> = {}
-        if (!contentType.only_one && 'slug' in body) patchData['slug'] = body['slug']
-        if ('published' in body) patchData['published'] = body['published']
+        if (!contentType.only_one && Object.hasOwn(body, 'slug')) patchData['slug'] = body['slug']
+        if (Object.hasOwn(body, 'published')) patchData['published'] = body['published']
         for (const f of patchColumnBackedFields) {
           const key = f.db_column.column_name
-          if (!(key in storageBody)) continue
+          if (!Object.hasOwn(storageBody, key)) continue
           patchData[key] = storageBody[key]
         }
 
@@ -777,40 +874,17 @@ export function registerAdminContentRoutes(
           )
         }
 
-        // Refuse while a required reference still points here (docs/adr/core/0008).
-        const referrers = db ? await findRequiredReferrers(db, registry, typeName, id) : []
-        if (referrers.length > 0) {
-          return c.json({ ok: false, error: { code: 'ITEM_IN_USE', message: inUseMessage(referrers) } }, 409)
+        const outcome = await deleteItemCascade(db, registry, mediaRepo, {
+          typeName,
+          fields: contentType.fields,
+          mediaFields,
+          repo,
+          id,
+          row: item as Record<string, unknown>,
+        })
+        if (!outcome.ok) {
+          return c.json({ ok: false, error: { code: 'ITEM_IN_USE', message: outcome.message } }, 409)
         }
-
-        // Delete the row FIRST. If a use slipped in after the check, RESTRICT
-        // refuses here, before anything else has changed: there are no
-        // transactions, so cleaning up first would lose the paragraphs and
-        // media counts of an item that then survives.
-        try {
-          await repo.delete(id)
-        } catch (err) {
-          if (isForeignKeyViolation(err)) {
-            return c.json({ ok: false, error: { code: 'ITEM_IN_USE', message: IN_USE_RACE_MESSAGE } }, 409)
-          }
-          throw err
-        }
-
-        // The row is gone. Paragraph rows have no FK back to it, so remove them
-        // now, and release every media reference the item held.
-        const mediaDeltas: MediaDelta[] = [
-          topLevelMediaDelta(mediaFields, item as Record<string, unknown>, null),
-        ]
-        if (db) {
-          for (const f of paragraphFieldDefs) {
-            const comp = f.ui_component as { component: string; ref?: string }
-            if (comp.component !== 'paragraph-embed' || !comp.ref) continue
-            const pType = registry.paragraph_types[comp.ref]
-            if (!pType) continue
-            mediaDeltas.push(await deleteParagraphField(db, id, f.name, pType, registry))
-          }
-        }
-        await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
 
         return c.json({ ok: true })
       }
@@ -842,8 +916,6 @@ export function registerAdminContentRoutes(
     const mediaFields = taxonomyType.fields.filter(
       (f) => f.field_type === 'image' || f.field_type === 'video' || f.field_type === 'file'
     )
-
-    const paragraphFieldDefs = taxonomyType.fields.filter((f) => f.db_column === null)
 
     const searchableColumns = [
       ...taxonomyType.fields
@@ -962,7 +1034,7 @@ export function registerAdminContentRoutes(
         }
         for (const f of taxColumnBackedFields) {
           const key = f.db_column.column_name
-          if (!(key in storageBody)) continue
+          if (!Object.hasOwn(storageBody, key)) continue
           taxColumnData[key] = storageBody[key]
         }
 
@@ -1035,10 +1107,10 @@ export function registerAdminContentRoutes(
         // boundary, so each value is found under its column name.
         const taxPatchColumnBackedFields = taxonomyType.fields.filter(isColumnBacked)
         const taxPatchData: Record<string, unknown> = {}
-        if ('published' in body) taxPatchData['published'] = body['published']
+        if (Object.hasOwn(body, 'published')) taxPatchData['published'] = body['published']
         for (const f of taxPatchColumnBackedFields) {
           const key = f.db_column.column_name
-          if (!(key in storageBody)) continue
+          if (!Object.hasOwn(storageBody, key)) continue
           taxPatchData[key] = storageBody[key]
         }
 
@@ -1083,40 +1155,17 @@ export function registerAdminContentRoutes(
           )
         }
 
-        // Refuse while a required reference still points here (docs/adr/core/0008).
-        const referrers = db ? await findRequiredReferrers(db, registry, typeName, id) : []
-        if (referrers.length > 0) {
-          return c.json({ ok: false, error: { code: 'ITEM_IN_USE', message: inUseMessage(referrers) } }, 409)
+        const outcome = await deleteItemCascade(db, registry, mediaRepo, {
+          typeName,
+          fields: taxonomyType.fields,
+          mediaFields,
+          repo,
+          id,
+          row: item as Record<string, unknown>,
+        })
+        if (!outcome.ok) {
+          return c.json({ ok: false, error: { code: 'ITEM_IN_USE', message: outcome.message } }, 409)
         }
-
-        // Delete the row FIRST. If a use slipped in after the check, RESTRICT
-        // refuses here, before anything else has changed: there are no
-        // transactions, so cleaning up first would lose the paragraphs and
-        // media counts of an item that then survives.
-        try {
-          await repo.delete(id)
-        } catch (err) {
-          if (isForeignKeyViolation(err)) {
-            return c.json({ ok: false, error: { code: 'ITEM_IN_USE', message: IN_USE_RACE_MESSAGE } }, 409)
-          }
-          throw err
-        }
-
-        // The row is gone. Paragraph rows have no FK back to it, so remove them
-        // now, and release every media reference the item held.
-        const mediaDeltas: MediaDelta[] = [
-          topLevelMediaDelta(mediaFields, item as Record<string, unknown>, null),
-        ]
-        if (db) {
-          for (const f of paragraphFieldDefs) {
-            const comp = f.ui_component as { component: string; ref?: string }
-            if (comp.component !== 'paragraph-embed' || !comp.ref) continue
-            const pType = registry.paragraph_types[comp.ref]
-            if (!pType) continue
-            mediaDeltas.push(await deleteParagraphField(db, id, f.name, pType, registry))
-          }
-        }
-        await applyMediaReferenceDelta(mergeMediaDeltas(...mediaDeltas), mediaRepo)
 
         return c.json({ ok: true })
       }

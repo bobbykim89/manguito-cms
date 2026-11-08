@@ -1,14 +1,13 @@
 import { sql } from 'drizzle-orm'
-import { parseSchema, buildSchemaRegistry, hashPassword } from '@bobbykim/manguito-cms-core'
+import { parseSchema, buildSchemaRegistry } from '@bobbykim/manguito-cms-core'
 import type {
   ParsedField,
   ParsedSchema,
   SchemaRegistry,
   SystemField,
 } from '@bobbykim/manguito-cms-core'
-import { seedSystemTables } from '@bobbykim/manguito-cms-db'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
-import { testParsedSchema, testRoleUsers } from '@bobbykim/manguito-cms-test-utils'
+import { testParsedSchema } from '@bobbykim/manguito-cms-test-utils'
 
 // Shared fixture for the relation-cardinality suites. The registry is built
 // through core's real parser (PLAN-QUALITY rule 4), so every ui_component.rel,
@@ -16,8 +15,9 @@ import { testParsedSchema, testRoleUsers } from '@bobbykim/manguito-cms-test-uti
 // table SQL is derived from that parsed output, not restated, so a change to a
 // delete rule reaches these tables.
 //
-// Each suite passes its own prefix: vitest runs files in parallel, and every
-// type name, table and base path below derives from the prefix.
+// Each suite passes its own prefix: every type name, table and base path below
+// derives from the prefix, so suites never collide on names even though
+// api/vitest.config.ts runs files serially (fileParallelism: false).
 
 export type CardinalityFixture = {
   registry: SchemaRegistry
@@ -95,6 +95,7 @@ export function makeCardinalityFixture(prefix: string): CardinalityFixture {
                   { name: 'published_on', label: 'Published on', type: 'date', required: false },
                   { name: 'rating', label: 'Rating', type: 'integer', min: 1, max: 5, required: false },
                   { name: 'score', label: 'Score', type: 'float', required: false },
+                  { name: 'constructor', label: 'Constructor', type: 'text/plain', required: false },
                 ],
               },
             },
@@ -226,20 +227,4 @@ export async function insertParagraph(
 export async function countRows(db: DrizzlePostgresInstance, table: string, where: string): Promise<number> {
   const r = await db.execute(sql.raw(`SELECT count(*)::int AS n FROM "${table}" WHERE ${where}`))
   return (r.rows[0] as { n: number }).n
-}
-
-// Other suites truncate roles/users without restoring globalSetup's seed, and
-// these suites authenticate as the seeded users, so they re-seed in beforeAll.
-// Repeats globalSetup.ts steps 3-4.
-export async function seedTestUsers(db: DrizzlePostgresInstance): Promise<void> {
-  await seedSystemTables(db, testParsedSchema)
-  for (const user of testRoleUsers) {
-    const hash = await hashPassword(user.password)
-    await db.execute(sql`DELETE FROM users WHERE id = ${user.id} OR email = ${user.email}`)
-    await db.execute(
-      sql`INSERT INTO users (id, email, password_hash, role_id, token_version, must_change_password)
-          SELECT ${user.id}, ${user.email}, ${hash}, r.id, ${user.token_version}, ${user.must_change_password}
-          FROM roles r WHERE r.name = ${user.role}`,
-    )
-  }
 }

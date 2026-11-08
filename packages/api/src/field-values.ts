@@ -37,7 +37,7 @@ export function emptyValuesToNull(
 ): Record<string, unknown> {
   const out: Record<string, unknown> = { ...body }
   for (const f of fields) {
-    if (!(f.name in out)) continue
+    if (!Object.hasOwn(out, f.name)) continue
     const value = out[f.name]
     if (value === '' && EMPTY_MEANS_NULL.has(f.field_type)) {
       out[f.name] = null
@@ -186,7 +186,7 @@ export function checkFieldValues(
 ): RelationInputError[] {
   const errors: RelationInputError[] = []
   for (const f of fields) {
-    if (!(f.name in body) || f.removed === true) continue
+    if (!Object.hasOwn(body, f.name) || f.removed === true) continue
     const name = `${path}${f.name}`
     const message = valueError(f, body[f.name], name)
     if (message) errors.push({ field: name, message })
