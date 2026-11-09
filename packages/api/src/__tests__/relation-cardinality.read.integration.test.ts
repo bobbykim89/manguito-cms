@@ -171,3 +171,32 @@ describe('stable relation reads', () => {
     expect((inc.body.data['tags'] as Array<Record<string, unknown>>).map((t) => t['id'])).toEqual([tagA, tagB])
   })
 })
+
+describe('chip labels read from the admin list (#57)', () => {
+  beforeAll(async () => {
+    // A paragraph on tag A, so "no relations" is checked against data that exists.
+    await insertParagraph(db, fx.tables.link, {
+      parentId: tagA, parentType: fx.tables.tag, parentField: 'tag_link', order: 0, values: { url: 'u-tag' },
+    })
+  })
+
+  it('returns exactly the items named by repeated filter[id], with no relations', async () => {
+    // MUTATION: keep only the last filter[id] in parseFilters (assign instead
+    // of collecting an array). The admin's chip labels then get one row and
+    // every other chip shows its bare id.
+    const res = await authenticatedRequest(
+      app, 'admin', 'GET',
+      `/admin/api/taxonomy/${fx.names.tag}?filter[id]=${tagA}&filter[id]=${tagB}&per_page=2`
+    )
+    expect(res.status).toBe(200)
+    const rows = ((await res.json()) as { data: Array<Record<string, unknown>> }).data
+    expect(rows.map((r) => [r['id'], r['name']]).sort()).toEqual([[tagA, 'tag-a'], [tagB, 'tag-b']].sort())
+    // The list leaves relations out unless asked: the tag's paragraph field
+    // isn't loaded.
+    expect(rows.every((r) => !('tag_link' in r))).toBe(true)
+    // The item read does load it, so the list really is the lighter read.
+    const item = await authenticatedRequest(app, 'admin', 'GET', `/admin/api/taxonomy/${fx.names.tag}/${tagA}`)
+    const full = ((await item.json()) as { data: Record<string, unknown> }).data
+    expect(full['tag_link']).toMatchObject({ url: 'u-tag' })
+  })
+})
