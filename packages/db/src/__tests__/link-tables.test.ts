@@ -6,14 +6,16 @@ const sha8 = (name: string) =>
   createHash('sha256').update(name).digest('hex').slice(0, 8)
 
 describe('linkUniqueName', () => {
-  // MUTATION: a plain `<name>_unique` with no fallback gives 64+ characters
-  // for a 57-character name and fails the 63-character assertion.
+  // MUTATION: a fallback that triggers too early (at 56 characters or more)
+  // fails the plain `<name>_unique` assertion.
   it('appends _unique when the result fits in 63 characters', () => {
     const name = 'a'.repeat(56)
     expect(linkUniqueName(name)).toBe(`${name}_unique`)
     expect(linkUniqueName(name)).toHaveLength(63)
   })
 
+  // MUTATION: a plain `<name>_unique` with no fallback gives 64 characters
+  // for a 57-character name and fails the 63-character assertion.
   it('falls back to a truncated, hashed name of exactly 63 characters', () => {
     const name = 'b'.repeat(57)
     const result = linkUniqueName(name)
@@ -31,6 +33,8 @@ describe('linkUniqueName', () => {
     expect(linkUniqueName(a)).not.toBe(linkUniqueName(b))
   })
 
+  // MUTATION: mixing randomness or a timestamp into the hash gives a
+  // different name on each call and fails the equality assertion.
   it('is deterministic', () => {
     const name = 'd'.repeat(60)
     expect(linkUniqueName(name)).toBe(linkUniqueName(name))
