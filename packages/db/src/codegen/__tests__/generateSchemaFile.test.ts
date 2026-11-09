@@ -10,6 +10,7 @@ import type {
 } from '@bobbykim/manguito-cms-core'
 import { parseSchema } from '@bobbykim/manguito-cms-core'
 import { testParsedSchema } from '@bobbykim/manguito-cms-test-utils'
+import { linkUniqueName } from '../../link-tables'
 import {
   generateFieldColumn,
   generateSchemaFile,
@@ -532,6 +533,60 @@ describe('generateSchemaFile — junction tables', () => {
     )
     expect(output).toContain(
       ".references(() => content_tag.id, { onDelete: 'cascade' })",
+    )
+  })
+
+  function registryWithLink(table: string) {
+    const registry = makeEmptyRegistry()
+    const jt = {
+      table_name: table,
+      left_column: 'left_id',
+      right_column: 'right_id',
+      right_table: 'content_tag',
+      order_column: false,
+    }
+    registry.content_types['post'] = makeContentType(
+      'post',
+      [
+        makeField(
+          'tags',
+          {
+            column_name: 'tag_id',
+            column_type: 'uuid',
+            nullable: false,
+            junction: jt,
+          },
+          'reference',
+        ),
+      ],
+      [jt],
+    )
+    return registry
+  }
+
+  // MUTATION: emitting `s.unique().on(...)` with no name fails this case.
+  it('link table declares a named unique (left, right) constraint', () => {
+    const output = generateSchemaFile(
+      registryWithLink('junction_content_post_tags'),
+    )
+    const start = output.indexOf('export const junction_content_post_tags')
+    const def = output.slice(start)
+    expect(def).toContain('(table) => ({')
+    expect(def).toContain(
+      "s.unique('junction_content_post_tags_unique').on(table.left_id, table.right_id)",
+    )
+  })
+
+  // MUTATION: emitting `s.unique().on(...)` with no name, or `<name>_unique`
+  // without the long-name fallback, fails this case.
+  it('link table with a 60-character name uses the shortened unique name', () => {
+    const table = `junction_content_post_${'t'.repeat(38)}`
+    expect(table).toHaveLength(60)
+    const output = generateSchemaFile(registryWithLink(table))
+    const expected = linkUniqueName(table)
+    expect(expected).toHaveLength(63)
+    expect(output).toContain(
+      `s.unique('${expected}').on(table.left_id, table.right_id)`,
     )
   })
 

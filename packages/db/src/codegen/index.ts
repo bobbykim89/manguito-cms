@@ -5,6 +5,7 @@ import type {
   SchemaRegistry,
   SystemField,
 } from '@bobbykim/manguito-cms-core'
+import { linkUniqueName } from '../link-tables'
 
 // ─── File Header ──────────────────────────────────────────────────────────────
 
@@ -282,7 +283,10 @@ function generateJunctionTables(registry: SchemaRegistry): string {
         `      .notNull()`,
         `      .references(() => ${rightVar}.id, { onDelete: 'cascade' }),`,
         ...(orderLine ? [orderLine] : []),
-        `  }`,
+        `  },`,
+        `  (table) => ({`,
+        `    pair: s.unique('${linkUniqueName(jt.table_name)}').on(table.${jt.left_column}, table.${jt.right_column}),`,
+        `  })`,
         `)`,
       ].join('\n')
 

@@ -9,6 +9,8 @@ export type { DrizzlePostgresInstance } from './types'
 
 export { generateSchemaFile } from './codegen/index'
 
+export { linkDedupeSql, linkUniqueName } from './link-tables'
+
 export { seedSystemTables } from './seeder/index'
 export type { SeedResult, SeederOptions } from './types'
 
