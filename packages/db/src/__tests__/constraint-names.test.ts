@@ -139,7 +139,7 @@ describe('findConstraintNameCollisions — two foreign keys of one table (K2)', 
     expect(errors[0]!.message).toContain(`"${foreignKeyName('content_post', one, 'taxonomy_tag', 'id')}"`)
     expect(errors[0]!.message).toContain('Postgres keeps only the first 63 characters of a name')
     expect(errors[0]!.message).toContain(
-      `rename field "${one}" or "${two}" so that the two differ within their first 50 characters, or shorten the name of type "content--post"`,
+      `rename field "${one}" or rename field "${two}" so that the two differ within their first 50 characters, or shorten the name of type "content--post"`,
     )
   })
 
@@ -159,6 +159,31 @@ describe('findConstraintNameCollisions — two foreign keys of one table (K2)', 
     const [error] = collisions(registryOf(TAG, content('content--post', [ref(one), pinned])))
     expect(error!.message).toContain(`field "pinned" (column "${two}")`)
   })
+
+  it('suggests changing a declared column, and changing it clears the collision', () => {
+    // MUTATION: suggest renaming field "pinned". Its constraint is named after
+    // the declared column, so a renamed field still collides; the message
+    // must name the column change, which this test then applies.
+    const pinned = { ...ref('pinned'), column: two }
+    const [error] = collisions(registryOf(TAG, content('content--post', [ref(one), pinned])))
+    expect(error!.message).toContain(`or change the column "${two}" of field "pinned" so that the two differ`)
+    const changed = { ...pinned, column: `${'a'.repeat(suggested(error!) - 1)}b` }
+    expect(collisions(registryOf(TAG, content('content--post', [ref(one), changed])))).toEqual([])
+  })
+
+  it('names the longest type name that fits when the table leaves no room for a column, and that clears it', () => {
+    // MUTATION: suggest one character more (63 − shared + offset). A type of
+    // that length leaves the two foreign keys parting at character 64.
+    // content_<54 p's> is 62 characters, so both foreign keys keep only the table.
+    const type = (n: number) => `content--${'p'.repeat(n)}`
+    const errors = collisions(registryOf(TAG, content(type(54), [ref('r_one'), ref('r_two')])))
+    expect(errors).toHaveLength(1)
+    // The two part 3 characters after the table (`_r_`): 63 − 1 − 3 = 59 for the table, 60 for the type.
+    expect(errors[0]!.message).toContain(`shorten the name of type "${type(54)}" to at most 60 characters`)
+    const fixed = type(suggested(errors[0]!) - 'content--'.length)
+    expect(fixed).toHaveLength(60)
+    expect(collisions(registryOf(TAG, content(fixed, [ref('r_one'), ref('r_two')])))).toEqual([])
+  })
 })
 
 describe('findConstraintNameCollisions — two check constraints of one table (K3)', () => {
@@ -174,7 +199,7 @@ describe('findConstraintNameCollisions — two check constraints of one table (K
     const errors = collisions(registryOf(content('content--post', [enumField(one), enumField(two)])))
     expect(errors).toHaveLength(1)
     expect(errors[0]!.message).toContain(`"${one}_check"`)
-    expect(errors[0]!.message).toContain(`rename field "${one}" or "${two}" so that the two differ within their first 57 characters.`)
+    expect(errors[0]!.message).toContain(`rename field "${one}" or rename field "${two}" so that the two differ within their first 57 characters.`)
   })
 
   it('is cleared by the rename the message suggests', () => {
@@ -235,6 +260,19 @@ describe('findConstraintNameCollisions — names in more than one kind of constr
     expect(errors[0]!.message).toContain(`"${check}_check"`)
     expect(errors[0]!.message).toContain(`field "${fk}"`)
     expect(errors[0]!.message).toContain(`field "${check}"`)
+  })
+
+  it('suggests a length for the enum field, and shortening it to that clears the collision', () => {
+    // MUTATION: suggest 57 (63 − "_check".length). Here the foreign key's first
+    // 63 characters are `content_post_<44 x's>_check`, exactly what a 57-character
+    // column gives its check, so the collision would stay.
+    const fk = `${'x'.repeat(44)}_check_yyy`
+    const check = `content_post_${'x'.repeat(44)}_check`
+    const errors = collisions(registryOf(TAG, content('content--post', [ref(fk), enumField(check)])))
+    expect(errors).toHaveLength(1)
+    expect(errors[0]!.message).toContain(`shorten field "${check}" to at most 56 characters`)
+    const shortened = check.slice(0, suggested(errors[0]!))
+    expect(collisions(registryOf(TAG, content('content--post', [ref(fk), enumField(shortened)])))).toEqual([])
   })
 })
 

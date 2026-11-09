@@ -30,6 +30,11 @@ export function foreignKeyName(table: string, column: string, targetTable: strin
   return `${table}_${column}_${targetTable}_${targetColumn}_fk`
 }
 
+// The name `generateTableDef` gives an enum column's check constraint.
+export function checkConstraintName(column: string): string {
+  return `${column}_check`
+}
+
 // The name Postgres gives a primary key declared without one: `<table>_pkey`,
 // with the table part cut so the whole fits in 63 characters.
 function primaryKeyName(table: string): string {
@@ -39,8 +44,8 @@ function primaryKeyName(table: string): string {
 
 type Owner = ParsedContentType | ParsedTaxonomyType | ParsedParagraphType
 
+// Copied from `rawFieldPath` in packages/core/src/parser/validate.ts; keep the two in step.
 // Where a field sits in its raw schema file: inside a tab for a content type.
-// The same shape as core's TABLE_NAME_COLLISION errors use.
 function rawFieldPath(owner: Owner, field: ParsedField): string {
   if (owner.schema_type !== 'content-type') return `fields[${field.order}].name`
   const t = owner.ui.tabs.findIndex((tab) => tab.fields.includes(field.name))
@@ -48,12 +53,37 @@ function rawFieldPath(owner: Owner, field: ParsedField): string {
   return t < 0 ? `fields[${field.order}].name` : `fields[${t}].tab.fields[${i}].name`
 }
 
+// The column a field's constraints are named after, when a `column`
+// declaration keeps it apart from the field name.
+function declaredColumn(field: ParsedField): string | undefined {
+  const column = field.db_column?.column_name
+  return column !== undefined && column !== field.name ? column : undefined
+}
+
 // `field "a"`, with the column when a `column` declaration keeps it apart.
 function describeField(field: ParsedField): string {
-  const column = field.db_column?.column_name
-  return column !== undefined && column !== field.name
-    ? `field "${field.name}" (column "${column}")`
-    : `field "${field.name}"`
+  const column = declaredColumn(field)
+  return column !== undefined ? `field "${field.name}" (column "${column}")` : `field "${field.name}"`
+}
+
+// What to change so the field's constraint names change: the field name, or
+// the declared column, since renaming the field leaves a declared column as is.
+function renameOf(field: ParsedField): string {
+  const column = declaredColumn(field)
+  return column !== undefined ? `change the column "${column}" of field "${field.name}"` : `rename field "${field.name}"`
+}
+
+function shortenOf(field: ParsedField, room: number): string {
+  const column = declaredColumn(field)
+  return column !== undefined
+    ? `shorten the column "${column}" of field "${field.name}" to at most ${room} characters`
+    : `shorten field "${field.name}" to at most ${room} characters`
+}
+
+const commonPrefixLength = (a: string, b: string): number => {
+  let i = 0
+  while (i < a.length && i < b.length && a[i] === b[i]) i++
+  return i
 }
 
 type TableConstraint = { name: string; kind: 'foreign key' | 'check'; field: ParsedField }
@@ -71,7 +101,7 @@ function typeTableConstraints(owner: Owner): TableConstraint[] {
       names.push({ name: foreignKeyName(table, col.column_name, fk.table, fk.column), kind: 'foreign key', field })
     }
     if ((col.check_constraint?.length ?? 0) > 0) {
-      names.push({ name: `${col.column_name}_check`, kind: 'check', field })
+      names.push({ name: checkConstraintName(col.column_name), kind: 'check', field })
     }
   }
   return names
@@ -85,10 +115,15 @@ function typeTableMessage(owner: Owner, a: TableConstraint, b: TableConstraint):
   if (a.kind === 'foreign key' && b.kind === 'foreign key') {
     // `<table>_<column>_…`: the column starts after the table and one `_`.
     const room = LIMIT - 1 - table.length
+    // With no room for a column, only a shorter table separates the two. They
+    // part `shared` characters after the table name, so that point must fall
+    // within 63; the type name is the table name with `--` for its first `_`.
+    const shared = commonPrefixLength(a.name.slice(table.length), b.name.slice(table.length))
+    const maxType = LIMIT - 1 - shared + (owner.name.length - table.length)
     const fix =
       room < 1
-        ? `shorten the name of type "${owner.name}": its table name "${table}" leaves no room for a column in the first ${LIMIT} characters`
-        : `rename field "${a.field.name}" or "${b.field.name}" so that the two differ within their first ${room} characters, or shorten the name of type "${owner.name}"`
+        ? `shorten the name of type "${owner.name}" to at most ${maxType} characters: its table name "${table}" leaves no room for a column in the first ${LIMIT} characters`
+        : `${renameOf(a.field)} or ${renameOf(b.field)} so that the two differ within their first ${room} characters, or shorten the name of type "${owner.name}"`
     return (
       `The ${describeField(a.field)} and the ${describeField(b.field)} of "${owner.name}" get foreign keys ` +
       `"${a.name}" and "${b.name}". ${clash} To fix it, ${fix}.`
@@ -98,14 +133,19 @@ function typeTableMessage(owner: Owner, a: TableConstraint, b: TableConstraint):
     const room = LIMIT - '_check'.length
     return (
       `The ${describeField(a.field)} and the ${describeField(b.field)} of "${owner.name}" get check constraints ` +
-      `"${a.name}" and "${b.name}". ${clash} To fix it, rename field "${a.field.name}" or ` +
-      `"${b.field.name}" so that the two differ within their first ${room} characters.`
+      `"${a.name}" and "${b.name}". ${clash} To fix it, ${renameOf(a.field)} or ` +
+      `${renameOf(b.field)} so that the two differ within their first ${room} characters.`
     )
   }
+  // A foreign key and a check. A check name of at most 62 characters is kept
+  // whole and ends in `_check`, so it can match neither a whole foreign-key
+  // name (ending in `_fk`) nor a cut one (63 characters).
+  const check = a.kind === 'check' ? a : b
+  const room = LIMIT - 1 - '_check'.length
   return (
     `The ${a.kind} "${a.name}" of the ${describeField(a.field)} and the ${b.kind} "${b.name}" of the ` +
     `${describeField(b.field)}, both on "${owner.name}", are the same in their first ${LIMIT} characters. ${clash} ` +
-    `To fix it, rename field "${a.field.name}" or "${b.field.name}" so that the two names differ within their first ${LIMIT} characters.`
+    `To fix it, ${shortenOf(check.field, room)}.`
   )
 }
 
@@ -159,6 +199,8 @@ function checkLinkTable(link: Link, left: string, right: string, rightTable: str
         `migration would fail with "constraint already exists". To keep the link table within ${LIMIT - 2} characters, ${fix}.`,
     }
   }
+  // Only reachable by a hash coincidence: the hashed unique name agreeing with
+  // a foreign key's first 63 characters. No fixture can produce it on purpose.
   return {
     ...base,
     message:

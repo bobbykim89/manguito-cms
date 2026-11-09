@@ -5,6 +5,7 @@ import type {
   SchemaRegistry,
   SystemField,
 } from '@bobbykim/manguito-cms-core'
+import { checkConstraintName } from '../constraint-names'
 import { linkUniqueName } from '../link-tables'
 
 // ─── File Header ──────────────────────────────────────────────────────────────
@@ -201,7 +202,7 @@ function generateTableDef(
     .map((f) => {
       const col = f.db_column!
       const values = col.check_constraint!.map((v) => `'${v}'`).join(', ')
-      const cname = `${col.column_name}_check`
+      const cname = checkConstraintName(col.column_name)
       return [
         `    ${cname}: s.check(`,
         `      '${cname}',`,
