@@ -95,6 +95,7 @@ function writeConfig(dir: string, registry: SchemaRegistry, filters: string[], s
       "  dialect: 'postgresql',",
       `  dbCredentials: { url: ${url} },`,
       `  tablesFilter: ${JSON.stringify(filters)},`,
+      '  verbose: true,',
       '})',
     ].join('\n')
   )
@@ -171,6 +172,22 @@ describe('ensureLinkConstraints', () => {
     expect(await constraintExists(LONG_LINK, linkUniqueName(LONG_LINK))).toBe(true)
 
     expect(await ensureLinkConstraints(db, main)).toEqual([])
+  })
+
+  it('plans no unique-constraint change for the hashed-name link table', () => {
+    // MUTATION: ensureLinkConstraints adds the constraint under drizzle's
+    // default name (`<table>_left_id_right_id_unique`). Push then plans to
+    // drop it and add the codegen-named one, so the output holds
+    // `UNIQUE(` and linkUniqueName(LONG_LINK).
+    //
+    // "No changes detected" is unreachable for this table: its foreign-key
+    // names pass 63 characters, so push keeps planning FK renames. Those are
+    // allowed; only a unique-constraint statement or a truncate question fails.
+    const out = push(writeConfig(path.join(TMP_DIR, 'long'), main, ['*lu2_*'], false))
+    expect(out).toContain('You are about to execute current statements')
+    expect(out).not.toContain(linkUniqueName(LONG_LINK))
+    expect(out).not.toContain('UNIQUE(')
+    expect(out).not.toContain('truncate')
   })
 
   it('leaves drizzle-kit push with nothing to plan', async () => {
