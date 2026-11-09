@@ -21,3 +21,7 @@ Migrations run in two modes the developer never selects manually — the CLI pic
 ## Amendment (2026-10-05)
 
 The original text said removing a field "drops the column immediately". That is not accurate. `runDevMigration` runs `drizzle-kit push` without `--force`, so push asks whether a column was renamed and confirms before dropping a column that holds data. Only an empty column is dropped without asking. Push still leaves no migration file to review.
+
+## Amendment (2026-11-08)
+
+Two edits to the flow above, recorded in [ADR 0006](0006-link-table-constraints-and-migration-rewrite.md). `runGenerate` now rewrites the one statement that adds a link table's unique constraint, so the generated `.sql` file removes duplicate pairs before adding it; the file stays the reviewable artifact. In dev, the constraint is added before `drizzle-kit push` runs, because push stops at a "truncate the table?" prompt when it must add one to a table with rows.
