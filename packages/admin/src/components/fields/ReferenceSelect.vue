@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
 import type { ParsedField } from '@bobbykim/manguito-cms-core'
 import { relationCardinality } from '@bobbykim/manguito-cms-core/cardinality'
@@ -93,15 +93,22 @@ function labelFor(item: Record<string, unknown>): string {
   return String(item[titleField.value] ?? item.id ?? '')
 }
 
+// Numbers each search, so a slower answer to an older query can't replace
+// the results (or clear the spinner) of the one typed since.
+let searchSeq = 0
+
 const doSearch = useDebounceFn(async (q: string) => {
+  const seq = ++searchSeq
   if (q.length < 2) {
     results.value = []
     showDropdown.value = false
+    loading.value = false
     return
   }
   loading.value = true
   showDropdown.value = true
   const res = await api.get<Record<string, unknown>[]>(buildSearchPath(q))
+  if (seq !== searchSeq) return
   loading.value = false
   if (res.ok) {
     results.value = res.data
@@ -164,18 +171,33 @@ async function moveChip(index: number, step: -1 | 1) {
   ;(same ?? chip?.querySelector<HTMLElement>('[data-move]'))?.focus()
 }
 
-// Fetch display labels for any IDs already present when the component mounts.
+// Display labels for selected ids that have none yet: on mount, and whenever
+// the value changes from outside (an id picked from search already has one).
 // An id the list doesn't return (a deleted item), or a failed request, shows
-// the id itself.
-onMounted(async () => {
-  const missing = selectedIds.value.filter((id) => !selectedLabels.value[id])
+// the id itself. Batches go out together.
+const pendingLabels = new Set<string>()
+
+async function loadLabels(ids: string[]) {
+  const missing = ids.filter((id) => !selectedLabels.value[id] && !pendingLabels.has(id))
+  if (missing.length === 0) return
+  for (const id of missing) pendingLabels.add(id)
+  const batches: string[][] = []
   for (let start = 0; start < missing.length; start += LABEL_BATCH) {
-    const batch = missing.slice(start, start + LABEL_BATCH)
-    const res = await api.get<Record<string, unknown>[]>(buildLabelPath(batch))
-    const found = new Map(res.ok ? res.data.map((item) => [String(item.id), labelFor(item)]) : [])
-    for (const id of batch) selectedLabels.value[id] = found.get(id) ?? id
+    batches.push(missing.slice(start, start + LABEL_BATCH))
   }
-})
+  await Promise.all(
+    batches.map(async (batch) => {
+      const res = await api.get<Record<string, unknown>[]>(buildLabelPath(batch))
+      const found = new Map(res.ok ? res.data.map((item) => [String(item.id), labelFor(item)]) : [])
+      for (const id of batch) {
+        selectedLabels.value[id] = found.get(id) ?? id
+        pendingLabels.delete(id)
+      }
+    })
+  )
+}
+
+watch(selectedIds, (ids) => void loadLabels(ids), { immediate: true })
 </script>
 
 <template>

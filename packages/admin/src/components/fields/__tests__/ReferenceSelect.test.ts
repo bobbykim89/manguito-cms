@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { defineComponent, h, ref } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
-import { http, HttpResponse } from 'msw'
+import { http, HttpResponse, delay } from 'msw'
 import type { ParsedField, ParsedContentType } from '@bobbykim/manguito-cms-core'
 import { server } from '../../../test-utils/server'
 import { useSchemaStore } from '../../../stores/schema'
@@ -347,10 +347,25 @@ describe('ReferenceSelect', () => {
     it('labels an id the list does not return with the id itself', async () => {
       // MUTATION: leave a missing id without a label. Its chip then reads
       // "Remove undefined", or blank, instead of naming the deleted item's id.
+      // A deleted item's id is still a well-formed uuid; the list just has no row for it.
+      const gone = '00000000-0000-4000-8000-0000000000ff'
       serveLabels({ u1: 'Alice' })
-      const w = mountComponent(manyField(), ['u1', 'gone'])
+      const w = mountComponent(manyField(), ['u1', gone])
       await flushPromises()
-      expect(removeLabels(w)).toEqual(['Remove Alice', 'Remove gone'])
+      expect(removeLabels(w)).toEqual(['Remove Alice', `Remove ${gone}`])
+    })
+
+    it('labels ids that arrive after mount', async () => {
+      // MUTATION: load labels only in onMounted. An id the parent sets later
+      // (a form reset, a reused instance) then shows its bare id forever.
+      const requests = serveLabels({ u1: 'Alice', u2: 'Bob' })
+      const w = mountComponent(manyField(), ['u1'])
+      await flushPromises()
+      await w.setProps({ modelValue: ['u1', 'u2'] })
+      await flushPromises()
+      expect(removeLabels(w)).toEqual(['Remove Alice', 'Remove Bob'])
+      // Only the new id is asked for the second time.
+      expect(requests.map((r) => r.searchParams.getAll('filter[id]'))).toEqual([['u1'], ['u2']])
     })
 
     it('asks for at most 100 ids per request', async () => {
@@ -374,6 +389,31 @@ describe('ReferenceSelect', () => {
       expect(requests[0]!.searchParams.getAll('filter[id]')).toEqual(['u1'])
       expect(w.text()).toContain('Alice')
     })
+  })
+
+  it('keeps the newest search results when an older answer arrives later', async () => {
+    // MUTATION: drop the searchSeq check. The slow answer to "al" then lands
+    // after the answer to "alice" and replaces it.
+    server.use(
+      http.get(`${ADMIN}/api/content/content--user`, async ({ request }) => {
+        const q = new URL(request.url).searchParams.get('search')
+        if (q === 'al') {
+          await delay(1000)
+          return HttpResponse.json({ ok: true, data: [{ id: 'u9', title: 'Old answer' }] })
+        }
+        return HttpResponse.json({ ok: true, data: [{ id: 'u1', title: 'Alice' }] })
+      })
+    )
+    const wrapper = mountComponent(makeField())
+    await wrapper.find('input').setValue('al')
+    await wrapper.find('input').trigger('input')
+    await vi.advanceTimersByTimeAsync(300)
+    await wrapper.find('input').setValue('alice')
+    await wrapper.find('input').trigger('input')
+    await vi.runAllTimersAsync()
+    await flushPromises()
+    expect(wrapper.text()).toContain('Alice')
+    expect(wrapper.text()).not.toContain('Old answer')
   })
 
   it('searches with search=, the parameter the list endpoint reads', async () => {
