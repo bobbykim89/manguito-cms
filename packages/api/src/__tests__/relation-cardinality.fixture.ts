@@ -6,7 +6,7 @@ import type {
   SchemaRegistry,
   SystemField,
 } from '@bobbykim/manguito-cms-core'
-import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
+import { linkUniqueName, type DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import { testParsedSchema } from '@bobbykim/manguito-cms-test-utils'
 
 // Shared fixture for the relation-cardinality suites. The registry is built
@@ -177,6 +177,7 @@ export async function createFixtureTables(db: DrizzlePostgresInstance, fx: Cardi
           `CREATE TABLE "${j.table_name}" ("${j.left_column}" uuid NOT NULL REFERENCES "${ownerTable}"(id) ON DELETE CASCADE, ` +
             `"${j.right_column}" uuid NOT NULL REFERENCES "${j.right_table}"(id) ON DELETE CASCADE` +
             (j.order_column ? ', "order" integer NOT NULL DEFAULT 0' : '') +
+            `, CONSTRAINT "${linkUniqueName(j.table_name)}" UNIQUE ("${j.left_column}", "${j.right_column}")` +
             ')'
         )
       )

@@ -4,6 +4,7 @@ import path from 'node:path'
 import fs from 'node:fs/promises'
 import { sql } from 'drizzle-orm'
 import type { MigrationResult, MigrationStatus } from '@bobbykim/manguito-cms-core'
+import { addLinkDedupe } from '../link-tables'
 import type { DrizzlePostgresInstance, MigrationRunnerOptions } from '../types'
 
 // drizzle-kit is invoked as a bare command resolved via PATH, but these calls
@@ -57,7 +58,17 @@ async function runGenerate(configPath: string, outFolder: string, cwd: string): 
   }
 
   const beforeSet = new Set(beforeFiles)
-  return afterFiles.filter((f) => !beforeSet.has(f))
+  const added = afterFiles.filter((f) => !beforeSet.has(f))
+
+  // drizzle-kit's bare ADD CONSTRAINT UNIQUE fails on a link table that
+  // already holds duplicate pairs; rewrite it to remove them first.
+  for (const name of added) {
+    const file = path.join(outFolder, name)
+    const text = await fs.readFile(file, 'utf8')
+    const rewritten = addLinkDedupe(text)
+    if (rewritten !== text) await fs.writeFile(file, rewritten)
+  }
+  return added
 }
 
 export async function generateMigration(

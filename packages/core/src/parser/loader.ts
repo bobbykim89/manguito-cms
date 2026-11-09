@@ -44,6 +44,7 @@ export type ParseErrorCode =
   | 'ORPHANED_TOMBSTONE'
   | 'UNSUPPORTED_RELATION'
   | 'TABLE_NAME_COLLISION'
+  | 'CONSTRAINT_NAME_COLLISION'
 
 export type ParseError = {
   file: string

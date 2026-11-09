@@ -101,6 +101,9 @@ export const junction_content_article_tags = s.pgTable(
       .notNull()
       .references(() => taxonomy_category.id, { onDelete: 'cascade' }),
     order: s.integer('order').notNull().default(0),
-  }
+  },
+  (table) => ({
+    pair: s.unique('junction_content_article_tags_unique').on(table.left_id, table.right_id),
+  })
 )"
 `;

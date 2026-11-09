@@ -6,7 +6,6 @@ import {
   parseRoutes,
   buildSchemaRegistry,
   loadSchemaFile,
-  validateCrossReferences,
   type ParseError,
   type ParsedSchema,
   type ParsedRoles,
@@ -16,6 +15,7 @@ import {
 } from '@bobbykim/manguito-cms-core'
 import { printValidationErrors } from './error.js'
 import { resolveSchemaConfig } from './schema-config.js'
+import { checkRegistry } from './schema-checks.js'
 
 /**
  * Parses every schema file, roles.json and routes.json into a SchemaRegistry,
@@ -80,7 +80,7 @@ export function loadWorkingRegistry(
   // The checks across schemas that `manguito validate` runs. version:create
   // freezes this registry into a snapshot, and a snapshot is never
   // cross-validated again, so an error must stop here.
-  const crossRefErrors = validateCrossReferences(registry, config.api.media?.max_file_size)
+  const crossRefErrors = checkRegistry(registry, config.api.media?.max_file_size)
   if (crossRefErrors.length > 0) {
     printValidationErrors(crossRefErrors, 'Schema reference errors', command)
     process.exit(1)

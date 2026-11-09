@@ -1,3 +1,4 @@
+import { resolve } from 'node:path'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { PromptAdapter } from '../src/utils/prompt.js'
 
@@ -162,6 +163,20 @@ describe('runMigrate', () => {
       expect(generateMigration).toHaveBeenCalled()
       expect(applyMigrations).toHaveBeenCalled()
       expect(seedSystemTables).toHaveBeenCalled()
+    })
+
+    it('asks needsRebuild about the configured schema folder', async () => {
+      // MUTATION: calling deps.needsRebuild() without the folder (build.ts then
+      // falls back to <cwd>/schemas) leaves schema.base_path unchecked
+      vi.mocked(generateMigration).mockResolvedValue([])
+      vi.mocked(applyMigrations).mockResolvedValue({ applied: 0, skipped: 0 })
+      vi.mocked(seedSystemTables).mockResolvedValue({
+        roles: { inserted: 0, updated: 0, deleted: 0 },
+        base_paths: { inserted: 0, updated: 0, deleted: 0 },
+      })
+      const deps = makeDeps()
+      await runMigrate({}, deps)
+      expect(deps.needsRebuild).toHaveBeenCalledWith(resolve(process.cwd(), '/fake/schemas'))
     })
 
     it('skips buildRunner when needsRebuild returns false', async () => {

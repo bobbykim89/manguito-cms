@@ -7,7 +7,6 @@ import {
   parseRoutes,
   buildSchemaRegistry,
   findSchemaDeprecations,
-  validateCrossReferences,
   loadSchemaFile,
   type ParseError,
   type ParsedSchema,
@@ -15,6 +14,7 @@ import {
 import { resolveConfig } from '../utils/config.js'
 import { loadEnvFile } from '../utils/env.js'
 import { resolveSchemaConfig } from '../utils/schema-config.js'
+import { checkRegistry } from '../utils/schema-checks.js'
 import { loadProjectVersionModel } from '../utils/project-version-model.js'
 import { printSuccess, printValidationErrors, printSchemaDeprecations } from '../utils/error.js'
 
@@ -94,7 +94,7 @@ export async function runValidate(
   if (allErrors.length === 0 && parsedRoles !== null && parsedRoutesDef !== null) {
     const registry = buildSchemaRegistry(parsedSchemas, parsedRoutesDef, parsedRoles)
     printSchemaDeprecations(findSchemaDeprecations(registry))
-    const crossRefErrors = validateCrossReferences(registry, config.api.media?.max_file_size)
+    const crossRefErrors = checkRegistry(registry, config.api.media?.max_file_size)
     allErrors.push(...crossRefErrors)
 
     // Version checks run only against a registry that is otherwise sound.

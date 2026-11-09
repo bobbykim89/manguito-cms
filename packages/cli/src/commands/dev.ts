@@ -10,6 +10,7 @@ import { sql } from '@bobbykim/manguito-cms-db'
 import { createServer as createViteServer, searchForWorkspaceRoot } from 'vite'
 import {
   runDevMigration,
+  ensureLinkConstraints,
   seedSystemTables,
   generateSchemaFile,
   createPostgresAdapter,
@@ -24,7 +25,6 @@ import {
   buildSchemaRegistry,
   findSchemaDeprecations,
   loadSchemaFile,
-  validateCrossReferences,
   hashPassword,
   type SchemaRegistry,
   type ParsedSchema,
@@ -42,6 +42,7 @@ import { loadProjectVersionModel } from '../utils/project-version-model.js'
 import { shouldBridgeToHono } from './dev-routing.js'
 import { resolveConfig } from '../utils/config.js'
 import { resolveSchemaConfig } from '../utils/schema-config.js'
+import { checkRegistry } from '../utils/schema-checks.js'
 import { connectDb } from '../utils/db.js'
 import { printGuidedError, printSuccess, printValidationErrors, printSchemaDeprecations } from '../utils/error.js'
 import { createPromptAdapter } from '../utils/prompt.js'
@@ -111,6 +112,7 @@ export async function runDev(
 
   await generateDrizzleConfig(config, manguitoDir)
   await writeFile(join(manguitoDir, 'schema.ts'), generateSchemaFile(registry), 'utf8')
+  await addLinkConstraints(db.getDb(), registry)
   await runDevMigration(drizzleConfigPath)
   printSuccess(needsSeed ? 'Schema tables created' : 'Schema tables up to date')
 
@@ -373,6 +375,12 @@ async function onSchemaFileChange(args: OnSchemaFileChangeArgs): Promise<void> {
   // push reads the new schema.ts, so a failed push leaves the artifacts ahead
   // of the served app.
   try {
+    await addLinkConstraints(db.getDb(), registry)
+  } catch (err) {
+    process.stderr.write(`⚠ Adding link constraints failed: ${err instanceof Error ? err.message : String(err)}\n`)
+    return
+  }
+  try {
     await runDevMigration(drizzleConfigPath)
   } catch (err) {
     process.stderr.write(`⚠ drizzle-kit push failed: ${err instanceof Error ? err.message : String(err)}\n`)
@@ -399,6 +407,19 @@ async function onSchemaFileChange(args: OnSchemaFileChangeArgs): Promise<void> {
   printSuccess('Schema updated')
 }
 
+// Dedupes link rows and adds each link table's unique constraint before a
+// push, so drizzle-kit never stops at its truncate prompt on a table holding
+// duplicates.
+async function addLinkConstraints(
+  database: ReturnType<ReturnType<typeof createPostgresAdapter>['getDb']>,
+  registry: SchemaRegistry,
+): Promise<void> {
+  const results = await ensureLinkConstraints(database, registry)
+  for (const { table, removed } of results) {
+    if (removed > 0) printSuccess(`Removed ${removed} duplicate links from ${table}`)
+  }
+}
+
 // ─── Schema loading ───────────────────────────────────────────────────────────
 
 type ValidatedSchema = { registry: SchemaRegistry; versionModel: ReturnType<typeof reduceVersionModel> }
@@ -416,7 +437,7 @@ function loadValidatedSchema(
   if (!parsed.ok) return parsed
   const registry = parsed.value
 
-  const crossRefErrors = validateCrossReferences(registry, config.api.media?.max_file_size)
+  const crossRefErrors = checkRegistry(registry, config.api.media?.max_file_size)
   if (crossRefErrors.length > 0) return { ok: false, errors: crossRefErrors }
 
   // The same pair `manguito build` bakes (snapshots, then the model), so dev

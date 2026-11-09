@@ -9,6 +9,10 @@ export type { DrizzlePostgresInstance } from './types'
 
 export { generateSchemaFile } from './codegen/index'
 
+export { ensureLinkConstraints, linkUniqueName } from './link-tables'
+
+export { findConstraintNameCollisions } from './constraint-names'
+
 export { seedSystemTables } from './seeder/index'
 export type { SeedResult, SeederOptions } from './types'
 
