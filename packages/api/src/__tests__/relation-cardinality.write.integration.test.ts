@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { sql } from 'drizzle-orm'
 import { getTestDb, createTestApp, authenticatedRequest, seedRoleUsers } from '@bobbykim/manguito-cms-test-utils'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
+import { persistJunctionField } from '../relations'
 import {
   makeCardinalityFixture,
   createFixtureTables,
@@ -220,6 +221,36 @@ describe('many-to-many links keep their order and store each id once', () => {
     const { body } = await create({ tags: editorOrder() })
     await db.execute(sql.raw(`UPDATE "${fx.tables.tags}" SET "order" = 0 WHERE left_id = '${body.data!.id}'`))
     expect((await editRead(body.data!.id))['tags']).toEqual([tagA, tagB].sort())
+  })
+
+  it('overlapping saves of one item store each link once', async () => {
+    // MUTATION: remove ON CONFLICT DO NOTHING from persistJunctionField. The
+    // second insert then rejects with 23505. Removing the fixture's unique
+    // constraint instead leaves four rows.
+    const post = fx.registry.content_types[fx.names.post]!
+    const junction = post.fields.find((f) => f.name === 'tags')!.db_column!.junction!
+    const { body } = await create({})
+    const postId = body.data!.id
+    // The first two calls (both deletes) pass; every later call (both inserts)
+    // waits until both deletes have finished: delete, delete, insert, insert.
+    let calls = 0
+    let finished = 0
+    let release: () => void = () => {}
+    const bothDeletesDone = new Promise<void>((resolve) => { release = resolve })
+    const proxy = {
+      execute: async (query: Parameters<DrizzlePostgresInstance['execute']>[0]) => {
+        const n = ++calls
+        if (n > 2) await bothDeletesDone
+        const result = await db.execute(query)
+        if (n <= 2 && ++finished === 2) release()
+        return result
+      },
+    } as unknown as DrizzlePostgresInstance
+    await Promise.all([
+      persistJunctionField(proxy, postId, junction, [tagA, tagB]),
+      persistJunctionField(proxy, postId, junction, [tagA, tagB]),
+    ])
+    expect(await tagLinks(postId)).toBe(2)
   })
 })
 

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { sql } from 'drizzle-orm'
 import { getTestDb, createTestApp, authenticatedRequest, seedRoleUsers } from '@bobbykim/manguito-cms-test-utils'
-import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
+import { linkUniqueName, type DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import {
   makeCardinalityFixture,
   createFixtureTables,
@@ -66,6 +66,12 @@ beforeAll(async () => {
   tagB = await insertTag(db, fx, 'tag-b')
   const post = fx.registry.content_types[fx.names.post]!
   const j = post.fields.find((f) => f.name === 'tags')!.db_column!.junction!
+  // The fixture's link tables carry the unique constraint, as codegen makes
+  // them. Drop it so this table can hold a duplicate, modelling a database
+  // that has not been migrated yet.
+  await db.execute(
+    sql.raw(`ALTER TABLE "${j.table_name}" DROP CONSTRAINT "${linkUniqueName(j.table_name)}"`)
+  )
   for (const [order, tagId] of [[0, tagA], [1, tagB], [2, tagA]] as const) {
     await db.execute(
       j.order_column

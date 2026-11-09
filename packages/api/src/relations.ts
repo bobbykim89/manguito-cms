@@ -234,7 +234,10 @@ export async function deleteParagraphField(
 // Replaces an item's links for one many-to-many field. A repeated id is stored once, at its first
 // position; UUIDs compare case-insensitively, as Postgres stores them. With an
 // order column, each link keeps its position in the list (#57). All links go in
-// one INSERT: one round trip, however long the list.
+// one INSERT: one round trip, however long the list. Writes are not
+// transactional, so two overlapping saves of one item can run delete, delete,
+// insert, insert; ON CONFLICT DO NOTHING lets the second insert find the first's
+// links (the table's unique constraint) and store each link once.
 export async function persistJunctionField(
   db: DrizzlePostgresInstance,
   itemId: string,
@@ -261,8 +264,8 @@ export async function persistJunctionField(
   )
   await db.execute(
     junction.order_column
-      ? sql`INSERT INTO ${tbl} (${left}, ${right}, "order") VALUES ${rows}`
-      : sql`INSERT INTO ${tbl} (${left}, ${right}) VALUES ${rows}`
+      ? sql`INSERT INTO ${tbl} (${left}, ${right}, "order") VALUES ${rows} ON CONFLICT DO NOTHING`
+      : sql`INSERT INTO ${tbl} (${left}, ${right}) VALUES ${rows} ON CONFLICT DO NOTHING`
   )
 }
 
