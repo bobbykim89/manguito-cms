@@ -143,11 +143,6 @@ export async function runBuild(
   mkdirSync(generatedDir, { recursive: true })
 
   writeFileSync(join(generatedDir, 'schema.ts'), generateSchemaFile(registry), 'utf8')
-  writeFileSync(
-    join(generatedDir, VERSIONS_RECORD),
-    JSON.stringify(installedManguitoVersions(cwd), null, 2) + '\n',
-    'utf8',
-  )
   await generateSchemaRegistry(registry, generatedDir)
   await generateRoutes(registry, generatedDir)
   await generateForms(registry, join(generatedDir, 'forms'))
@@ -164,6 +159,14 @@ export async function runBuild(
   await generateServerEntries(
     { adminPrefix: config.admin.prefix, apiPrefix: config.api.prefix },
     generatedDir,
+  )
+
+  // Written after the last codegen write, never before: a build that fails
+  // partway must not leave a record saying the generated files are current.
+  writeFileSync(
+    join(generatedDir, VERSIONS_RECORD),
+    JSON.stringify(installedManguitoVersions(cwd), null, 2) + '\n',
+    'utf8',
   )
 
   // 9. Codegen complete

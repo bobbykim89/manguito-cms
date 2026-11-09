@@ -37,6 +37,7 @@ describe('needsRebuild', () => {
     vi.mocked(readdirSync).mockReturnValue(
       [makeDirent('post.json')] as unknown as ReturnType<typeof readdirSync>,
     )
+    vi.mocked(readFileSync).mockReturnValue(JSON.stringify(INSTALLED))
     expect(await needsRebuild(CWD, INSTALLED)).toBe(true)
   })
 
