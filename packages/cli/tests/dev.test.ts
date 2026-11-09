@@ -279,7 +279,8 @@ describe('runDev', () => {
   it('keeps the previous app when ensureLinkConstraints throws on reload', async () => {
     // MUTATION: call ensureLinkConstraints outside the reload's try/catch, or
     // let the reload continue past a throw. Dev then pushes anyway or swaps in
-    // an app whose link tables were not constrained.
+    // an app whose link tables were not constrained. A catch shared with the
+    // push reports it as `drizzle-kit push failed`, so the message is pinned.
     vi.mocked(connectDb).mockResolvedValue(makeDb([{ rows: [{ count: 1 }] }]) as never)
     watchOneSchemaEdit()
     vi.mocked(ensureLinkConstraints).mockResolvedValueOnce([]).mockRejectedValue(new Error('db down'))
@@ -287,6 +288,8 @@ describe('runDev', () => {
     await runDev({}, { cwd: FAKE_CWD })
     await vi.waitFor(() => expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining('db down')))
 
+    expect(process.stderr.write).toHaveBeenCalledWith('⚠ Adding link constraints failed: db down\n')
+    expect(process.stderr.write).not.toHaveBeenCalledWith(expect.stringContaining('drizzle-kit push failed'))
     expect(runDevMigration).toHaveBeenCalledTimes(1) // startup only
     expect(createCmsApp).toHaveBeenCalledTimes(1)
   })

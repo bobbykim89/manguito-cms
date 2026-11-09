@@ -376,6 +376,11 @@ async function onSchemaFileChange(args: OnSchemaFileChangeArgs): Promise<void> {
   // of the served app.
   try {
     await addLinkConstraints(db.getDb(), registry)
+  } catch (err) {
+    process.stderr.write(`⚠ Adding link constraints failed: ${err instanceof Error ? err.message : String(err)}\n`)
+    return
+  }
+  try {
     await runDevMigration(drizzleConfigPath)
   } catch (err) {
     process.stderr.write(`⚠ drizzle-kit push failed: ${err instanceof Error ? err.message : String(err)}\n`)
