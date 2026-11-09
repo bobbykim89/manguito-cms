@@ -171,3 +171,21 @@ describe('stable relation reads', () => {
     expect((inc.body.data['tags'] as Array<Record<string, unknown>>).map((t) => t['id'])).toEqual([tagA, tagB])
   })
 })
+
+describe('chip labels read from the admin list (#57)', () => {
+  it('returns exactly the items named by repeated filter[id], with no relations', async () => {
+    // MUTATION: keep only the last filter[id] in parseFilters (assign instead
+    // of collecting an array). The admin's chip labels then get one row and
+    // every other chip shows its bare id.
+    const res = await authenticatedRequest(
+      app, 'admin', 'GET',
+      `/admin/api/taxonomy/${fx.names.tag}?filter[id]=${tagA}&filter[id]=${tagB}&per_page=2`
+    )
+    expect(res.status).toBe(200)
+    const rows = ((await res.json()) as { data: Array<Record<string, unknown>> }).data
+    expect(rows.map((r) => [r['id'], r['name']]).sort()).toEqual([[tagA, 'tag-a'], [tagB, 'tag-b']].sort())
+    // The list leaves relations out unless asked: the tag's paragraph field
+    // isn't loaded.
+    expect(rows.every((r) => r['tag_link'] === undefined)).toBe(true)
+  })
+})

@@ -71,11 +71,21 @@ function basePath(): string {
     : `/taxonomy/${refName.value}`
 }
 
+// The list endpoint's own search: a case-insensitive match on the type's
+// text fields and slug, as the content and taxonomy list views use it.
 function buildSearchPath(q: string): string {
-  const params = new URLSearchParams({
-    [`filters[${titleField.value}][like]`]: q,
-    per_page: '10',
-  })
+  const params = new URLSearchParams({ search: q, per_page: '10' })
+  return `${basePath()}?${params.toString()}`
+}
+
+// The list endpoint's largest page, so one request names at most this many ids.
+const LABEL_BATCH = 100
+
+// One list request per batch of ids, filtered by id. The list loads no
+// paragraphs or links, where GET /:id loads the whole item (#57).
+function buildLabelPath(ids: string[]): string {
+  const params = new URLSearchParams(ids.map((id) => ['filter[id]', id]))
+  params.set('per_page', String(ids.length))
   return `${basePath()}?${params.toString()}`
 }
 
@@ -155,15 +165,15 @@ async function moveChip(index: number, step: -1 | 1) {
 }
 
 // Fetch display labels for any IDs already present when the component mounts.
+// An id the list doesn't return (a deleted item), or a failed request, shows
+// the id itself.
 onMounted(async () => {
-  for (const id of selectedIds.value) {
-    if (selectedLabels.value[id]) continue
-    const res = await api.get<Record<string, unknown>>(`${basePath()}/${id}`)
-    if (res.ok) {
-      selectedLabels.value[id] = labelFor(res.data as Record<string, unknown>)
-    } else {
-      selectedLabels.value[id] = id
-    }
+  const missing = selectedIds.value.filter((id) => !selectedLabels.value[id])
+  for (let start = 0; start < missing.length; start += LABEL_BATCH) {
+    const batch = missing.slice(start, start + LABEL_BATCH)
+    const res = await api.get<Record<string, unknown>[]>(buildLabelPath(batch))
+    const found = new Map(res.ok ? res.data.map((item) => [String(item.id), labelFor(item)]) : [])
+    for (const id of batch) selectedLabels.value[id] = found.get(id) ?? id
   }
 })
 </script>
