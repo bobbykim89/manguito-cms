@@ -12,7 +12,6 @@ import {
   buildSchemaRegistry,
   findSchemaDeprecations,
   loadSchemaFile,
-  validateCrossReferences,
   type ParseError,
   type ParsedSchema,
 } from '@bobbykim/manguito-cms-core'
@@ -25,6 +24,7 @@ import { generateProgrammaticRegistry } from '../codegen/programmatic-registry.j
 import { generateVersionModel } from '../codegen/version-model.js'
 import { resolveConfig } from '../utils/config.js'
 import { resolveSchemaConfig } from '../utils/schema-config.js'
+import { checkRegistry } from '../utils/schema-checks.js'
 import { loadEnvFile } from '../utils/env.js'
 import { loadProjectVersionModel } from '../utils/project-version-model.js'
 import { printGuidedError, printSuccess, printValidationErrors, printSchemaDeprecations } from '../utils/error.js'
@@ -111,7 +111,7 @@ export async function runBuild(
   // References between schemas (unknown or wrong-type targets, circular
   // paragraphs, media size limits, unsupported relations), the same checks
   // `manguito validate` runs. Before any codegen write, like the parse errors.
-  const crossRefErrors = validateCrossReferences(registry, config.api.media?.max_file_size)
+  const crossRefErrors = checkRegistry(registry, config.api.media?.max_file_size)
   if (crossRefErrors.length > 0) {
     printValidationErrors(crossRefErrors, 'Schema reference errors', 'manguito build')
     process.exit(1)

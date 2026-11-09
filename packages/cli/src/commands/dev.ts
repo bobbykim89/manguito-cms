@@ -25,7 +25,6 @@ import {
   buildSchemaRegistry,
   findSchemaDeprecations,
   loadSchemaFile,
-  validateCrossReferences,
   hashPassword,
   type SchemaRegistry,
   type ParsedSchema,
@@ -43,6 +42,7 @@ import { loadProjectVersionModel } from '../utils/project-version-model.js'
 import { shouldBridgeToHono } from './dev-routing.js'
 import { resolveConfig } from '../utils/config.js'
 import { resolveSchemaConfig } from '../utils/schema-config.js'
+import { checkRegistry } from '../utils/schema-checks.js'
 import { connectDb } from '../utils/db.js'
 import { printGuidedError, printSuccess, printValidationErrors, printSchemaDeprecations } from '../utils/error.js'
 import { createPromptAdapter } from '../utils/prompt.js'
@@ -432,7 +432,7 @@ function loadValidatedSchema(
   if (!parsed.ok) return parsed
   const registry = parsed.value
 
-  const crossRefErrors = validateCrossReferences(registry, config.api.media?.max_file_size)
+  const crossRefErrors = checkRegistry(registry, config.api.media?.max_file_size)
   if (crossRefErrors.length > 0) return { ok: false, errors: crossRefErrors }
 
   // The same pair `manguito build` bakes (snapshots, then the model), so dev

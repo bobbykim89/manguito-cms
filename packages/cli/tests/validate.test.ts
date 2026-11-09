@@ -11,6 +11,9 @@ vi.mock('../src/utils/config.js', () => ({
     admin: { prefix: '/admin' },
   }),
 }))
+vi.mock('@bobbykim/manguito-cms-db', () => ({
+  findConstraintNameCollisions: vi.fn().mockReturnValue([]),
+}))
 vi.mock('@bobbykim/manguito-cms-core', () => ({
   walkSchemaDirectory: vi.fn().mockReturnValue({ ok: true, value: [] }),
   parseSchema: vi.fn(),
@@ -40,6 +43,7 @@ import {
   computeVersionModel,
   findSchemaDeprecations,
 } from '@bobbykim/manguito-cms-core'
+import { findConstraintNameCollisions } from '@bobbykim/manguito-cms-db'
 import { resolveConfig } from '../src/utils/config.js'
 
 const FAKE_CWD = '/fake/project'
@@ -62,6 +66,7 @@ describe('runValidate', () => {
     vi.mocked(parseRoutes).mockReturnValue({ ok: true, value: [] } as never)
     vi.mocked(buildSchemaRegistry).mockReturnValue({} as never)
     vi.mocked(validateCrossReferences).mockReturnValue([])
+    vi.mocked(findConstraintNameCollisions).mockReturnValue([])
     vi.mocked(loadVersionSnapshots).mockReturnValue({ ok: true, value: [] })
     vi.mocked(computeVersionModel).mockReturnValue({
       ok: true,
@@ -97,6 +102,20 @@ describe('runValidate', () => {
 
     expect(exitSpy).toHaveBeenCalledWith(1)
     expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining('blog-post.json'))
+    exitSpy.mockRestore()
+  })
+
+  it('exits 1 and prints a constraint-name collision', async () => {
+    // MUTATION: validate.ts calls validateCrossReferences directly, skipping the collision check, so it exits 0.
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('process.exit') })
+    vi.mocked(findConstraintNameCollisions).mockReturnValue([
+      { file: 'schemas/content-types/post.json', code: 'CONSTRAINT_NAME_COLLISION', message: 'constraint names collide at 63 bytes' },
+    ] as never)
+
+    await expect(runValidate({}, { cwd: FAKE_CWD })).rejects.toThrow('process.exit')
+
+    expect(exitSpy).toHaveBeenCalledWith(1)
+    expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining('constraint names collide at 63 bytes'))
     exitSpy.mockRestore()
   })
 

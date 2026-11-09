@@ -8,6 +8,7 @@ vi.mock('@bobbykim/manguito-cms-db', () => ({
   sql: vi.fn(),
   runDevMigration: vi.fn().mockResolvedValue(undefined),
   ensureLinkConstraints: vi.fn().mockResolvedValue([]),
+  findConstraintNameCollisions: vi.fn().mockReturnValue([]),
   seedSystemTables: vi.fn().mockResolvedValue({
     roles: { inserted: 0, updated: 0, deleted: 0 },
     base_paths: { inserted: 0, updated: 0, deleted: 0 },
@@ -90,7 +91,7 @@ import {
   validateCrossReferences,
 } from '@bobbykim/manguito-cms-core'
 import { createCmsApp } from '@bobbykim/manguito-cms-api'
-import { runDevMigration, ensureLinkConstraints } from '@bobbykim/manguito-cms-db'
+import { runDevMigration, ensureLinkConstraints, findConstraintNameCollisions } from '@bobbykim/manguito-cms-db'
 import { createServer as createViteServer } from 'vite'
 import { createServer as httpCreateServer } from 'node:http'
 import { generateDrizzleConfig } from '../src/codegen/drizzle-config.js'
@@ -171,6 +172,7 @@ describe('runDev', () => {
     } as never)
     vi.mocked(findSchemaDeprecations).mockReturnValue([])
     vi.mocked(validateCrossReferences).mockReturnValue([])
+    vi.mocked(findConstraintNameCollisions).mockReturnValue([])
     vi.mocked(reduceVersionModel).mockImplementation(
       (model: { current: string; live: string[]; projections: unknown }) => ({
         current: model.current,
