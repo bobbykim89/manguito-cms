@@ -70,6 +70,7 @@ describe('addLinkDedupe', () => {
     '-- Removes only repeated (left, right) pairs, keeping the lowest order, before adding the constraint.',
     'DO $$ BEGIN',
     `IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = '"junction_content_a_tags"'::regclass AND conname = 'junction_content_a_tags_unique') THEN`,
+    'LOCK TABLE "junction_content_a_tags" IN SHARE ROW EXCLUSIVE MODE;',
     `${linkDedupeSql('junction_content_a_tags', 'left_id', 'right_id', true)};`,
     ADD_CONSTRAINT,
     'END IF;',

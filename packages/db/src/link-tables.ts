@@ -41,6 +41,7 @@ export function addLinkDedupe(sql: string): string {
       '-- Removes only repeated (left, right) pairs, keeping the lowest order, before adding the constraint.',
       'DO $$ BEGIN',
       `IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = '"${table}"'::regclass AND conname = '${name}') THEN`,
+      `LOCK TABLE "${table}" IN SHARE ROW EXCLUSIVE MODE;`,
       `${linkDedupeSql(table, 'left_id', 'right_id', true)};`,
       statement,
       'END IF;',
