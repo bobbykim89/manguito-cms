@@ -1,5 +1,15 @@
 # @bobbykim/manguito-cms-api
 
+## 0.9.4
+
+### Patch Changes
+
+- ae78f83: Overlapping saves of one item no longer store a link twice.
+- Updated dependencies [5dfe7e7]
+- Updated dependencies [4319762]
+  - @bobbykim/manguito-cms-core@0.11.1
+  - @bobbykim/manguito-cms-db@0.3.0
+
 ## 0.9.3
 
 ### Patch Changes

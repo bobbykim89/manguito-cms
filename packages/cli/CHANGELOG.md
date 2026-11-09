@@ -1,5 +1,25 @@
 # @bobbykim/manguito-cms-cli
 
+## 0.12.0
+
+### Minor Changes
+
+- 061fe80: `manguito migrate` now rebuilds after a manguito upgrade, so codegen changes reach your migration without a schema edit.
+
+  - `manguito migrate` rebuilds when the installed manguito packages changed since the last build. `build` records their versions in `dist/generated/manguito-versions.json`.
+  - `manguito dev` adds link constraints before pushing the schema.
+  - Validation refuses schemas whose constraint names collide in Postgres.
+
+### Patch Changes
+
+- Updated dependencies [5dfe7e7]
+- Updated dependencies [ae78f83]
+- Updated dependencies [4319762]
+  - @bobbykim/manguito-cms-core@0.11.1
+  - @bobbykim/manguito-cms-api@0.9.4
+  - @bobbykim/manguito-cms-db@0.3.0
+  - @bobbykim/manguito-cms-admin@0.6.3
+
 ## 0.11.4
 
 ### Patch Changes
