@@ -16,6 +16,8 @@ export {
   linkUniqueName,
 } from './link-tables'
 
+export { findConstraintNameCollisions, foreignKeyName } from './constraint-names'
+
 export { seedSystemTables } from './seeder/index'
 export type { SeedResult, SeederOptions } from './types'
 
