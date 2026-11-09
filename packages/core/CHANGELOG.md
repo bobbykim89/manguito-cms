@@ -1,5 +1,11 @@
 # @bobbykim/manguito-cms-core
 
+## 0.11.1
+
+### Patch Changes
+
+- 5dfe7e7: Adds the `CONSTRAINT_NAME_COLLISION` parse error code, reported by the db package's constraint-name check.
+
 ## 0.11.0
 
 ### Minor Changes
