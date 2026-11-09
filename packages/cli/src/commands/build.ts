@@ -1,4 +1,4 @@
-import { mkdirSync, statSync, existsSync, readdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, statSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve, join, dirname } from 'node:path'
 import { createRequire } from 'node:module'
 import type { Command } from 'commander'
@@ -143,6 +143,11 @@ export async function runBuild(
   mkdirSync(generatedDir, { recursive: true })
 
   writeFileSync(join(generatedDir, 'schema.ts'), generateSchemaFile(registry), 'utf8')
+  writeFileSync(
+    join(generatedDir, VERSIONS_RECORD),
+    JSON.stringify(installedManguitoVersions(cwd), null, 2) + '\n',
+    'utf8',
+  )
   await generateSchemaRegistry(registry, generatedDir)
   await generateRoutes(registry, generatedDir)
   await generateForms(registry, join(generatedDir, 'forms'))
@@ -223,15 +228,75 @@ export async function runBuild(
 
 // ─── needsRebuild ─────────────────────────────────────────────────────────────
 
+const VERSIONS_RECORD = 'manguito-versions.json'
+
+const MANGUITO_PACKAGES = [
+  '@bobbykim/manguito-cms-core',
+  '@bobbykim/manguito-cms-db',
+  '@bobbykim/manguito-cms-api',
+  '@bobbykim/manguito-cms-admin',
+  '@bobbykim/manguito-cms-cli',
+]
+
 /**
- * Returns true when dist/generated/schema.ts is absent or any file under
- * schemas/ is newer than it. Used by `manguito migrate` to decide whether
- * to run build first.
+ * Versions of the manguito packages installed for the project at `cwd`.
+ * A package's `exports` may not list ./package.json, so each one is found by
+ * resolving its entry and walking up to the nearest package.json. Packages
+ * that cannot be resolved are left out.
  */
-export async function needsRebuild(cwd: string): Promise<boolean> {
+export function installedManguitoVersions(cwd: string): Record<string, string> {
+  const cwdRequire = createRequire(join(cwd, 'package.json'))
+  const versions: Record<string, string> = {}
+  for (const name of MANGUITO_PACKAGES) {
+    try {
+      let dir = dirname(cwdRequire.resolve(name))
+      for (;;) {
+        const pkgPath = join(dir, 'package.json')
+        if (existsSync(pkgPath)) {
+          const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as { name?: string; version?: string }
+          if (pkg.name === name && typeof pkg.version === 'string') versions[name] = pkg.version
+          break
+        }
+        const parent = dirname(dir)
+        if (parent === dir) break
+        dir = parent
+      }
+    } catch {
+      // not installed or unreadable: leave it out
+    }
+  }
+  return versions
+}
+
+function recordedVersions(cwd: string): Record<string, string> | null {
+  try {
+    return JSON.parse(readFileSync(resolve(cwd, 'dist/generated', VERSIONS_RECORD), 'utf8')) as Record<string, string>
+  } catch {
+    return null
+  }
+}
+
+function sameVersions(a: Record<string, string>, b: Record<string, string>): boolean {
+  const keys = Object.keys(a)
+  return keys.length === Object.keys(b).length && keys.every((k) => a[k] === b[k])
+}
+
+/**
+ * Returns true when dist/generated/schema.ts is absent, any file under
+ * schemas/ is newer than it, or the manguito versions recorded at the last
+ * build differ from the installed ones (an upgrade changes codegen without a
+ * schema edit). Used by `manguito migrate` to decide whether to run build first.
+ */
+export async function needsRebuild(
+  cwd: string,
+  installed: Record<string, string> = installedManguitoVersions(cwd),
+): Promise<boolean> {
   const sentinel = resolve(cwd, 'dist/generated/schema.ts')
 
   if (!existsSync(sentinel)) return true
+
+  const recorded = recordedVersions(cwd)
+  if (recorded === null || !sameVersions(recorded, installed)) return true
 
   const sentinelMtime = statSync(sentinel).mtimeMs
   const schemasDir = resolve(cwd, 'schemas')
