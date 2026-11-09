@@ -10,6 +10,7 @@ import { sql } from '@bobbykim/manguito-cms-db'
 import { createServer as createViteServer, searchForWorkspaceRoot } from 'vite'
 import {
   runDevMigration,
+  ensureLinkConstraints,
   seedSystemTables,
   generateSchemaFile,
   createPostgresAdapter,
@@ -111,6 +112,7 @@ export async function runDev(
 
   await generateDrizzleConfig(config, manguitoDir)
   await writeFile(join(manguitoDir, 'schema.ts'), generateSchemaFile(registry), 'utf8')
+  await addLinkConstraints(db.getDb(), registry)
   await runDevMigration(drizzleConfigPath)
   printSuccess(needsSeed ? 'Schema tables created' : 'Schema tables up to date')
 
@@ -373,6 +375,7 @@ async function onSchemaFileChange(args: OnSchemaFileChangeArgs): Promise<void> {
   // push reads the new schema.ts, so a failed push leaves the artifacts ahead
   // of the served app.
   try {
+    await addLinkConstraints(db.getDb(), registry)
     await runDevMigration(drizzleConfigPath)
   } catch (err) {
     process.stderr.write(`⚠ drizzle-kit push failed: ${err instanceof Error ? err.message : String(err)}\n`)
@@ -397,6 +400,19 @@ async function onSchemaFileChange(args: OnSchemaFileChangeArgs): Promise<void> {
   updateFetch((req) => newAdapter.app.fetch(req))
 
   printSuccess('Schema updated')
+}
+
+// Dedupes link rows and adds each link table's unique constraint before a
+// push, so drizzle-kit never stops at its truncate prompt on a table holding
+// duplicates.
+async function addLinkConstraints(
+  database: ReturnType<ReturnType<typeof createPostgresAdapter>['getDb']>,
+  registry: SchemaRegistry,
+): Promise<void> {
+  const results = await ensureLinkConstraints(database, registry)
+  for (const { table, removed } of results) {
+    if (removed > 0) printSuccess(`Removed ${removed} duplicate links from ${table}`)
+  }
 }
 
 // ─── Schema loading ───────────────────────────────────────────────────────────

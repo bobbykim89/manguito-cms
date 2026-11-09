@@ -7,6 +7,7 @@ vi.mock('../src/utils/prompt.js', () => ({ createPromptAdapter: vi.fn() }))
 vi.mock('@bobbykim/manguito-cms-db', () => ({
   sql: vi.fn(),
   runDevMigration: vi.fn().mockResolvedValue(undefined),
+  ensureLinkConstraints: vi.fn().mockResolvedValue([]),
   seedSystemTables: vi.fn().mockResolvedValue({
     roles: { inserted: 0, updated: 0, deleted: 0 },
     base_paths: { inserted: 0, updated: 0, deleted: 0 },
@@ -89,7 +90,7 @@ import {
   validateCrossReferences,
 } from '@bobbykim/manguito-cms-core'
 import { createCmsApp } from '@bobbykim/manguito-cms-api'
-import { runDevMigration } from '@bobbykim/manguito-cms-db'
+import { runDevMigration, ensureLinkConstraints } from '@bobbykim/manguito-cms-db'
 import { createServer as createViteServer } from 'vite'
 import { createServer as httpCreateServer } from 'node:http'
 import { generateDrizzleConfig } from '../src/codegen/drizzle-config.js'
@@ -177,6 +178,7 @@ describe('runDev', () => {
         projections: model.projections,
       }) as never,
     )
+    vi.mocked(ensureLinkConstraints).mockResolvedValue([])
     vi.mocked(generateDrizzleConfig).mockResolvedValue(undefined)
     vi.mocked(generateSchemaRegistry).mockResolvedValue(undefined)
     vi.mocked(generateRoutes).mockResolvedValue(undefined)
@@ -225,6 +227,66 @@ describe('runDev', () => {
     // (e.g. @fontsource fonts) that live outside the admin package root.
     expect(vi.mocked(createViteServer).mock.calls[0]?.[0]?.server?.fs?.allow).toContain(FAKE_CWD)
     expect(httpCreateServer).toHaveBeenCalled()
+  })
+
+  it('adds link constraints before the startup push', async () => {
+    // MUTATION: call ensureLinkConstraints after runDevMigration. The push then
+    // reaches drizzle-kit's truncate prompt on a link table holding duplicates.
+    vi.mocked(connectDb).mockResolvedValue(makeDb([{ rows: [{ count: 1 }] }]) as never)
+
+    await runDev({}, { cwd: FAKE_CWD })
+
+    expect(ensureLinkConstraints).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(ensureLinkConstraints).mock.invocationCallOrder[0]!).toBeLessThan(
+      vi.mocked(runDevMigration).mock.invocationCallOrder[0]!,
+    )
+  })
+
+  it('reports duplicate links removed at startup, and stays quiet when none were', async () => {
+    // MUTATION: print a line for every entry, not only those with removed > 0.
+    vi.mocked(connectDb).mockResolvedValue(makeDb([{ rows: [{ count: 1 }] }]) as never)
+    vi.mocked(ensureLinkConstraints).mockResolvedValue([
+      { table: 'junction_content_post_tags', removed: 3 },
+      { table: 'junction_content_post_authors', removed: 0 },
+    ])
+
+    await runDev({}, { cwd: FAKE_CWD })
+
+    expect(process.stdout.write).toHaveBeenCalledWith(
+      expect.stringContaining('Removed 3 duplicate links from junction_content_post_tags'),
+    )
+    const printed = vi.mocked(process.stdout.write).mock.calls.map((c) => String(c[0])).join('')
+    expect(printed).not.toContain('junction_content_post_authors')
+  })
+
+  it('adds link constraints again before the push on a schema reload', async () => {
+    // MUTATION: call ensureLinkConstraints only at startup. A link table added
+    // or changed while dev runs then reaches the truncate prompt on reload.
+    vi.mocked(connectDb).mockResolvedValue(makeDb([{ rows: [{ count: 1 }] }]) as never)
+    watchOneSchemaEdit()
+
+    await runDev({}, { cwd: FAKE_CWD })
+    await vi.waitFor(() => expect(runDevMigration).toHaveBeenCalledTimes(2))
+
+    expect(ensureLinkConstraints).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(ensureLinkConstraints).mock.invocationCallOrder[1]!).toBeLessThan(
+      vi.mocked(runDevMigration).mock.invocationCallOrder[1]!,
+    )
+  })
+
+  it('keeps the previous app when ensureLinkConstraints throws on reload', async () => {
+    // MUTATION: call ensureLinkConstraints outside the reload's try/catch, or
+    // let the reload continue past a throw. Dev then pushes anyway or swaps in
+    // an app whose link tables were not constrained.
+    vi.mocked(connectDb).mockResolvedValue(makeDb([{ rows: [{ count: 1 }] }]) as never)
+    watchOneSchemaEdit()
+    vi.mocked(ensureLinkConstraints).mockResolvedValueOnce([]).mockRejectedValue(new Error('db down'))
+
+    await runDev({}, { cwd: FAKE_CWD })
+    await vi.waitFor(() => expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining('db down')))
+
+    expect(runDevMigration).toHaveBeenCalledTimes(1) // startup only
+    expect(createCmsApp).toHaveBeenCalledTimes(1)
   })
 
   it('triggers first-admin prompt when no admin user exists in DB', async () => {
