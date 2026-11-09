@@ -1,6 +1,7 @@
 import { mkdirSync, statSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve, join, dirname } from 'node:path'
 import { createRequire } from 'node:module'
+import { fileURLToPath } from 'node:url'
 import type { Command } from 'commander'
 import { build as viteBuild } from 'vite'
 import { build as tsupBuild } from 'tsup'
@@ -268,7 +269,35 @@ export function installedManguitoVersions(cwd: string): Record<string, string> {
       // not installed or unreadable: leave it out
     }
   }
+  const running = runningCliVersion()
+  if (running !== undefined) versions[RUNNING_CLI_KEY] = running
   return versions
+}
+
+// The cli bundles core, db, api and admin (tsup noExternal), so the codegen a
+// build runs comes from the RUNNING cli, not from the project's node_modules.
+// Its own version is recorded too: a newer cli over old installed packages
+// still regenerates. Found by walking up from this file, which works from
+// dist/index.js and from source.
+const RUNNING_CLI_KEY = 'running-cli'
+const CLI_PACKAGE = '@bobbykim/manguito-cms-cli'
+
+function runningCliVersion(): string | undefined {
+  try {
+    let dir = dirname(fileURLToPath(import.meta.url))
+    for (;;) {
+      const pkgPath = join(dir, 'package.json')
+      if (existsSync(pkgPath)) {
+        const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as { name?: string; version?: string }
+        if (pkg.name === CLI_PACKAGE && typeof pkg.version === 'string') return pkg.version
+      }
+      const parent = dirname(dir)
+      if (parent === dir) return undefined
+      dir = parent
+    }
+  } catch {
+    return undefined
+  }
 }
 
 function recordedVersions(cwd: string): Record<string, string> | null {
@@ -286,14 +315,15 @@ function sameVersions(a: Record<string, string>, b: Record<string, string>): boo
 
 /**
  * Returns true when dist/generated/schema.ts is absent, any file under
- * schemas/ is newer than it, or the manguito versions recorded at the last
+ * the schema folder (`schemaDir`, default schemas/) is newer than it, or the manguito versions recorded at the last
  * build differ from the installed ones (an upgrade changes codegen without a
  * schema edit). Used by `manguito migrate` to decide whether to run build first.
  */
 export async function needsRebuild(
   cwd: string,
-  installed: Record<string, string> = installedManguitoVersions(cwd),
+  options: { installed?: Record<string, string>; schemaDir?: string } = {},
 ): Promise<boolean> {
+  const installed = options.installed ?? installedManguitoVersions(cwd)
   const sentinel = resolve(cwd, 'dist/generated/schema.ts')
 
   if (!existsSync(sentinel)) return true
@@ -302,7 +332,7 @@ export async function needsRebuild(
   if (recorded === null || !sameVersions(recorded, installed)) return true
 
   const sentinelMtime = statSync(sentinel).mtimeMs
-  const schemasDir = resolve(cwd, 'schemas')
+  const schemasDir = options.schemaDir ?? resolve(cwd, 'schemas')
 
   if (!existsSync(schemasDir)) return false
 

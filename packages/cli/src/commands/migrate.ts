@@ -39,7 +39,7 @@ type MigrateOptions = {
 
 type MigrateDeps = {
   buildRunner: () => Promise<void>
-  needsRebuild: () => Promise<boolean>
+  needsRebuild: (schemaDir: string) => Promise<boolean>
   db: ReturnType<typeof createPostgresAdapter>
   migrationsFolder: string
   configPath: string
@@ -76,7 +76,7 @@ function buildDeps(options: { env?: string }, cwd: string): MigrateDeps {
   loadEnvFile(options.env)
   return {
     buildRunner: async () => runBuild(options.env ? { env: options.env } : {}, { cwd }),
-    needsRebuild: () => checkNeedsRebuild(cwd),
+    needsRebuild: (schemaDir) => checkNeedsRebuild(cwd, { schemaDir }),
     db: createPostgresAdapter(),
     migrationsFolder: resolve(cwd, './migrations'),
     configPath: resolve(cwd, 'dist/generated/drizzle.config.ts'),
@@ -170,7 +170,7 @@ export async function runMigrate(options: MigrateOptions, deps: MigrateDeps): Pr
   }
 
   // 3. Build check — rebuild if schema files are newer than dist/generated/schema.ts
-  if (await deps.needsRebuild()) {
+  if (await deps.needsRebuild(resolve(cwd, config.schema.base_path))) {
     try {
       await deps.buildRunner()
     } catch (err) {
