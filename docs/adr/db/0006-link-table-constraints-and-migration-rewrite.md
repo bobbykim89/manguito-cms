@@ -15,7 +15,8 @@ Every link table (the table behind a many-to-many reference) has a unique constr
 
 ## Consequences
 
-- The rewrite depends on drizzle-kit's statement format; a test pins it, and a format change surfaces as a failing test, not as silent duplicates.
-- `ensureLinkConstraints` may throw on a database error (ADR 0001: an unexpected failure); it skips link tables the database does not have yet, and tables that already carry the constraint.
+- The rewrite depends on drizzle-kit's statement format; a test pins it, and a format change in the repo's own drizzle-kit fails that test, while in a user project (which installs `^0.31.10`) it shows as a failed migration on a table with duplicates, never as lost links.
+- `ensureLinkConstraints` may throw on a database error ([ADR 0001](../0001-throw-vs-result-boundary.md): an unexpected failure); it skips link tables the database does not have yet, and tables that already carry the constraint.
 - Link tables from before the `order` column existed are cleaned by `ctid` instead, keeping an arbitrary row per pair.
-- Known limitation: renaming a link field in dev drops the old link table and creates a new one, which push may present as a truncate question. The default answer is the safe one.
+- Known limitation: renaming a many-to-many field, or its owner type, in dev renames the link table. If the developer tells push it was a rename, push drops the old unique constraint and adds the new one to a table with rows, and presents that as its truncate question. The default answer, "No, add the constraint without truncating the table", is safe. Answering "create new table" instead gives push's ordinary data-loss question for the old table.
+- A type with many-to-many fields `x` and `x_unique` is now refused with `CONSTRAINT_NAME_COLLISION`: `x`'s new unique constraint would take `x_unique`'s link table name, so its migration would fail. The message names the rename.

@@ -25,7 +25,7 @@ A table not derived from any user schema — `media`, `base_paths`, `roles`, `us
 _Avoid_: built-in table, core table
 
 **Junction table**:
-The link table generated for a `many-to-many` reference field, cascading on both sides.
+The link table generated for a `many-to-many` reference field, cascading on both sides. It also carries a unique (left, right) constraint named by `linkUniqueName`.
 _Avoid_: pivot table, join table, bridge table
 
 ### Migrations and seeding
@@ -35,7 +35,7 @@ The dev migration mode (`drizzle-kit push`) — fast, fileless, and intentionall
 _Avoid_: sync, dev migrate
 
 **Migration (generated)**:
-A reviewable `.sql` file produced by `drizzle-kit generate` for production and applied by `drizzle-kit migrate`.
+A reviewable `.sql` file produced by `drizzle-kit generate` for production and applied by `drizzle-kit migrate`. After drizzle-kit writes it, `runGenerate` rewrites any statement that adds a link table's unique constraint into a guarded block that first removes duplicate pairs (ADR db/0006).
 _Avoid_: change script, patch
 
 **Destructive change**:
