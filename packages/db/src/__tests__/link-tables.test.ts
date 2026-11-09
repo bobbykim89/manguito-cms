@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { describe, it, expect } from 'vitest'
-import { linkDedupeSql, linkUniqueName } from '../link-tables'
+import { addLinkDedupe, linkDedupeSql, linkUniqueName } from '../link-tables'
 
 const sha8 = (name: string) =>
   createHash('sha256').update(name).digest('hex').slice(0, 8)
@@ -56,5 +56,52 @@ describe('linkDedupeSql', () => {
     expect(linkDedupeSql('t', 'left_id', 'right_id', false)).toBe(
       'DELETE FROM "t" a USING "t" b WHERE a."left_id" = b."left_id" AND a."right_id" = b."right_id" AND a.ctid > b.ctid',
     )
+  })
+})
+
+describe('addLinkDedupe', () => {
+  const ADD_COLUMN =
+    'ALTER TABLE "junction_content_a_tags" ADD COLUMN "order" integer DEFAULT 0 NOT NULL;'
+  const ADD_CONSTRAINT =
+    'ALTER TABLE "junction_content_a_tags" ADD CONSTRAINT "junction_content_a_tags_unique" UNIQUE("left_id","right_id");'
+  const input = `${ADD_COLUMN}--> statement-breakpoint\n${ADD_CONSTRAINT}\n`
+
+  const block = [
+    '-- Removes only repeated (left, right) pairs, keeping the lowest order, before adding the constraint.',
+    'DO $$ BEGIN',
+    `IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = '"junction_content_a_tags"'::regclass AND conname = 'junction_content_a_tags_unique') THEN`,
+    `${linkDedupeSql('junction_content_a_tags', 'left_id', 'right_id', true)};`,
+    ADD_CONSTRAINT,
+    'END IF;',
+    'END $$;',
+  ].join('\n')
+
+  // MUTATION: leaving the ADD CONSTRAINT statement as drizzle-kit wrote it
+  // (no rewrite) fails the exact-output assertion.
+  it('wraps the ADD CONSTRAINT in a guarded DO block after the dedupe, leaving ADD COLUMN first', () => {
+    expect(addLinkDedupe(input)).toBe(
+      `${ADD_COLUMN}--> statement-breakpoint\n${block}\n`,
+    )
+  })
+
+  // MUTATION: matching any `UNIQUE(` instead of only ALTER TABLE ... ADD
+  // CONSTRAINT rewrites the inline CREATE TABLE constraint and fails this.
+  it('leaves an inline CONSTRAINT in CREATE TABLE untouched', () => {
+    const create =
+      'CREATE TABLE "junction_content_a_tags" (\n\t"left_id" uuid NOT NULL,\n\t"right_id" uuid NOT NULL,\n\tCONSTRAINT "junction_content_a_tags_unique" UNIQUE("left_id","right_id")\n);\n'
+    expect(addLinkDedupe(create)).toBe(create)
+  })
+
+  // MUTATION: rewriting every statement (e.g. appending a block regardless of
+  // a match) changes this plain table.
+  it('leaves SQL without a link constraint untouched', () => {
+    const plain = 'CREATE TABLE "content_x" (\n\t"id" uuid PRIMARY KEY NOT NULL\n);\n'
+    expect(addLinkDedupe(plain)).toBe(plain)
+  })
+
+  // MUTATION: a regex that consumes the trailing breakpoint drops it.
+  it('keeps a statement-breakpoint that followed the original statement', () => {
+    const out = addLinkDedupe(`${ADD_CONSTRAINT}--> statement-breakpoint\nSELECT 1;`)
+    expect(out).toBe(`${block}--> statement-breakpoint\nSELECT 1;`)
   })
 })

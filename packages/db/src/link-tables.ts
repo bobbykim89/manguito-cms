@@ -24,3 +24,24 @@ export function linkDedupeSql(
     : 'a.ctid > b.ctid'
   return `DELETE FROM "${table}" a USING "${table}" b WHERE a."${left}" = b."${left}" AND a."${right}" = b."${right}" AND ${order}`
 }
+
+const ADD_LINK_UNIQUE =
+  /ALTER TABLE "([^"]+)" ADD CONSTRAINT "([^"]+)" UNIQUE\("left_id","right_id"\);/g
+
+// Rewrites each `ALTER TABLE … ADD CONSTRAINT … UNIQUE("left_id","right_id");`
+// that drizzle-kit generated into a DO block: it removes repeated pairs, then
+// adds the constraint, and does nothing when the constraint already exists.
+// Link tables always carry an order column, so the dedupe keeps the lowest one.
+export function addLinkDedupe(sql: string): string {
+  return sql.replace(ADD_LINK_UNIQUE, (statement, table: string, name: string) =>
+    [
+      '-- Removes only repeated (left, right) pairs, keeping the lowest order, before adding the constraint.',
+      'DO $$ BEGIN',
+      `IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = '"${table}"'::regclass AND conname = '${name}') THEN`,
+      `${linkDedupeSql(table, 'left_id', 'right_id', true)};`,
+      statement,
+      'END IF;',
+      'END $$;',
+    ].join('\n'),
+  )
+}
