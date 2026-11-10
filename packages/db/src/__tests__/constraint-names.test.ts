@@ -254,13 +254,71 @@ describe('findConstraintNameCollisions — names in more than one kind of constr
   })
 
   it('suggests a length for the enum field, and shortening it to that clears the collision', () => {
-    // MUTATION: suggest 57 (63 − "_check".length) instead of 56. The message
-    // would then name 57 characters, not 56; the shortened column is checked below.
+    // MUTATION: suggest 57 (63 − "_check".length) instead of 56. Only the
+    // "at most 56 characters" assertion catches it; the clearing check below
+    // passes for 57 too, since a 57-character name still differs at character 63.
     const errors = collisions(registryOf(TAG, content('content--post', [ref(fk), enumField(check)])))
     expect(errors).toHaveLength(1)
     expect(errors[0]!.message).toContain(`shorten field "${check}" to at most 56 characters`)
     const shortened = check.slice(0, suggested(errors[0]!))
     expect(collisions(registryOf(TAG, content('content--post', [ref(fk), enumField(shortened)])))).toEqual([])
+  })
+})
+
+describe('findConstraintNameCollisions — foreign keys of one table with one name', () => {
+  // drizzle joins table, column, target table and target column with `_`, so
+  // `ref_taxonomy` -> `taxonomy_tag` and `ref` -> `taxonomy_taxonomy_tag` agree.
+  const OTHER = taxonomy('taxonomy--taxonomy_tag', [TITLE])
+  const post = (fields: RawField[]) => registryOf(TAG, OTHER, content('content--post', fields))
+  const pair = (prefix: string) => [ref(`${prefix}ref_taxonomy`), ref(`${prefix}ref`, 'taxonomy--taxonomy_tag')]
+
+  it('reports a short identical pair, naming both fields', () => {
+    // MUTATION: make checkTypeTable skip foreign-key pairs (or compare only a
+    // foreign key with a check). The two identical names would then pass.
+    const errors = collisions(post(pair('')))
+    expect(foreignKeyName('content_post', 'ref_taxonomy', 'taxonomy_tag', 'id')).toBe(
+      foreignKeyName('content_post', 'ref', 'taxonomy_taxonomy_tag', 'id'),
+    )
+    expect(errors).toHaveLength(1)
+    expect(errors[0]!.message).toContain('"content_post_ref_taxonomy_taxonomy_tag_id_fk"')
+    expect(errors[0]!.message).toContain('field "ref_taxonomy"')
+    expect(errors[0]!.message).toContain('field "ref"')
+    expect(errors[0]!.message).toContain('hash coincidence')
+  })
+
+  it('reports a long identical pair, whose hashed names agree too', () => {
+    // MUTATION: skip foreign-key pairs in checkTypeTable; the two long names,
+    // hashed from one default name, would then go unreported.
+    const prefix = `${'a'.repeat(40)}_`
+    const [a, b] = pair(prefix) as [RawField, RawField]
+    expect(foreignKeyName('content_post', a.name as string, 'taxonomy_tag', 'id').length).toBeGreaterThan(63)
+    const errors = collisions(post([a, b]))
+    expect(errors).toHaveLength(1)
+    expect(errors[0]!.message).toContain(`"${codegenForeignKeyName('content_post', a.name as string, 'taxonomy_tag', 'id')}"`)
+    expect(errors[0]!.message).toContain(`field "${a.name}"`)
+    expect(errors[0]!.message).toContain(`field "${b.name}"`)
+  })
+
+  it('is cleared by renaming one field, as the message suggests', () => {
+    // MUTATION: suggest a rename that keeps the joined name, e.g. renaming the
+    // field but leaving its column fixed; the collision would survive the rename.
+    const errors = collisions(post(pair('')))
+    expect(errors[0]!.message).toContain('rename field "ref"')
+    expect(collisions(post([ref('ref_taxonomy'), ref('ref_two', 'taxonomy--taxonomy_tag')]))).toEqual([])
+  })
+
+  it('suggests changing the declared column, and changing it clears the collision', () => {
+    // MUTATION: make renameOf suggest renaming the field when a `column`
+    // declaration keeps it apart; renaming then leaves the column, and the
+    // collision, in place.
+    const declared = { ...ref('other', 'taxonomy--taxonomy_tag'), column: 'ref' }
+    const errors = collisions(post([ref('ref_taxonomy'), declared]))
+    expect(errors).toHaveLength(1)
+    expect(errors[0]!.message).toContain('change the column "ref" of field "other"')
+    expect(errors[0]!.message).not.toContain('rename field "other"')
+    expect(collisions(post([ref('ref_taxonomy'), { ...declared, column: 'ref_two' }]))).toEqual([])
+    // Renaming the field alone does not clear it.
+    expect(collisions(post([ref('ref_taxonomy'), { ...declared, name: 'other_two' }]))).toHaveLength(1)
   })
 })
 

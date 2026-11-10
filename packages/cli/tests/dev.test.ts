@@ -397,7 +397,7 @@ describe('runDev', () => {
   })
 
   it('keeps running when an edit has a schema parse error', async () => {
-    // MUTATION: let parseAllSchemas call process.exit(1) again, as it did when
+    // MUTATION: let parseProjectSchemas call process.exit(1) again, as it did when
     // the reload's try/catch could never fire. A typo saved while dev runs then
     // stops the dev server (#72).
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('process.exit') })

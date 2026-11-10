@@ -5,7 +5,7 @@ import type {
   SchemaRegistry,
   SystemField,
 } from '@bobbykim/manguito-cms-core'
-import { checkConstraintName, codegenForeignKeyName, foreignKeyName } from '../constraint-names'
+import { checkConstraintName, explicitForeignKeyName } from '../constraint-names'
 import { linkUniqueName } from '../link-tables'
 
 // ─── File Header ──────────────────────────────────────────────────────────────
@@ -138,7 +138,7 @@ export function generateFieldColumn(
 
   if (col.foreign_key && inlineReference) {
     const onDelete = mapOnDelete(col.foreign_key.on_delete)
-    expr += `.references(() => ${col.foreign_key.table}.${col.foreign_key.column}, { onDelete: '${onDelete}' })`
+    expr += `.references(() => ${tableNameToVarName(col.foreign_key.table)}.${col.foreign_key.column}, { onDelete: '${onDelete}' })`
   }
 
   return expr
@@ -200,17 +200,13 @@ function generateTableDef(
   for (const f of fields) {
     const col = f.db_column
     const fk = col?.foreign_key
-    const longName =
-      col && fk
-        ? codegenForeignKeyName(tableName, col.column_name, fk.table, fk.column)
-        : null
-    const explicit = col && fk && longName !== foreignKeyName(tableName, col.column_name, fk.table, fk.column)
-    const colExpr = generateFieldColumn(f, { inlineReference: !explicit })
+    const explicitName = col && fk ? explicitForeignKeyName(tableName, col.column_name, fk.table, fk.column) : null
+    const colExpr = generateFieldColumn(f, { inlineReference: explicitName === null })
     if (colExpr === null) continue
     colLines.push(`${col!.column_name}: ${colExpr},`)
-    if (explicit) {
+    if (col && fk && explicitName !== null) {
       namedForeignKeys.push(
-        foreignKeyEntry(col.column_name, longName!, `${tableNameToVarName(fk.table)}.${fk.column}`, mapOnDelete(fk.on_delete)),
+        foreignKeyEntry(col.column_name, explicitName, `${tableNameToVarName(fk.table)}.${fk.column}`, mapOnDelete(fk.on_delete)),
       )
     }
   }
@@ -299,31 +295,29 @@ function generateJunctionTables(registry: SchemaRegistry): string {
         ? `    order: s.integer('order').notNull().default(0),`
         : null
 
-      const leftFk = codegenForeignKeyName(jt.table_name, jt.left_column, owner.db.table_name, 'id')
-      const rightFk = codegenForeignKeyName(jt.table_name, jt.right_column, jt.right_table, 'id')
+      const leftFk = explicitForeignKeyName(jt.table_name, jt.left_column, owner.db.table_name, 'id')
+      const rightFk = explicitForeignKeyName(jt.table_name, jt.right_column, jt.right_table, 'id')
       // A foreign key whose drizzle name passes 63 characters is named in the
       // constraint callback; a shorter one keeps its inline `.references(...)`.
-      const leftNamed = leftFk !== foreignKeyName(jt.table_name, jt.left_column, owner.db.table_name, 'id')
-      const rightNamed = rightFk !== foreignKeyName(jt.table_name, jt.right_column, jt.right_table, 'id')
 
       const def = [
         `export const ${varName} = s.pgTable(`,
         `  '${jt.table_name}',`,
         `  {`,
         `    ${jt.left_column}: s.uuid('${jt.left_column}')`,
-        ...(leftNamed
+        ...(leftFk !== null
           ? [`      .notNull(),`]
           : [`      .notNull()`, `      .references(() => ${leftVar}.id, { onDelete: 'cascade' }),`]),
         `    ${jt.right_column}: s.uuid('${jt.right_column}')`,
-        ...(rightNamed
+        ...(rightFk !== null
           ? [`      .notNull(),`]
           : [`      .notNull()`, `      .references(() => ${rightVar}.id, { onDelete: 'cascade' }),`]),
         ...(orderLine ? [orderLine] : []),
         `  },`,
         `  (table) => ({`,
         `    pair: s.unique('${linkUniqueName(jt.table_name)}').on(table.${jt.left_column}, table.${jt.right_column}),`,
-        ...(leftNamed ? [foreignKeyEntry(jt.left_column, leftFk, `${leftVar}.id`, 'cascade')] : []),
-        ...(rightNamed ? [foreignKeyEntry(jt.right_column, rightFk, `${rightVar}.id`, 'cascade')] : []),
+        ...(leftFk !== null ? [foreignKeyEntry(jt.left_column, leftFk, `${leftVar}.id`, 'cascade')] : []),
+        ...(rightFk !== null ? [foreignKeyEntry(jt.right_column, rightFk, `${rightVar}.id`, 'cascade')] : []),
         `  })`,
         `)`,
       ].join('\n')

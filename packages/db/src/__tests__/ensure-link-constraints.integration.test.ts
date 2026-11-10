@@ -281,7 +281,7 @@ describe('ensureLinkConstraints', () => {
   })
 
   it('skips a link table the registry lists but the database lacks', async () => {
-    // MUTATION: skip the to_regclass check. The dedupe then fails on the
+    // MUTATION: drop the catalog query's existence filter (the pg_class join). The dedupe then fails on the
     // missing relation and the call throws.
     await db.execute(sql.raw(`DROP TABLE "${LONG_LINK}"`))
     await db.execute(sql.raw(`ALTER TABLE "${TAGS_LINK}" DROP CONSTRAINT "${linkUniqueName(TAGS_LINK)}"`))

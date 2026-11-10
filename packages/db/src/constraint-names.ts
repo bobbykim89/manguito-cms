@@ -43,6 +43,14 @@ export function codegenForeignKeyName(table: string, column: string, targetTable
   return `${name.slice(0, LIMIT - '_'.length - hash.length - '_fk'.length)}_${hash}_fk`
 }
 
+// The name codegen must state explicitly for a foreign key: the hashed name,
+// or null when the default name fits in 63 characters and the inline
+// `.references(...)` already produces it.
+export function explicitForeignKeyName(table: string, column: string, targetTable: string, targetColumn: string): string | null {
+  const name = codegenForeignKeyName(table, column, targetTable, targetColumn)
+  return name === foreignKeyName(table, column, targetTable, targetColumn) ? null : name
+}
+
 // The name `generateTableDef` gives an enum column's check constraint.
 export function checkConstraintName(column: string): string {
   return `${column}_check`
@@ -120,11 +128,16 @@ function typeTableMessage(owner: Owner, a: TableConstraint, b: TableConstraint):
     `Postgres keeps only the first ${LIMIT} characters of a name, which are the same, so the ` +
     `migration would fail with "constraint already exists".`
   if (a.kind === 'foreign key' && b.kind === 'foreign key') {
-    // Only reachable by a hash coincidence: a hashed name agreeing with another
-    // foreign key's name in all 63 characters. No fixture can produce it on purpose.
+    // Reachable on purpose: drizzle joins the table, column, target table and
+    // target column with `_`, so `ref_taxonomy` -> `taxonomy_tag` and
+    // `ref` -> `taxonomy_taxonomy_tag` get one name (long ones hash to one name
+    // too). Otherwise only a hash coincidence, where a hashed name agrees with
+    // another foreign key's name in all 63 characters.
     return (
       `The ${describeField(a.field)} and the ${describeField(b.field)} of "${owner.name}" get foreign keys ` +
-      `"${a.name}" and "${b.name}". ${clash} To fix it, ${renameOf(a.field)} or ${renameOf(b.field)}.`
+      `"${a.name}" and "${b.name}". The two names are the same, because the table, column and target names ` +
+      `that drizzle joins with "_" to make them happen to coincide (or, for long names, by a hash coincidence), ` +
+      `so the migration would fail with "constraint already exists". To fix it, ${renameOf(a.field)} or ${renameOf(b.field)}.`
     )
   }
   if (a.kind === 'check' && b.kind === 'check') {
