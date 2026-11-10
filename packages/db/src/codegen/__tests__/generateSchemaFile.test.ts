@@ -820,6 +820,10 @@ describe('generateSchemaFile — long foreign-key names (#88)', () => {
     expect(names).toHaveLength(2)
     expect(names[0]).not.toBe(names[1])
     expect(names.every((n) => n.length === 63)).toBe(true)
+    // MUTATION: target the table's own exported const. It is then read inside
+    // its own initializer, which tsc reports as implicitly any (TS7022).
+    expect(def).toContain('foreignColumns: [table.id]')
+    expect(def).not.toContain(`foreignColumns: [${type.replace('--', '_')}.id]`)
   })
 
   it('emits a constraint callback for a long reference when the type has no enum', () => {

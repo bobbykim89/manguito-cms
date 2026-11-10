@@ -254,12 +254,12 @@ describe('findConstraintNameCollisions — names in more than one kind of constr
   })
 
   it('suggests a length for the enum field, and shortening it to that clears the collision', () => {
-    // MUTATION: suggest 57 (63 − "_check".length) instead of 56. Only the
-    // "at most 56 characters" assertion catches it; the clearing check below
-    // passes for 57 too, since a 57-character name still differs at character 63.
+    // MUTATION: suggest 63. A 63-character column is the foreign key's name
+    // itself, so its check, cut to 63, still collides and the clearing check fails.
+    // 62 is the tight bound: a shorter column's cut check ends in part of `_check`.
     const errors = collisions(registryOf(TAG, content('content--post', [ref(fk), enumField(check)])))
     expect(errors).toHaveLength(1)
-    expect(errors[0]!.message).toContain(`shorten field "${check}" to at most 56 characters`)
+    expect(errors[0]!.message).toContain(`shorten field "${check}" to at most 62 characters`)
     const shortened = check.slice(0, suggested(errors[0]!))
     expect(collisions(registryOf(TAG, content('content--post', [ref(fk), enumField(shortened)])))).toEqual([])
   })
@@ -283,7 +283,9 @@ describe('findConstraintNameCollisions — foreign keys of one table with one na
     expect(errors[0]!.message).toContain('"content_post_ref_taxonomy_taxonomy_tag_id_fk"')
     expect(errors[0]!.message).toContain('field "ref_taxonomy"')
     expect(errors[0]!.message).toContain('field "ref"')
-    expect(errors[0]!.message).toContain('hash coincidence')
+    // MUTATION: blame a hash coincidence. Nothing is hashed here: the joined
+    // default names are identical.
+    expect(errors[0]!.message).toContain('drizzle joins the table, column and target names with "_", and here the joined names coincide')
   })
 
   it('reports a long identical pair, whose hashed names agree too', () => {

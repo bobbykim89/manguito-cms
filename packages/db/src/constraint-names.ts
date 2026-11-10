@@ -47,8 +47,8 @@ export function codegenForeignKeyName(table: string, column: string, targetTable
 // or null when the default name fits in 63 characters and the inline
 // `.references(...)` already produces it.
 export function explicitForeignKeyName(table: string, column: string, targetTable: string, targetColumn: string): string | null {
-  const name = codegenForeignKeyName(table, column, targetTable, targetColumn)
-  return name === foreignKeyName(table, column, targetTable, targetColumn) ? null : name
+  if (foreignKeyName(table, column, targetTable, targetColumn).length <= LIMIT) return null
+  return codegenForeignKeyName(table, column, targetTable, targetColumn)
 }
 
 // The name `generateTableDef` gives an enum column's check constraint.
@@ -130,14 +130,15 @@ function typeTableMessage(owner: Owner, a: TableConstraint, b: TableConstraint):
   if (a.kind === 'foreign key' && b.kind === 'foreign key') {
     // Reachable on purpose: drizzle joins the table, column, target table and
     // target column with `_`, so `ref_taxonomy` -> `taxonomy_tag` and
-    // `ref` -> `taxonomy_taxonomy_tag` get one name (long ones hash to one name
-    // too). Otherwise only a hash coincidence, where a hashed name agrees with
-    // another foreign key's name in all 63 characters.
+    // `ref` -> `taxonomy_taxonomy_tag` get one default name, and so one hashed
+    // name when long. Otherwise only a hash coincidence between two different
+    // long names, which no fixture can produce on purpose.
     return (
       `The ${describeField(a.field)} and the ${describeField(b.field)} of "${owner.name}" get foreign keys ` +
       `"${a.name}" and "${b.name}". The two names are the same: drizzle joins the table, column and target ` +
-      `names with "_", and here the joined names coincide (or, for long names, their hashes do: a hash coincidence). ` +
-      `The migration would fail with "constraint already exists". To fix it, ${renameOf(a.field)} or ${renameOf(b.field)}.`
+      `names with "_", and here the joined names coincide (two different long names can also, very rarely, hash ` +
+      `to one name). The migration would fail with "constraint already exists". To fix it, ` +
+      `${renameOf(a.field)} or ${renameOf(b.field)}.`
     )
   }
   if (a.kind === 'check' && b.kind === 'check') {
@@ -148,11 +149,12 @@ function typeTableMessage(owner: Owner, a: TableConstraint, b: TableConstraint):
       `${renameOf(b.field)} so that the two differ within their first ${room} characters.`
     )
   }
-  // A foreign key and a check. A foreign key name is at most 63 characters and
-  // ends in `_fk`; a check name of at most 62 characters ends in `_check`, so
-  // only a check cut to 63 characters can match one.
+  // A foreign key and a check. A foreign key name is at most 63 characters,
+  // stored whole, and ends in `_fk`. A check name `<column>_check` cut to 63
+  // characters ends in `_fk` only when the column's own first 63 characters
+  // are the foreign key's name, so a column of at most 62 characters clears it.
   const check = a.kind === 'check' ? a : b
-  const room = LIMIT - 1 - '_check'.length
+  const room = LIMIT - 1
   return (
     `The ${a.kind} "${a.name}" of the ${describeField(a.field)} and the ${b.kind} "${b.name}" of the ` +
     `${describeField(b.field)}, both on "${owner.name}", are the same in their first ${LIMIT} characters. ${clash} ` +
@@ -188,20 +190,19 @@ function checkLinkTable(link: Link, left: string, right: string, rightTable: str
   const { owner, field, table } = link
   const leftFk = codegenForeignKeyName(table, left, owner.db.table_name, 'id')
   const rightFk = codegenForeignKeyName(table, right, rightTable, 'id')
-  const names = [leftFk, rightFk, link.unique]
-  const collides = names.some((n, i) => names.some((m, j) => i < j && stored(n) === stored(m)))
-  if (!collides) return null
-
-  const base = { file: owner.source_file, code: 'CONSTRAINT_NAME_COLLISION' as const, path: rawFieldPath(owner, field) }
-  const truncated = `Postgres keeps only the first ${LIMIT} characters of a name`
-  // Only reachable by a hash coincidence: two of the three names, long ones hashed,
-  // agreeing in all 63 characters. No fixture can produce it on purpose.
+  // All three names are at most 63 characters and stored whole. The unique ends
+  // in `_unique` and the foreign keys in `_fk`, so only the two foreign keys can
+  // agree, and only by a hash coincidence: their default names differ at
+  // `left_id`/`right_id`. No fixture can produce it on purpose.
+  if (stored(leftFk) !== stored(rightFk)) return null
   return {
-    ...base,
+    file: owner.source_file,
+    code: 'CONSTRAINT_NAME_COLLISION',
+    path: rawFieldPath(owner, field),
     message:
-      `The link table of field "${field.name}" of "${owner.name}", "${table}", gets constraints ${names.map((n) => `"${n}"`).join(', ')}, ` +
-      `two of which are the same in their first ${LIMIT} characters. ${truncated}, so the migration would fail with ` +
-      `"constraint already exists". To fix it, rename field "${field.name}" of type "${owner.name}".`,
+      `The link table of field "${field.name}" of "${owner.name}", "${table}", gets two foreign keys named ` +
+      `"${leftFk}": their long names hash to one name. The migration would fail with "constraint already exists". ` +
+      `To fix it, rename field "${field.name}" of type "${owner.name}".`,
   }
 }
 

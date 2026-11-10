@@ -206,7 +206,14 @@ function generateTableDef(
     colLines.push(`${col!.column_name}: ${colExpr},`)
     if (col && fk && explicitName !== null) {
       namedForeignKeys.push(
-        foreignKeyEntry(col.column_name, explicitName, `${tableNameToVarName(fk.table)}.${fk.column}`, mapOnDelete(fk.on_delete)),
+        // A reference to the table itself goes through the callback's `table`:
+        // the exported const would be read inside its own initializer.
+        foreignKeyEntry(
+          col.column_name,
+          explicitName,
+          `${fk.table === tableName ? 'table' : tableNameToVarName(fk.table)}.${fk.column}`,
+          mapOnDelete(fk.on_delete),
+        ),
       )
     }
   }
