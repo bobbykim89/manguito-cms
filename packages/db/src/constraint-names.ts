@@ -135,9 +135,9 @@ function typeTableMessage(owner: Owner, a: TableConstraint, b: TableConstraint):
     // another foreign key's name in all 63 characters.
     return (
       `The ${describeField(a.field)} and the ${describeField(b.field)} of "${owner.name}" get foreign keys ` +
-      `"${a.name}" and "${b.name}". The two names are the same, because the table, column and target names ` +
-      `that drizzle joins with "_" to make them happen to coincide (or, for long names, by a hash coincidence), ` +
-      `so the migration would fail with "constraint already exists". To fix it, ${renameOf(a.field)} or ${renameOf(b.field)}.`
+      `"${a.name}" and "${b.name}". The two names are the same: drizzle joins the table, column and target ` +
+      `names with "_", and here the joined names coincide (or, for long names, their hashes do: a hash coincidence). ` +
+      `The migration would fail with "constraint already exists". To fix it, ${renameOf(a.field)} or ${renameOf(b.field)}.`
     )
   }
   if (a.kind === 'check' && b.kind === 'check') {
