@@ -5,7 +5,7 @@ import type {
   SchemaRegistry,
   SystemField,
 } from '@bobbykim/manguito-cms-core'
-import { checkConstraintName } from '../constraint-names'
+import { checkConstraintName, codegenForeignKeyName, foreignKeyName } from '../constraint-names'
 import { linkUniqueName } from '../link-tables'
 
 // ─── File Header ──────────────────────────────────────────────────────────────
@@ -116,7 +116,13 @@ function mapOnDelete(
   return 'restrict'
 }
 
-export function generateFieldColumn(field: ParsedField): string | null {
+// `inlineReference: false` leaves out `.references(...)`; the caller names the
+// foreign key in the table's constraint callback instead.
+export function generateFieldColumn(
+  field: ParsedField,
+  options: { inlineReference?: boolean } = {},
+): string | null {
+  const { inlineReference = true } = options
   if (field.field_type === 'paragraph' || field.db_column === null) return null
 
   const col = field.db_column
@@ -130,7 +136,7 @@ export function generateFieldColumn(field: ParsedField): string | null {
 
   if (!col.nullable) expr += '.notNull()'
 
-  if (col.foreign_key) {
+  if (col.foreign_key && inlineReference) {
     const onDelete = mapOnDelete(col.foreign_key.on_delete)
     expr += `.references(() => ${col.foreign_key.table}.${col.foreign_key.column}, { onDelete: '${onDelete}' })`
   }
@@ -170,6 +176,11 @@ function tableNameToVarName(tableName: string): string {
   return tableName.replace(/-/g, '_')
 }
 
+// One entry of a table's constraint callback: an explicitly named foreign key.
+function foreignKeyEntry(column: string, name: string, target: string, onDelete: string): string {
+  return `    ${column}_fk: s.foreignKey({ name: '${name}', columns: [table.${column}], foreignColumns: [${target}] }).onDelete('${onDelete}'),`
+}
+
 function generateTableDef(
   tableName: string,
   varName: string,
@@ -182,35 +193,50 @@ function generateTableDef(
     colLines.push(`${f.name}: ${generateSystemFieldColumn(f)},`)
   }
 
+  // A foreign key whose drizzle name passes 63 characters is named in the
+  // constraint callback; the rest keep their inline `.references(...)`.
+  const namedForeignKeys: string[] = []
+
   for (const f of fields) {
-    const colExpr = generateFieldColumn(f)
+    const col = f.db_column
+    const fk = col?.foreign_key
+    const longName =
+      col && fk
+        ? codegenForeignKeyName(tableName, col.column_name, fk.table, fk.column)
+        : null
+    const explicit = col && fk && longName !== foreignKeyName(tableName, col.column_name, fk.table, fk.column)
+    const colExpr = generateFieldColumn(f, { inlineReference: !explicit })
     if (colExpr === null) continue
-    colLines.push(`${f.db_column!.column_name}: ${colExpr},`)
+    colLines.push(`${col!.column_name}: ${colExpr},`)
+    if (explicit) {
+      namedForeignKeys.push(
+        foreignKeyEntry(col.column_name, longName!, `${tableNameToVarName(fk.table)}.${fk.column}`, mapOnDelete(fk.on_delete)),
+      )
+    }
   }
 
   const enumFields = fields.filter(
     (f) => (f.db_column?.check_constraint?.length ?? 0) > 0,
   )
 
-  if (enumFields.length === 0) {
+  if (enumFields.length === 0 && namedForeignKeys.length === 0) {
     const colBlock = colLines.map((l) => `  ${l}`).join('\n')
     return `export const ${varName} = s.pgTable('${tableName}', {\n${colBlock}\n})`
   }
 
   const colBlock = colLines.map((l) => `    ${l}`).join('\n')
-  const constraints = enumFields
-    .map((f) => {
-      const col = f.db_column!
-      const values = col.check_constraint!.map((v) => `'${v}'`).join(', ')
-      const cname = checkConstraintName(col.column_name)
-      return [
-        `    ${cname}: s.check(`,
-        `      '${cname}',`,
-        `      sql\`\${table.${col.column_name}} IN (${values})\``,
-        `    ),`,
-      ].join('\n')
-    })
-    .join('\n')
+  const checks = enumFields.map((f) => {
+    const col = f.db_column!
+    const values = col.check_constraint!.map((v) => `'${v}'`).join(', ')
+    const cname = checkConstraintName(col.column_name)
+    return [
+      `    ${cname}: s.check(`,
+      `      '${cname}',`,
+      `      sql\`\${table.${col.column_name}} IN (${values})\``,
+      `    ),`,
+    ].join('\n')
+  })
+  const constraints = [...checks, ...namedForeignKeys].join('\n')
 
   return [
     `export const ${varName} = s.pgTable(`,
@@ -273,20 +299,31 @@ function generateJunctionTables(registry: SchemaRegistry): string {
         ? `    order: s.integer('order').notNull().default(0),`
         : null
 
+      const leftFk = codegenForeignKeyName(jt.table_name, jt.left_column, owner.db.table_name, 'id')
+      const rightFk = codegenForeignKeyName(jt.table_name, jt.right_column, jt.right_table, 'id')
+      // A foreign key whose drizzle name passes 63 characters is named in the
+      // constraint callback; a shorter one keeps its inline `.references(...)`.
+      const leftNamed = leftFk !== foreignKeyName(jt.table_name, jt.left_column, owner.db.table_name, 'id')
+      const rightNamed = rightFk !== foreignKeyName(jt.table_name, jt.right_column, jt.right_table, 'id')
+
       const def = [
         `export const ${varName} = s.pgTable(`,
         `  '${jt.table_name}',`,
         `  {`,
         `    ${jt.left_column}: s.uuid('${jt.left_column}')`,
-        `      .notNull()`,
-        `      .references(() => ${leftVar}.id, { onDelete: 'cascade' }),`,
+        ...(leftNamed
+          ? [`      .notNull(),`]
+          : [`      .notNull()`, `      .references(() => ${leftVar}.id, { onDelete: 'cascade' }),`]),
         `    ${jt.right_column}: s.uuid('${jt.right_column}')`,
-        `      .notNull()`,
-        `      .references(() => ${rightVar}.id, { onDelete: 'cascade' }),`,
+        ...(rightNamed
+          ? [`      .notNull(),`]
+          : [`      .notNull()`, `      .references(() => ${rightVar}.id, { onDelete: 'cascade' }),`]),
         ...(orderLine ? [orderLine] : []),
         `  },`,
         `  (table) => ({`,
         `    pair: s.unique('${linkUniqueName(jt.table_name)}').on(table.${jt.left_column}, table.${jt.right_column}),`,
+        ...(leftNamed ? [foreignKeyEntry(jt.left_column, leftFk, `${leftVar}.id`, 'cascade')] : []),
+        ...(rightNamed ? [foreignKeyEntry(jt.right_column, rightFk, `${rightVar}.id`, 'cascade')] : []),
         `  })`,
         `)`,
       ].join('\n')

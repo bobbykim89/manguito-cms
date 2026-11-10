@@ -6,6 +6,7 @@ import type {
   ParsedTaxonomyType,
   SchemaRegistry,
 } from '@bobbykim/manguito-cms-core'
+import { createHash } from 'node:crypto'
 import { linkUniqueName } from './link-tables'
 
 // Postgres keeps the first 63 bytes of an identifier and drops the rest
@@ -28,6 +29,18 @@ const SYSTEM_UNIQUES = [
 // columns, the target table and the target columns, joined by `_`, then `_fk`.
 export function foreignKeyName(table: string, column: string, targetTable: string, targetColumn: string): string {
   return `${table}_${column}_${targetTable}_${targetColumn}_fk`
+}
+
+// The name codegen gives a foreign key. Postgres keeps 63 characters of a
+// longer name and drizzle-kit compares the full one with the stored one, so
+// push would re-plan the key on every run. A longer default name becomes its
+// first 51 characters, `_`, 8 hex characters of the whole name's hash and
+// `_fk`: 63 characters, distinct per key, and stored as given.
+export function codegenForeignKeyName(table: string, column: string, targetTable: string, targetColumn: string): string {
+  const name = foreignKeyName(table, column, targetTable, targetColumn)
+  if (name.length <= LIMIT) return name
+  const hash = createHash('sha256').update(name).digest('hex').slice(0, 8)
+  return `${name.slice(0, LIMIT - '_'.length - hash.length - '_fk'.length)}_${hash}_fk`
 }
 
 // The name `generateTableDef` gives an enum column's check constraint.

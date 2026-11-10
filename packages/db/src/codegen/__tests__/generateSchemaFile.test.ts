@@ -8,8 +8,10 @@ import type {
   SchemaRegistry,
   SystemField,
 } from '@bobbykim/manguito-cms-core'
-import { parseSchema } from '@bobbykim/manguito-cms-core'
+import { buildSchemaRegistry, parseSchema } from '@bobbykim/manguito-cms-core'
+import type { ParsedSchema } from '@bobbykim/manguito-cms-core'
 import { testParsedSchema } from '@bobbykim/manguito-cms-test-utils'
+import { codegenForeignKeyName } from '../../constraint-names'
 import { linkUniqueName } from '../../link-tables'
 import {
   generateFieldColumn,
@@ -591,16 +593,18 @@ describe('generateSchemaFile — junction tables', () => {
   })
 
   it('self-referencing content type produces junction table with both columns pointing to same table', () => {
+    // Short names, so the foreign keys keep their inline references (a long
+    // link table names them explicitly; see the #88 tests below).
     const registry = makeEmptyRegistry()
-    registry.content_types['blog_post'] = makeContentType(
-      'blog_post',
+    registry.content_types['post'] = makeContentType(
+      'post',
       [],
       [
         {
-          table_name: 'junction_content_blog_post_related',
+          table_name: 'junction_content_post_related',
           left_column: 'left_id',
           right_column: 'right_id',
-          right_table: 'content_blog_post',
+          right_table: 'content_post',
           order_column: false,
         },
       ],
@@ -608,15 +612,15 @@ describe('generateSchemaFile — junction tables', () => {
 
     const output = generateSchemaFile(registry)
     expect(output).toContain(
-      "export const junction_content_blog_post_related = s.pgTable(",
+      "export const junction_content_post_related = s.pgTable(",
     )
     // both FK columns reference the same table
     const junctionStart = output.indexOf(
-      'export const junction_content_blog_post_related',
+      'export const junction_content_post_related',
     )
     const junctionDef = output.slice(junctionStart)
     const selfRefCount = (
-      junctionDef.match(/references\(\(\) => content_blog_post\.id/g) ?? []
+      junctionDef.match(/references\(\(\) => content_post\.id/g) ?? []
     ).length
     expect(selfRefCount).toBe(2)
   })
@@ -753,6 +757,131 @@ describe('generateSchemaFile — table output order', () => {
     expect(childPos).toBeLessThan(parentPos)
   })
 })
+
+// ─── Long foreign-key names (#88) ─────────────────────────────────────────────
+
+describe('generateSchemaFile — long foreign-key names (#88)', () => {
+  type Raw = Record<string, unknown>
+  const parseOrThrow = (raw: Raw, type: 'content-type' | 'taxonomy-type' | 'paragraph-type'): ParsedSchema => {
+    const result = parseSchema(raw, type, `${String(raw['name'])}.json`)
+    if (!result.ok) throw new Error(`fixture failed to parse: ${JSON.stringify(result.errors)}`)
+    return result.schema
+  }
+  const text: Raw = { name: 'title', label: 'Title', type: 'text/plain', required: false }
+  const tag = parseOrThrow({ name: 'taxonomy--tag', label: 'Tag', type: 'taxonomy-type', fields: [text] }, 'taxonomy-type')
+  const post = (name: string, fields: Raw[]): ParsedSchema =>
+    parseOrThrow(
+      { name, label: name, type: 'content-type', default_base_path: 'posts', only_one: false, fields: [{ tab: { name: 'main', label: 'Main', fields } }] },
+      'content-type',
+    )
+  const registryOf = (...schemas: ParsedSchema[]): SchemaRegistry =>
+    buildSchemaRegistry(schemas, { base_paths: [] }, { roles: [], valid_permissions: [] })
+  const field = (name: string, extra: Raw = {}): Raw => ({ name, label: name, type: 'reference', target: 'taxonomy--tag', rel: 'one-to-one', required: false, ...extra })
+  const tableOf = (output: string, table: string): string => {
+    const start = output.indexOf(`export const ${table} = s.pgTable(`)
+    expect(start).toBeGreaterThan(-1)
+    const next = output.indexOf('\nexport const ', start + 1)
+    return next === -1 ? output.slice(start) : output.slice(start, next)
+  }
+
+  const LONG_TYPE = 'content--a_long_content_type_name'
+  const LONG_FIELD = 'a_long_reference_field_name'
+  const OWNER_TABLE = 'content_a_long_content_type_name'
+
+  it('names a long link table\'s foreign keys explicitly and drops their inline references', () => {
+    // MUTATION: keep the inline `.references(...)` as well as the explicit key.
+    // The `left_id:` line then holds `.references(`, and drizzle plans a second,
+    // default-named foreign key.
+    const owner = post(LONG_TYPE, [field('tags_with_a_rather_long_name', { rel: 'many-to-many' })])
+    const registry = registryOf(tag, owner)
+    const jt = registry.content_types[LONG_TYPE]!.db.junction_tables[0]!
+    const left = codegenForeignKeyName(jt.table_name, 'left_id', OWNER_TABLE, 'id')
+    const def = tableOf(generateSchemaFile(registry), jt.table_name)
+    expect(foreignKeyNameLength(jt.table_name, 'left_id', OWNER_TABLE)).toBeGreaterThan(63)
+    expect(def).toContain(`s.foreignKey({ name: '${left}'`)
+    expect(def).toContain(`s.foreignKey({ name: '${codegenForeignKeyName(jt.table_name, 'right_id', 'taxonomy_tag', 'id')}'`)
+    expect(def).toContain(".onDelete('cascade')")
+    const leftLine = def.split('\n').find((l) => l.trimStart().startsWith('left_id:'))!
+    expect(leftLine).not.toContain('.references(')
+    expect(def).not.toContain('.references(')
+  })
+
+  it('gives a self-referencing long type two differently named foreign keys', () => {
+    // MUTATION: hash the table name only. The two columns then share a
+    // 51-character prefix and a hash, so both foreign keys get one name.
+    const type = 'taxonomy--a_very_long_self_referencing_taxonomy_type_name'
+    const self = parseOrThrow(
+      { name: type, label: 'Self', type: 'taxonomy-type', fields: [text, field('parent', { target: type }), field('related', { target: type })] },
+      'taxonomy-type',
+    )
+    const output = generateSchemaFile(registryOf(self))
+    const def = tableOf(output, type.replace('--', '_'))
+    const names = [...def.matchAll(/s\.foreignKey\(\{ name: '([^']+)'/g)].map((m) => m[1]!)
+    expect(names).toHaveLength(2)
+    expect(names[0]).not.toBe(names[1])
+    expect(names.every((n) => n.length === 63)).toBe(true)
+  })
+
+  it('emits a constraint callback for a long reference when the type has no enum', () => {
+    // MUTATION: emit the callback only when enum fields exist. The explicit
+    // foreign key is then dropped, and so is the column's only foreign key.
+    const output = generateSchemaFile(registryOf(tag, post(LONG_TYPE, [field(LONG_FIELD)])))
+    const def = tableOf(output, OWNER_TABLE)
+    expect(def).toContain('(table) => ({')
+    expect(def).toContain(`${LONG_FIELD}_fk: s.foreignKey({ name: '${codegenForeignKeyName(OWNER_TABLE, LONG_FIELD, 'taxonomy_tag', 'id')}'`)
+    expect(def).toContain(`columns: [table.${LONG_FIELD}]`)
+    expect(def).toContain('foreignColumns: [taxonomy_tag.id]')
+    expect(def).not.toContain('s.check(')
+    expect(def).not.toContain('.references(')
+  })
+
+  it('puts a long foreign key and an enum check in one callback', () => {
+    // MUTATION: a second callback argument for the foreign keys. pgTable then
+    // takes two callbacks and drizzle ignores one.
+    const enumField: Raw = { name: 'status', label: 'Status', type: 'enum', values: ['a', 'b'], required: false }
+    const output = generateSchemaFile(registryOf(tag, post(LONG_TYPE, [field(LONG_FIELD), enumField])))
+    const def = tableOf(output, OWNER_TABLE)
+    expect(def.match(/\(table\) => \(\{/g)).toHaveLength(1)
+    expect(def).toContain('s.check(')
+    expect(def).toContain('s.foreignKey(')
+  })
+
+  it('names a long media column\'s foreign key on the media table', () => {
+    // MUTATION: emit foreign keys for type tables only. The paragraph table
+    // keeps no explicit key and drizzle's long name returns.
+    const para = parseOrThrow(
+      { name: 'paragraph--a_paragraph_type_with_a_long_name', label: 'P', type: 'paragraph-type', fields: [{ name: 'a_rather_long_media_column_name', label: 'M', type: 'image', required: false, max_size: '2MB', alt: true }] },
+      'paragraph-type',
+    )
+    const output = generateSchemaFile(registryOf(para))
+    const def = tableOf(output, 'paragraph_a_paragraph_type_with_a_long_name')
+    expect(def).toContain('s.foreignKey(')
+    expect(def).toContain('foreignColumns: [media.id]')
+    expect(def).toContain(`'${codegenForeignKeyName('paragraph_a_paragraph_type_with_a_long_name', 'a_rather_long_media_column_name', 'media', 'id')}'`)
+  })
+
+  it('maps the foreign key\'s on_delete into the explicit key', () => {
+    // MUTATION: hard-code `'cascade'`. A non-required reference is SET NULL.
+    const output = generateSchemaFile(registryOf(tag, post(LONG_TYPE, [field(LONG_FIELD)])))
+    const def = tableOf(output, OWNER_TABLE)
+    expect(def).toContain(".onDelete('set null')")
+    expect(def).not.toContain(".onDelete('cascade')")
+  })
+
+  it('keeps inline references for names within 63 characters', () => {
+    // MUTATION: always emit explicit foreign keys (for link tables; the
+    // snapshot test covers type tables). The short link table then loses its
+    // inline `.references(`.
+    const owner = post('content--short', [field('tags', { rel: 'many-to-many' })])
+    const output = generateSchemaFile(registryOf(tag, owner))
+    expect(output).not.toContain('s.foreignKey(')
+    expect(output).toContain('.references(')
+  })
+})
+
+function foreignKeyNameLength(table: string, column: string, target: string): number {
+  return `${table}_${column}_${target}_id_fk`.length
+}
 
 // ─── Snapshot ─────────────────────────────────────────────────────────────────
 

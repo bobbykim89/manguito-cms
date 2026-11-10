@@ -10,7 +10,7 @@ import {
   walkSchemaDirectory,
 } from '@bobbykim/manguito-cms-core'
 import type { ParseError, ParsedSchema, SchemaRegistry } from '@bobbykim/manguito-cms-core'
-import { findConstraintNameCollisions, foreignKeyName } from '../constraint-names'
+import { codegenForeignKeyName, findConstraintNameCollisions, foreignKeyName } from '../constraint-names'
 
 type RawField = Record<string, unknown>
 
@@ -79,6 +79,49 @@ describe('foreignKeyName', () => {
         'id',
       ),
     ).toBe(drizzleName)
+  })
+})
+
+describe('codegenForeignKeyName', () => {
+  // A default name of exactly `length` characters: the column pads it out.
+  const ofLength = (length: number, column = 'c'): [string, string, string, string] => {
+    const table = 'content_owner_table'
+    const target = 'taxonomy_target_table'
+    const fixed = foreignKeyName(table, column, target, 'id').length
+    return [table, column.padEnd(column.length + length - fixed, 'x'), target, 'id']
+  }
+
+  it('keeps drizzle\'s name when it is exactly 63 characters', () => {
+    // MUTATION: hash at `>= 63`. A 63-character name is kept by Postgres whole,
+    // so it must stay as drizzle names it.
+    const args = ofLength(63)
+    expect(foreignKeyName(...args)).toHaveLength(63)
+    expect(codegenForeignKeyName(...args)).toBe(foreignKeyName(...args))
+  })
+
+  it('hashes a 64-character name to 63 characters', () => {
+    // MUTATION: keep a 52-character prefix. The name then no longer matches
+    // `^.{51}_[0-9a-f]{8}_fk$` and is 64 characters long.
+    const args = ofLength(64)
+    const def = foreignKeyName(...args)
+    expect(def).toHaveLength(64)
+    const name = codegenForeignKeyName(...args)
+    expect(name).toHaveLength(63)
+    expect(name.startsWith(def.slice(0, 51) + '_')).toBe(true)
+    expect(name.endsWith('_fk')).toBe(true)
+    expect(name).toMatch(/^.{51}_[0-9a-f]{8}_fk$/)
+  })
+
+  it('gives different names to two foreign keys that share their first 51 characters', () => {
+    // MUTATION: hash only the table name. Both keys then get the same hash
+    // and the same 51-character prefix, so their names are equal.
+    const table = 'junction_content_a_long_link_table_name_for_the_pin'
+    const left = codegenForeignKeyName(table, 'left_id', 'content_owner', 'id')
+    const right = codegenForeignKeyName(table, 'right_id', 'content_owner', 'id')
+    expect(foreignKeyName(table, 'left_id', 'content_owner', 'id').slice(0, 51)).toBe(
+      foreignKeyName(table, 'right_id', 'content_owner', 'id').slice(0, 51),
+    )
+    expect(left).not.toBe(right)
   })
 })
 
