@@ -11,6 +11,7 @@ import {
   type ParsedRoles,
   type ParsedRoutes,
   type SchemaRegistry,
+  type Result,
   type ResolvedManguitoConfig,
 } from '@bobbykim/manguito-cms-core'
 import { printValidationErrors } from './error.js'
@@ -19,18 +20,17 @@ import { checkRegistry } from './schema-checks.js'
 
 /**
  * Parses every schema file, roles.json and routes.json into a SchemaRegistry,
- * and cross-validates it. Prints all errors and exits 1 on any failure — the exit-on-failure variant
- * that build/start/migrate use, as distinct from `validate`, which
- * deliberately collects everything and keeps going.
+ * collecting every error before it gives up. It never prints and never exits:
+ * each command reacts to a failure its own way (heading, guided error, exit,
+ * or returning the errors).
  *
- * `command` appears in the error output so the hint names the command the
- * author actually ran.
+ * The walk's root is made absolute with `resolveSchemaConfig`, so it does not
+ * depend on the process cwd.
  */
-export function loadWorkingRegistry(
+export function parseProjectSchemas(
   cwd: string,
-  config: ResolvedManguitoConfig,
-  command: string
-): SchemaRegistry {
+  config: ResolvedManguitoConfig
+): Result<SchemaRegistry> {
   const schema = resolveSchemaConfig(cwd, config)
   const allErrors: ParseError[] = []
   const parsedSchemas: ParsedSchema[] = []
@@ -72,11 +72,34 @@ export function loadWorkingRegistry(
   }
 
   if (allErrors.length > 0 || parsedRoles === null || parsedRoutes === null) {
-    printValidationErrors(allErrors, 'Schema parse errors', command)
+    return { ok: false, errors: allErrors }
+  }
+  return { ok: true, value: buildSchemaRegistry(parsedSchemas, parsedRoutes, parsedRoles) }
+}
+
+/**
+ * Parses the project's schemas (see `parseProjectSchemas`) and cross-validates
+ * the registry. Prints all errors and exits 1 on any failure. Only
+ * `version:create` and the other version commands use it, because they freeze
+ * this registry into a snapshot. build, start, migrate and dev parse through
+ * `parseProjectSchemas` and react to failure their own way; `validate`
+ * deliberately collects everything and keeps going.
+ *
+ * `command` appears in the error output so the hint names the command the
+ * author actually ran.
+ */
+export function loadWorkingRegistry(
+  cwd: string,
+  config: ResolvedManguitoConfig,
+  command: string
+): SchemaRegistry {
+  const parsed = parseProjectSchemas(cwd, config)
+  if (!parsed.ok) {
+    printValidationErrors(parsed.errors, 'Schema parse errors', command)
     process.exit(1)
   }
 
-  const registry = buildSchemaRegistry(parsedSchemas, parsedRoutes, parsedRoles)
+  const registry = parsed.value
   // The checks across schemas that `manguito validate` runs. version:create
   // freezes this registry into a snapshot, and a snapshot is never
   // cross-validated again, so an error must stop here.

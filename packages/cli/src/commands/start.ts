@@ -6,17 +6,8 @@ import {
   getMigrationStatus,
   seedSystemTables,
 } from '@bobbykim/manguito-cms-db'
-import {
-  walkSchemaDirectory,
-  parseSchema,
-  parseRoles,
-  parseRoutes,
-  buildSchemaRegistry,
-  loadSchemaFile,
-  type ParseError,
-  type ParsedSchema,
-} from '@bobbykim/manguito-cms-core'
 import { loadEnvFile } from '../utils/env.js'
+import { parseProjectSchemas } from '../utils/registry.js'
 import { resolveConfig } from '../utils/config.js'
 import { connectDb } from '../utils/db.js'
 import { printGuidedError, printSuccess, printWarning } from '../utils/error.js'
@@ -76,52 +67,8 @@ export async function runStart(
   // Scenario C: all applied — no message
 
   // 6. Parse schemas → registry for seeder
-  const allErrors: ParseError[] = []
-  const parsedSchemas: ParsedSchema[] = []
-
-  const walkResult = walkSchemaDirectory(config.schema)
-  if (walkResult.ok) {
-    for (const file of walkResult.value) {
-      const parseResult = parseSchema(file.raw, file.schema_type, file.path)
-      if (parseResult.ok) {
-        parsedSchemas.push(parseResult.schema)
-      } else {
-        allErrors.push(...parseResult.errors)
-      }
-    }
-  } else {
-    allErrors.push(...walkResult.errors)
-  }
-
-  const rolesPath = resolve(cwd, config.schema.base_path, 'roles.json')
-  const rolesLoad = loadSchemaFile(rolesPath)
-  let parsedRoles = null
-  if (rolesLoad.ok) {
-    const rolesResult = parseRoles(rolesLoad.value, rolesPath)
-    if (rolesResult.ok) {
-      parsedRoles = rolesResult.value
-    } else {
-      allErrors.push(...rolesResult.errors)
-    }
-  } else {
-    allErrors.push(...rolesLoad.errors)
-  }
-
-  const routesPath = resolve(cwd, config.schema.base_path, 'routes.json')
-  const routesLoad = loadSchemaFile(routesPath)
-  let parsedRoutes = null
-  if (routesLoad.ok) {
-    const routesResult = parseRoutes(routesLoad.value, routesPath)
-    if (routesResult.ok) {
-      parsedRoutes = routesResult.value
-    } else {
-      allErrors.push(...routesResult.errors)
-    }
-  } else {
-    allErrors.push(...routesLoad.errors)
-  }
-
-  if (allErrors.length > 0 || parsedRoles === null || parsedRoutes === null) {
+  const parsed = parseProjectSchemas(cwd, config)
+  if (!parsed.ok) {
     printGuidedError(
       'Schema errors prevented seeding system tables.',
       'Run `manguito validate` for details.',
@@ -129,7 +76,7 @@ export async function runStart(
     process.exit(1)
   }
 
-  const registry = buildSchemaRegistry(parsedSchemas, parsedRoutes, parsedRoles)
+  const registry = parsed.value
 
   // 7. Seed system tables — idempotent, runs on every startup
   await seedSystemTables(db.getDb(), registry)

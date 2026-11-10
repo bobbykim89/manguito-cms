@@ -13,19 +13,10 @@ import {
   createPostgresAdapter,
   type ScanResult,
 } from '@bobbykim/manguito-cms-db'
-import {
-  walkSchemaDirectory,
-  parseSchema,
-  parseRoles,
-  parseRoutes,
-  buildSchemaRegistry,
-  loadSchemaFile,
-  type ParseError,
-  type ParsedSchema,
-} from '@bobbykim/manguito-cms-core'
 import { generateDrizzleConfig } from '../codegen/drizzle-config.js'
 import { runBuild, needsRebuild as checkNeedsRebuild } from './build.js'
 import { loadEnvFile } from '../utils/env.js'
+import { parseProjectSchemas } from '../utils/registry.js'
 import { resolveConfig } from '../utils/config.js'
 import { printGuidedError, printSuccess } from '../utils/error.js'
 import { createPromptAdapter, type PromptAdapter } from '../utils/prompt.js'
@@ -266,52 +257,8 @@ export async function runMigrate(options: MigrateOptions, deps: MigrateDeps): Pr
   )
 
   // 10. Seed system tables — parse schemas to build registry
-  const allErrors: ParseError[] = []
-  const parsedSchemas: ParsedSchema[] = []
-
-  const walkResult = walkSchemaDirectory(config.schema)
-  if (walkResult.ok) {
-    for (const file of walkResult.value) {
-      const parseResult = parseSchema(file.raw, file.schema_type, file.path)
-      if (parseResult.ok) {
-        parsedSchemas.push(parseResult.schema)
-      } else {
-        allErrors.push(...parseResult.errors)
-      }
-    }
-  } else {
-    allErrors.push(...walkResult.errors)
-  }
-
-  const rolesPath = resolve(cwd, config.schema.base_path, 'roles.json')
-  const rolesLoad = loadSchemaFile(rolesPath)
-  let parsedRoles = null
-  if (rolesLoad.ok) {
-    const rolesResult = parseRoles(rolesLoad.value, rolesPath)
-    if (rolesResult.ok) {
-      parsedRoles = rolesResult.value
-    } else {
-      allErrors.push(...rolesResult.errors)
-    }
-  } else {
-    allErrors.push(...rolesLoad.errors)
-  }
-
-  const routesPath = resolve(cwd, config.schema.base_path, 'routes.json')
-  const routesLoad = loadSchemaFile(routesPath)
-  let parsedRoutes = null
-  if (routesLoad.ok) {
-    const routesResult = parseRoutes(routesLoad.value, routesPath)
-    if (routesResult.ok) {
-      parsedRoutes = routesResult.value
-    } else {
-      allErrors.push(...routesResult.errors)
-    }
-  } else {
-    allErrors.push(...routesLoad.errors)
-  }
-
-  if (allErrors.length > 0 || parsedRoles === null || parsedRoutes === null) {
+  const parsed = parseProjectSchemas(cwd, config)
+  if (!parsed.ok) {
     printGuidedError(
       'Schema errors prevented seeding system tables.',
       'Run `manguito validate` for details.',
@@ -319,7 +266,7 @@ export async function runMigrate(options: MigrateOptions, deps: MigrateDeps): Pr
     process.exit(1)
   }
 
-  const registry = buildSchemaRegistry(parsedSchemas, parsedRoutes, parsedRoles)
+  const registry = parsed.value
   const seedResult = await seedSystemTables(deps.db.getDb(), registry)
 
   // 11. Print result summary

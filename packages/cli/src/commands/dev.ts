@@ -18,17 +18,9 @@ import {
 import { createCmsApp } from '@bobbykim/manguito-cms-api'
 import type { ResolverMap } from '@bobbykim/manguito-cms-api'
 import {
-  walkSchemaDirectory,
-  parseSchema,
-  parseRoles,
-  parseRoutes,
-  buildSchemaRegistry,
   findSchemaDeprecations,
-  loadSchemaFile,
   hashPassword,
   type SchemaRegistry,
-  type ParsedSchema,
-  type ParseError,
   type Result,
 } from '@bobbykim/manguito-cms-core'
 import { generateDrizzleConfig } from '../codegen/drizzle-config.js'
@@ -43,6 +35,7 @@ import { shouldBridgeToHono } from './dev-routing.js'
 import { resolveConfig } from '../utils/config.js'
 import { resolveSchemaConfig } from '../utils/schema-config.js'
 import { checkRegistry } from '../utils/schema-checks.js'
+import { parseProjectSchemas } from '../utils/registry.js'
 import { connectDb } from '../utils/db.js'
 import { printGuidedError, printSuccess, printValidationErrors, printSchemaDeprecations } from '../utils/error.js'
 import { createPromptAdapter } from '../utils/prompt.js'
@@ -426,7 +419,7 @@ function loadValidatedSchema(
   cwd: string,
   config: Awaited<ReturnType<typeof resolveConfig>>,
 ): Result<ValidatedSchema> {
-  const parsed = parseAllSchemas(cwd, config)
+  const parsed = parseProjectSchemas(cwd, config)
   if (!parsed.ok) return parsed
   const registry = parsed.value
 
@@ -441,39 +434,6 @@ function loadValidatedSchema(
 
   printSchemaDeprecations(findSchemaDeprecations(registry))
   return { ok: true, value: { registry, versionModel: reduceVersionModel(versions.value.model) } }
-}
-
-// Parses every schema file, roles.json and routes.json, collecting all errors.
-function parseAllSchemas(
-  cwd: string,
-  config: Awaited<ReturnType<typeof resolveConfig>>,
-): Result<SchemaRegistry> {
-  const errors: ParseError[] = []
-  const parsedSchemas: ParsedSchema[] = []
-
-  const walkResult = walkSchemaDirectory(config.schema)
-  if (!walkResult.ok) {
-    errors.push(...walkResult.errors)
-  } else {
-    for (const file of walkResult.value) {
-      const parseResult = parseSchema(file.raw, file.schema_type, file.path)
-      if (parseResult.ok) parsedSchemas.push(parseResult.schema)
-      else errors.push(...parseResult.errors)
-    }
-  }
-
-  const rolesPath = resolve(cwd, config.schema.base_path, 'roles.json')
-  const rolesLoad = loadSchemaFile(rolesPath)
-  const rolesResult = rolesLoad.ok ? parseRoles(rolesLoad.value, rolesPath) : rolesLoad
-  if (!rolesResult.ok) errors.push(...rolesResult.errors)
-
-  const routesPath = resolve(cwd, config.schema.base_path, 'routes.json')
-  const routesLoad = loadSchemaFile(routesPath)
-  const routesResult = routesLoad.ok ? parseRoutes(routesLoad.value, routesPath) : routesLoad
-  if (!routesResult.ok) errors.push(...routesResult.errors)
-
-  if (errors.length > 0 || !rolesResult.ok || !routesResult.ok) return { ok: false, errors }
-  return { ok: true, value: buildSchemaRegistry(parsedSchemas, routesResult.value, rolesResult.value) }
 }
 
 // ─── Admin root resolver ──────────────────────────────────────────────────────

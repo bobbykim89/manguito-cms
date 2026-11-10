@@ -114,6 +114,17 @@ describe('version:create', () => {
     expect(fs.existsSync(versionsDir())).toBe(false)
   })
 
+  it('names the command in the schema parse error heading', async () => {
+    // MUTATION: the loader's caller prints a different heading, or drops the command from the hint.
+    fs.writeFileSync(path.join(project.schemas, 'roles.json'), '{ not json')
+
+    const result = await run(create)
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('Schema parse errors')
+    expect(result.stderr).toContain('run `manguito version:create` again')
+  })
+
   it('refuses a second create with nothing changed, and writes nothing', async () => {
     // Review Focus #3. MUTATION: remove the `change.identical` refusal.
     // versions/v2 then gets written.
