@@ -179,6 +179,36 @@ describe('ensureLinkConstraints', () => {
     expect(await ensureLinkConstraints(db, main)).toEqual([])
   })
 
+  it('reads every link table\'s state in one query when every constraint exists', async () => {
+    // MUTATION: one lookup per link table (to_regclass or pg_constraint per
+    // table) gives 2 or 4 queries instead of 1.
+    let calls = 0
+    const counting = {
+      ...db,
+      execute: (q: Parameters<typeof db.execute>[0]) => {
+        calls++
+        return db.execute(q)
+      },
+    } as unknown as DrizzlePostgresInstance
+    expect(await ensureLinkConstraints(counting, main)).toEqual([])
+    expect(calls).toBe(1)
+  })
+
+  it('sends no query for a registry without link tables', async () => {
+    // MUTATION: run the catalog query with an empty list of tables. That is
+    // one query, not zero.
+    let calls = 0
+    const counting = {
+      ...db,
+      execute: (q: Parameters<typeof db.execute>[0]) => {
+        calls++
+        return db.execute(q)
+      },
+    } as unknown as DrizzlePostgresInstance
+    expect(await ensureLinkConstraints(counting, empty)).toEqual([])
+    expect(calls).toBe(0)
+  })
+
   it('plans nothing for the 60-character link table', () => {
     // MUTATION: codegen keeps the inline `.references()` for long names. The
     // foreign keys are then named by drizzle, Postgres cuts them to 63

@@ -63,39 +63,51 @@ export async function ensureLinkConstraints(
     ...Object.values(registry.content_types),
     ...Object.values(registry.taxonomy_types),
   ]
+  const links = owners.flatMap((owner) => owner.db.junction_tables)
+  if (links.length === 0) return []
+
+  // One catalog query for every link table: whether it exists in the current
+  // schema, whether it has its unique constraint, and whether it has an order
+  // column (a project from before #75 does not). Names go in as parameters.
+  const names = sql.join(links.map((jt) => sql`${jt.table_name}`), sql`, `)
+  const uniques = sql.join(links.map((jt) => sql`${linkUniqueName(jt.table_name)}`), sql`, `)
+  const state = await db.execute(sql`
+    SELECT
+      t.name AS table_name,
+      EXISTS (
+        SELECT 1 FROM pg_constraint c WHERE c.conrelid = cl.oid AND c.conname = t.unique_name
+      ) AS constrained,
+      EXISTS (
+        SELECT 1 FROM pg_attribute a
+        WHERE a.attrelid = cl.oid AND a.attname = 'order' AND a.attnum > 0 AND NOT a.attisdropped
+      ) AS has_order
+    FROM unnest(ARRAY[${names}]::text[], ARRAY[${uniques}]::text[]) AS t(name, unique_name)
+    JOIN pg_namespace n ON n.nspname = current_schema()
+    JOIN pg_class cl ON cl.relnamespace = n.oid AND cl.relname = t.name AND cl.relkind IN ('r', 'p')
+  `)
+  const byTable = new Map(
+    (state.rows as Array<{ table_name: string; constrained: boolean; has_order: boolean }>).map(
+      (row) => [row.table_name, row],
+    ),
+  )
+
   const added: Array<{ table: string; removed: number }> = []
+  for (const jt of links) {
+    const table = jt.table_name
+    const found = byTable.get(table)
+    if (!found || found.constrained) continue
 
-  for (const owner of owners) {
-    for (const jt of owner.db.junction_tables) {
-      const table = jt.table_name
-      const name = linkUniqueName(table)
-
-      const exists = await db.execute(
-        sql`SELECT to_regclass(${`"${table}"`}) IS NOT NULL AS found`,
-      )
-      if (!(exists.rows[0] as { found: boolean }).found) continue
-
-      const constrained = await db.execute(
-        sql`SELECT 1 FROM pg_constraint WHERE conrelid = ${`"${table}"`}::regclass AND conname = ${name}`,
-      )
-      if (constrained.rows.length > 0) continue
-
-      // A project from before #75 has no order column; keep any row then.
-      const orderColumn = await db.execute(
-        sql`SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = ${table} AND column_name = 'order'`,
-      )
-      const deleted = await db.execute(
-        sql.raw(
-          `${linkDedupeSql(table, jt.left_column, jt.right_column, orderColumn.rows.length > 0)} RETURNING 1`,
-        ),
-      )
-      await db.execute(
-        sql.raw(
-          `ALTER TABLE "${table}" ADD CONSTRAINT "${name}" UNIQUE("${jt.left_column}", "${jt.right_column}")`,
-        ),
-      )
-      added.push({ table, removed: deleted.rows.length })
-    }
+    const name = linkUniqueName(table)
+    const deleted = await db.execute(
+      sql.raw(`${linkDedupeSql(table, jt.left_column, jt.right_column, found.has_order)} RETURNING 1`),
+    )
+    await db.execute(
+      sql.raw(
+        `ALTER TABLE "${table}" ADD CONSTRAINT "${name}" UNIQUE("${jt.left_column}", "${jt.right_column}")`,
+      ),
+    )
+    found.constrained = true
+    added.push({ table, removed: deleted.rows.length })
   }
   return added
 }
