@@ -61,6 +61,10 @@ vi.mock('node:http', async (importOriginal) => {
 vi.mock('../src/utils/programmatic-loader.js', () => ({
   loadProgrammaticResolvers: vi.fn().mockResolvedValue(new Map()),
 }))
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  return { ...actual, existsSync: vi.fn(actual.existsSync) }
+})
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
   return {
@@ -103,6 +107,7 @@ import { reduceVersionModel } from '../src/codegen/version-model.js'
 import { resolveSchemaConfig } from '../src/utils/schema-config.js'
 import { watch as fsWatch, writeFile } from 'node:fs/promises'
 import { loadProgrammaticResolvers } from '../src/utils/programmatic-loader.js'
+import { existsSync } from 'node:fs'
 
 const FAKE_CWD = '/fake/project'
 const MOCK_CONFIG = {
@@ -460,6 +465,50 @@ describe('runDev', () => {
       expect(createCmsApp).toHaveBeenCalledTimes(1) // startup only: no hot-swap
     } finally {
       exitSpy.mockRestore()
+    }
+  })
+
+  it('runs reloads from both watchers one at a time', async () => {
+    // MUTATION: give each watcher its own queue, or call reloadSafely
+    // directly. The two reloads then overlap, and the second one's
+    // generateDrizzleConfig runs before the first reload finishes.
+    vi.mocked(existsSync).mockReturnValue(true) // starts the programmatic watcher
+    vi.mocked(connectDb).mockResolvedValue(makeDb([{ rows: [{ count: 1 }] }]) as never)
+    const oneEvent = (filename: string) => {
+      let sent = false
+      return {
+        [Symbol.asyncIterator]() {
+          return {
+            next: async () => {
+              if (sent) return { done: true as const, value: undefined }
+              sent = true
+              return { done: false as const, value: { eventType: 'change', filename } }
+            },
+          }
+        },
+      } as never
+    }
+    vi.mocked(fsWatch)
+      .mockImplementationOnce(() => oneEvent('paragraph-types/paragraph--card.json'))
+      .mockImplementationOnce(() => oneEvent('post.ts'))
+    let release!: () => void
+    const firstReload = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    vi.mocked(runDevMigration).mockResolvedValueOnce(undefined).mockReturnValueOnce(firstReload)
+
+    try {
+      await runDev({}, { cwd: FAKE_CWD })
+      await vi.waitFor(() => expect(runDevMigration).toHaveBeenCalledTimes(2)) // startup + first reload
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      // Startup generated once; the first reload once. The second must wait.
+      expect(generateDrizzleConfig).toHaveBeenCalledTimes(2)
+
+      release()
+      await vi.waitFor(() => expect(runDevMigration).toHaveBeenCalledTimes(3))
+      expect(generateDrizzleConfig).toHaveBeenCalledTimes(3)
+    } finally {
+      vi.mocked(existsSync).mockReset()
     }
   })
 

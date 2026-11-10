@@ -47,6 +47,7 @@ import { connectDb } from '../utils/db.js'
 import { printGuidedError, printSuccess, printValidationErrors, printSchemaDeprecations } from '../utils/error.js'
 import { createPromptAdapter } from '../utils/prompt.js'
 import { loadProgrammaticResolvers } from '../utils/programmatic-loader.js'
+import { createReloadQueue } from '../utils/reload-queue.js'
 
 type HonoFetch = (request: Request) => Response | Promise<Response>
 
@@ -276,23 +277,27 @@ export async function runDev(
   // 11. Start fs.watch on schemas/ directory
   const schemasDir = resolve(cwd, config.schema.base_path)
 
+  // One queue for both watchers: reloads never overlap, and a burst of saves
+  // collapses into at most one more reload.
+  const reload = createReloadQueue(() =>
+    reloadSafely({
+      cwd,
+      config,
+      manguitoDir,
+      drizzleConfigPath,
+      db,
+      updateFetch: (fetch) => {
+        honoFetch = fetch
+      },
+      getResolvers: () => loadProgrammaticResolvers(cwd, config.programmatic.dir),
+    }),
+  )
+
   const watcher = watch(schemasDir, { recursive: true })
   void (async () => {
     for await (const event of watcher) {
-      if (event.filename && /\.(json|ya?ml)$/.test(event.filename)) {
-        // 12. On schema file change: incremental re-parse + hot-swap
-        await reloadSafely({
-          cwd,
-          config,
-          manguitoDir,
-          drizzleConfigPath,
-          db,
-          updateFetch: (fetch) => {
-            honoFetch = fetch
-          },
-          getResolvers: () => loadProgrammaticResolvers(cwd, config.programmatic.dir),
-        })
-      }
+      // 12. On schema file change: incremental re-parse + hot-swap
+      if (event.filename && /\.(json|ya?ml)$/.test(event.filename)) void reload()
     }
   })()
 
@@ -305,19 +310,7 @@ export async function runDev(
     const progWatcher = watch(programmaticDir, { recursive: true })
     void (async () => {
       for await (const event of progWatcher) {
-        if (event.filename && /\.(ts|mjs|js)$/.test(event.filename)) {
-          await reloadSafely({
-            cwd,
-            config,
-            manguitoDir,
-            drizzleConfigPath,
-            db,
-            updateFetch: (fetch) => {
-              honoFetch = fetch
-            },
-            getResolvers: () => loadProgrammaticResolvers(cwd, config.programmatic.dir),
-          })
-        }
+        if (event.filename && /\.(ts|mjs|js)$/.test(event.filename)) void reload()
       }
     })()
   }
