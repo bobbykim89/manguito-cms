@@ -1,6 +1,6 @@
 # Dev Push Hardening — Design
 
-**Status:** Written 2026-11-09. The maintainer chose to keep existing databases untouched (§1) and to group these items into one PR. Everything else is the author's call; see "Calls the author made".
+**Status:** Written 2026-11-09. The maintainer chose hashed foreign-key names (§1) and grouped these items into one PR. Everything else is the author's call; see "Calls the author made".
 
 One PR closes:
 
@@ -48,20 +48,36 @@ Both observations were made with drizzle-kit 0.31.10, the version in packages/db
 
   The DROP's name is cut to the same identifier, so this drops and re-creates an identical constraint. Re-creating a foreign key re-checks every row while holding a lock.
 
+These observations used the cut name. A hashed name of 63 characters behaves the same, since both are stored whole. The upgrade test in "Testing expectations" confirms it with the hashed name.
+
 ### Decision (maintainer)
 
-Long foreign keys get an explicit name: drizzle's default name cut to 63 characters, which is exactly what Postgres already stores. There is no hash.
+Long foreign keys get a hashed name of exactly 63 characters, the same scheme `linkUniqueName` uses for link uniques.
 
-- An existing database needs no physical change.
-- `findConstraintNameCollisions` keeps reporting the schemas whose cut names would collide.
+The maintainer first chose cut names, which leave existing databases untouched. They then chose the hash: no production deployment exists yet, so a one-time rename costs little, and the hash is the better long-term design.
 
-Rejected: a hashed name like `linkUniqueName`. It would remove foreign-key collision errors, but every existing project with a long foreign key would drop and re-add it once.
+- **Collisions.** Two foreign keys can no longer collide in their first 63 characters. The foreign-key collision errors, and the field renames they asked users to make, go away.
+- **Existing projects.** Each long foreign key is dropped and re-added once under its new name:
+  - automatically on dev's next push;
+  - in the next migration `manguito migrate` generates.
+
+  Re-adding a foreign key re-checks every row while holding a lock, which is accepted.
+- **Migration rewrite.** None. drizzle-kit's drop and add is exactly the rename wanted.
+
+Rejected: cut names (`<default>.slice(0, 63)`). They need no database change, but keep the collision errors and need a snapshot-reading rewrite to keep migrations from re-adding identical constraints.
 
 ### Design
 
+**The name** (`packages/db/src/constraint-names.ts`)
+
+- When drizzle's default name (`foreignKeyName`) is 63 characters or fewer, it is used as it is.
+- Otherwise the name is `<default>.slice(0, 51)` + `_` + the first 8 hex characters of the SHA-256 of the whole default name + `_fk`. That is 51 + 1 + 8 + 3 = 63 characters.
+- The hash covers the whole default name (table, column, target table and target column), so two foreign keys that share their first 51 characters still get different names.
+- One exported function gives this name. Codegen and `findConstraintNameCollisions` both use it, so the name checked is the name emitted.
+
 **Codegen** (`packages/db/src/codegen/index.ts`)
 
-- When drizzle's default name for a foreign key is over 63 characters, emit the foreign key as an explicit `foreignKey({ name, columns, foreignColumns }).onDelete(…)` in the table's constraint callback, with the cut name. This applies in both places that emit `.references(…)`:
+- When the default name is over 63 characters, emit the foreign key as an explicit `foreignKey({ name, columns, foreignColumns }).onDelete(…)` in the table's constraint callback. This applies in both places that emit `.references(…)`:
   - `generateFieldColumn`: reference and media columns on type tables.
   - `generateJunctionTables`: both sides of a link table.
 
@@ -69,31 +85,26 @@ Rejected: a hashed name like `linkUniqueName`. It would remove foreign-key colli
 - A foreign key whose default name is 63 characters or fewer keeps its inline `.references(…)`. Tables without a long foreign key therefore generate the same code as today.
 - A type table can need the constraint callback for an enum check, a long foreign key, or both. Its constraints go in one callback.
 
-**One name function** (`packages/db/src/constraint-names.ts`)
+**Collision check** (`findConstraintNameCollisions`)
 
-- `foreignKeyName` (drizzle's default, used in messages) and a new function giving the name codegen emits (the default cut to 63) live together.
-- Codegen and `findConstraintNameCollisions` both use them, so the name that is checked is the name that is emitted.
-- The collision logic is already correct for the cut names, since it compares `stored(name)`. It also now guards codegen: two colliding foreign keys would get the same explicit name. Build and dev both run `checkRegistry` before `generateSchemaFile`, so the check still stops such a schema before any file is written. The messages still describe two foreign keys that agree in their first 63 characters, and must stay accurate now that codegen emits the cut names. The existing suppression tests (each message's fix clears its error) must keep passing.
+With hashed names, two foreign keys collide only through a hash coincidence. Remove the checks and messages written for foreign keys that agree in their first 63 characters, together with their tests and suppression tests in `constraint-names.test.ts`:
 
-**Migration rewrite** (`runGenerate` in `packages/db/src/migrations/index.ts`, next to `addLinkDedupe`)
+- the foreign-key pair branch of `typeTableMessage`;
+- the left-and-right branch of `checkLinkTable`, which made link tables stay within 61 characters.
 
-For each migration `runGenerate` adds, remove the DROP and ADD pair of a *pure rename*. A pure rename means all of the following hold:
+These stay:
 
-- the previous snapshot has a foreign key named `L`, more than 63 characters long, on table T;
-- the new snapshot has no foreign key `L` on T, and has one named `L.slice(0, 63)`;
-- the two have equal `tableFrom`, `columnsFrom`, `tableTo`, `columnsTo`, `onDelete` and `onUpdate`.
+- check-constraint collisions;
+- the link unique's schema-wide check (`checkLinkUniques`);
+- a generic guard that every name codegen emits for one table is distinct in its first 63 characters, so a hash coincidence is still reported, not left to fail in a migration.
 
-Any other drop and add stays, including a rename whose target or `onDelete` also changed in the same migration.
+A foreign-key-and-check collision stays only if a fixture can still produce one with hashed names; otherwise its branch and tests go too.
 
-- The snapshots are the `meta/<idx>_snapshot.json` files drizzle-kit writes beside each migration; the journal says which snapshot comes before which.
-- `previewMigration` goes through `runGenerate`, so `migrate --dry-run` shows the rewritten SQL.
-- A migration left with no statements must still apply cleanly and say why it is empty.
+Update `packages/db/CONTEXT.md` and code comments that describe the removed errors or the 61-character limit.
 
-**Push** needs nothing beyond codegen: dev's push then sees equal names (Observed).
+**Push** needs nothing beyond codegen: with a name of 63 characters or fewer, dev's push sees equal names (Observed). The first push after the upgrade renames each long foreign key once, with no data-loss prompt.
 
-**ADR:** amend `docs/adr/db/0006-link-table-constraints-and-migration-rewrite.md` with the cut foreign-key names and the second rewrite.
-
-That ADR's "Considered Options" rejects "Rewrite the SQL by diffing snapshots ourselves", because owning the whole diff is not small. The amendment must revise that entry, not only add a paragraph. This rewrite still lets drizzle-kit own the diff. It reads only the foreign-key records of two snapshots, to confirm that a drop and add drizzle-kit already planned is an identical pair. It never adds statements.
+**ADR:** amend `docs/adr/db/0006-link-table-constraints-and-migration-rewrite.md`. Long foreign keys now get the same hashed-name scheme as link uniques, and the foreign-key collision errors are gone. ADR 0002's amendment from #86 mentions the collision check, so check whether it needs a line too.
 
 ## 2. One catalog query (#89)
 
@@ -153,23 +164,24 @@ Replace the six loops with one function in `utils/registry.ts`. It parses everyt
 ## Goals
 
 - An unchanged schema with long foreign keys: dev's push prints "No changes detected".
-- An existing project that upgrades: its next generated migration doesn't drop and re-add any foreign key whose definition is unchanged.
+- An existing project that upgrades: its long foreign keys are renamed once, then never again.
+- Users never see a constraint-name error about two foreign keys.
 - `ensureLinkConstraints` makes one round trip when every constraint exists.
 - Saves close together in dev never run two reloads at once.
 - One function parses a project's schemas for every command.
 
 ## Non-goals
 
-- Hashed foreign-key names, or renaming foreign keys of 63 characters or fewer.
+- Renaming foreign keys of 63 characters or fewer.
 - Other identifiers past 63 characters (tables, columns, check constraints); #86 covered link uniques.
 - A drizzle-kit upgrade.
 - #90, and #72's tooling items.
 
 ## Anti-goals
 
-- A migration that drops and re-adds a foreign key whose definition didn't change.
-- A rewrite that deletes a real foreign-key change, such as a new target or `onDelete`.
-- Any change to which tables, columns or constraints exist, or to what they enforce.
+- A foreign key renamed on every push or every migration, which is the churn #88 reports.
+- A rename that changes what a foreign key enforces (its columns, target or `onDelete`).
+- Any change to which tables, columns or constraints exist, or to what they enforce, beyond the one-time rename of long foreign keys.
 - A command printing different errors, or exiting differently, for the same broken schema, except where §4 says so.
 
 ## Constraints
@@ -179,6 +191,8 @@ Replace the six loops with one function in `utils/registry.ts`. It parses everyt
 - **Dependencies.** No new dependencies.
 - **Shared test DB.** Every drizzle-kit push in a test uses a positive `tablesFilter`.
 - **Changesets.** db patch for §1 and §2, cli patch for §3 and §4. These are fixes, with no API, config or schema surface change.
+  - The db changeset must say that an existing project's long foreign keys are renamed once, on its next dev push or in its next generated migration.
+  - It must also say that schemas which failed with a foreign-key `CONSTRAINT_NAME_COLLISION` now pass.
 
 ## Testing expectations
 
@@ -188,18 +202,19 @@ Every test names the mutation it rejects and is run red under it (PLAN-QUALITY r
   - `ensure-link-constraints.integration.test.ts` › "plans no unique-constraint change for the hashed-name link table" today allows foreign-key churn on the 60-character link table. Tighten it to expect "No changes detected".
   - Mutation: codegen keeps the inline `.references()` for long names.
 - **Codegen.**
-  - A long foreign key on a link table, and one on a type table that also has an enum check, each emit `foreignKey` with the cut name and the right `onDelete`.
+  - A long foreign key on a link table, and one on a type table that also has an enum check, each emit `foreignKey` with the hashed name and the right `onDelete`.
+  - The name function:
+    - returns the default for exactly 63 characters;
+    - returns a 63-character hashed name for 64;
+    - gives different names for two defaults that share their first 51 characters.
   - A table with only short foreign keys generates the same text as today.
-- **Rewrite** (unit, on snapshot and SQL fixtures):
-  - A pure rename is removed.
-  - A rename plus an `onDelete` change is kept.
-  - A long name dropped with no matching add is kept.
-  - A migration with other statements keeps them.
-- **Rewrite** (integration):
-  - Generate under the old codegen, apply, then switch to the new codegen and generate again.
-  - The new migration holds no foreign-key statements and applies cleanly.
-  - The constraints in `pg_constraint` are unchanged.
-- **Collision check.** The existing `findConstraintNameCollisions` tests and their suppression tests pass unchanged, or with only message-wording changes.
+- **Upgrade** (integration):
+  - Push a project under the old codegen, then push it under the new one.
+  - The first push renames each long foreign key, and `pg_constraint` shows the hashed names with the same columns, target and `onDelete`.
+  - The second push prints "No changes detected".
+- **Collision check.**
+  - Fixtures that today fail with a foreign-key `CONSTRAINT_NAME_COLLISION` now pass: the 62-character link table, and two reference columns sharing 63 characters.
+  - Check-constraint and link-unique tests, and their suppression tests, pass unchanged.
 - **#89.**
   - Counting the statements `ensureLinkConstraints` sends (a wrapper on the db): one when every constraint exists, none with no link tables.
   - The existing integration tests still pass.
@@ -215,7 +230,7 @@ Every test names the mutation it rejects and is run red under it (PLAN-QUALITY r
 ## Calls the author made (for review)
 
 1. Explicit names only for foreign keys over 63 characters, so the codegen diff is limited to tables that need it.
-2. Strip pure renames from generated migrations, decided from the snapshots rather than the SQL alone, so "untouched" holds for `migrate` as well as push. This narrows ADR db/0006's earlier rejection of snapshot diffing (see §1, ADR).
+2. The hash covers drizzle's whole default name, with a 51-character readable prefix, matching `linkUniqueName`'s 8 hex characters.
 3. Amend ADR db/0006 rather than write a new ADR.
 4. The catalog query uses `current_schema()` for the table lookup.
 5. The reload queue coalesces rather than queuing every event.
@@ -224,6 +239,5 @@ Every test names the mutation it rejects and is run red under it (PLAN-QUALITY r
 ## Left to the builder
 
 - **Query shape for #89**, for example `unnest` of two arrays joined to `pg_class`, `pg_constraint` and `pg_attribute`.
-- **How the rewrite pairs statements**: by table and constraint name in the SQL, then checked against the snapshots.
-- **The text of an emptied migration**, provided it applies.
+- **The wording of the generic collision guard's message.**
 - **The shared loader's name and return shape.**
