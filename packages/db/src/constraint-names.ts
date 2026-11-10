@@ -93,16 +93,11 @@ function shortenOf(field: ParsedField, room: number): string {
     : `shorten field "${field.name}" to at most ${room} characters`
 }
 
-const commonPrefixLength = (a: string, b: string): number => {
-  let i = 0
-  while (i < a.length && i < b.length && a[i] === b[i]) i++
-  return i
-}
-
 type TableConstraint = { name: string; kind: 'foreign key' | 'check'; field: ParsedField }
 
 // The constraints `generateTableDef` emits for a type's own table: a foreign
-// key per reference or media column, a `<column>_check` per enum column.
+// key per reference or media column (named by `codegenForeignKeyName`, so a
+// long one is hashed), a `<column>_check` per enum column.
 function typeTableConstraints(owner: Owner): TableConstraint[] {
   const table = owner.db.table_name
   const names: TableConstraint[] = []
@@ -111,7 +106,7 @@ function typeTableConstraints(owner: Owner): TableConstraint[] {
     if (field.field_type === 'paragraph' || col === null || col.junction) continue
     if (col.foreign_key) {
       const fk = col.foreign_key
-      names.push({ name: foreignKeyName(table, col.column_name, fk.table, fk.column), kind: 'foreign key', field })
+      names.push({ name: codegenForeignKeyName(table, col.column_name, fk.table, fk.column), kind: 'foreign key', field })
     }
     if ((col.check_constraint?.length ?? 0) > 0) {
       names.push({ name: checkConstraintName(col.column_name), kind: 'check', field })
@@ -121,25 +116,15 @@ function typeTableConstraints(owner: Owner): TableConstraint[] {
 }
 
 function typeTableMessage(owner: Owner, a: TableConstraint, b: TableConstraint): string {
-  const table = owner.db.table_name
   const clash =
     `Postgres keeps only the first ${LIMIT} characters of a name, which are the same, so the ` +
     `migration would fail with "constraint already exists".`
   if (a.kind === 'foreign key' && b.kind === 'foreign key') {
-    // `<table>_<column>_…`: the column starts after the table and one `_`.
-    const room = LIMIT - 1 - table.length
-    // With no room for a column, only a shorter table separates the two. They
-    // part `shared` characters after the table name, so that point must fall
-    // within 63; the type name is the table name with `--` for its first `_`.
-    const shared = commonPrefixLength(a.name.slice(table.length), b.name.slice(table.length))
-    const maxType = LIMIT - 1 - shared + (owner.name.length - table.length)
-    const fix =
-      room < 1
-        ? `shorten the name of type "${owner.name}" to at most ${maxType} characters: its table name "${table}" leaves no room for a column in the first ${LIMIT} characters`
-        : `${renameOf(a.field)} or ${renameOf(b.field)} so that the two differ within their first ${room} characters, or shorten the name of type "${owner.name}"`
+    // Only reachable by a hash coincidence: a hashed name agreeing with another
+    // foreign key's name in all 63 characters. No fixture can produce it on purpose.
     return (
       `The ${describeField(a.field)} and the ${describeField(b.field)} of "${owner.name}" get foreign keys ` +
-      `"${a.name}" and "${b.name}". ${clash} To fix it, ${fix}.`
+      `"${a.name}" and "${b.name}". ${clash} To fix it, ${renameOf(a.field)} or ${renameOf(b.field)}.`
     )
   }
   if (a.kind === 'check' && b.kind === 'check') {
@@ -150,9 +135,9 @@ function typeTableMessage(owner: Owner, a: TableConstraint, b: TableConstraint):
       `${renameOf(b.field)} so that the two differ within their first ${room} characters.`
     )
   }
-  // A foreign key and a check. A check name of at most 62 characters is kept
-  // whole and ends in `_check`, so it can match neither a whole foreign-key
-  // name (ending in `_fk`) nor a cut one (63 characters).
+  // A foreign key and a check. A foreign key name is at most 63 characters and
+  // ends in `_fk`; a check name of at most 62 characters ends in `_check`, so
+  // only a check cut to 63 characters can match one.
   const check = a.kind === 'check' ? a : b
   const room = LIMIT - 1 - '_check'.length
   return (
@@ -184,36 +169,20 @@ function checkTypeTable(owner: Owner): ParseError[] {
 type Link = { owner: ParsedContentType | ParsedTaxonomyType; field: ParsedField; table: string; unique: string }
 
 // The constraints `generateJunctionTables` emits for one link table: a
-// foreign key to each side and the `linkUniqueName` unique. Reported once.
+// foreign key to each side (named by `codegenForeignKeyName`) and the
+// `linkUniqueName` unique. Reported once.
 function checkLinkTable(link: Link, left: string, right: string, rightTable: string): ParseError | null {
   const { owner, field, table } = link
-  const leftFk = foreignKeyName(table, left, owner.db.table_name, 'id')
-  const rightFk = foreignKeyName(table, right, rightTable, 'id')
+  const leftFk = codegenForeignKeyName(table, left, owner.db.table_name, 'id')
+  const rightFk = codegenForeignKeyName(table, right, rightTable, 'id')
   const names = [leftFk, rightFk, link.unique]
   const collides = names.some((n, i) => names.some((m, j) => i < j && stored(n) === stored(m)))
   if (!collides) return null
 
   const base = { file: owner.source_file, code: 'CONSTRAINT_NAME_COLLISION' as const, path: rawFieldPath(owner, field) }
   const truncated = `Postgres keeps only the first ${LIMIT} characters of a name`
-  if (stored(leftFk) === stored(rightFk)) {
-    // The two foreign keys differ at the character after `<link table>_`, so
-    // the link table must stay within 61 characters.
-    const prefix = `junction_${owner.db.table_name}_`.length
-    const room = LIMIT - 2 - prefix
-    const fix =
-      room < 1
-        ? `shorten the name of type "${owner.name}": its link table names already have ${prefix} characters before the field name`
-        : `shorten field "${field.name}" to at most ${room} characters, or the name of type "${owner.name}"`
-    return {
-      ...base,
-      message:
-        `The link table of field "${field.name}" of "${owner.name}", "${table}", has ${table.length} characters, so its ` +
-        `foreign keys "${leftFk}" and "${rightFk}" are the same in their first ${LIMIT} characters. ${truncated}, so the ` +
-        `migration would fail with "constraint already exists". To keep the link table within ${LIMIT - 2} characters, ${fix}.`,
-    }
-  }
-  // Only reachable by a hash coincidence: the hashed unique name agreeing with
-  // a foreign key's first 63 characters. No fixture can produce it on purpose.
+  // Only reachable by a hash coincidence: two of the three names, long ones hashed,
+  // agreeing in all 63 characters. No fixture can produce it on purpose.
   return {
     ...base,
     message:
