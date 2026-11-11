@@ -176,6 +176,15 @@ function tableNameToVarName(tableName: string): string {
   return tableName.replace(/-/g, '_')
 }
 
+// An enum value as a SQL string literal, written inside the generated sql``
+// template. Core accepts any non-empty string, so the value is quoted twice:
+// `'` is doubled for SQL, then `\`, `` ` `` and `${` are escaped so the
+// template's cooked text is that SQL literal (#96).
+function enumValueLiteral(value: string): string {
+  const sqlLiteral = `'${value.replace(/'/g, "''")}'`
+  return sqlLiteral.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${')
+}
+
 // One entry of a table's constraint callback: an explicitly named foreign key.
 function foreignKeyEntry(column: string, name: string, target: string, onDelete: string): string {
   return `    ${column}_fk: s.foreignKey({ name: '${name}', columns: [table.${column}], foreignColumns: [${target}] }).onDelete('${onDelete}'),`
@@ -230,7 +239,7 @@ function generateTableDef(
   const colBlock = colLines.map((l) => `    ${l}`).join('\n')
   const checks = enumFields.map((f) => {
     const col = f.db_column!
-    const values = col.check_constraint!.map((v) => `'${v}'`).join(', ')
+    const values = col.check_constraint!.map(enumValueLiteral).join(', ')
     const cname = checkConstraintName(col.column_name)
     return [
       `    ${cname}: s.check(`,
