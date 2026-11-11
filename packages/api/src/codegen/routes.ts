@@ -261,8 +261,7 @@ const ADMIN_LIST_QUERY = `z.object({
 const SLUG_PARAMS = `z.object({ slug: z.string() })`
 const ID_PARAMS = `z.object({ id: z.string().uuid() })`
 // The admin DELETE routes refuse with 409 ITEM_IN_USE while a required
-// reference elsewhere still points at the item. No label in the text: labels
-// are not quoted safely for a single-quoted string.
+// reference elsewhere still points at the item.
 const ITEM_IN_USE_RESPONSE = `{
       content: { 'application/json': { schema: ErrorResponseSchema } },
       description: 'ITEM_IN_USE: a required reference elsewhere still points at this item',
@@ -286,7 +285,7 @@ function generateContentRoutes(contentType: ParsedContentType): string {
     lines.push(
       `export const ${routeVar('get', contentType.name, 'List')} = createRoute({
   method: 'get',
-  path: '${collPath}',
+  path: ${JSON.stringify(collPath)},
   tags: [${JSON.stringify(tag)}],
   request: {
     query: ${PUBLIC_LIST_QUERY},
@@ -294,7 +293,7 @@ function generateContentRoutes(contentType: ParsedContentType): string {
   responses: {
     200: {
       content: { 'application/json': { schema: listResponseSchema(${sVar}) } },
-      description: 'List of ${label}',
+      description: ${JSON.stringify(`List of ${label}`)},
     },
     400: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -308,7 +307,7 @@ function generateContentRoutes(contentType: ParsedContentType): string {
     lines.push(
       `export const ${routeVar('get', contentType.name, '')} = createRoute({
   method: 'get',
-  path: '${openApiPath(itemPath)}',
+  path: ${JSON.stringify(openApiPath(itemPath))},
   tags: [${JSON.stringify(tag)}],
   request: {
     params: ${SLUG_PARAMS},
@@ -317,11 +316,11 @@ function generateContentRoutes(contentType: ParsedContentType): string {
   responses: {
     200: {
       content: { 'application/json': { schema: itemResponseSchema(${sVar}) } },
-      description: '${label}',
+      description: ${JSON.stringify(label)},
     },
     404: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
-      description: '${label} not found',
+      description: ${JSON.stringify(`${label} not found`)},
     },
   },
 })`
@@ -333,7 +332,7 @@ function generateContentRoutes(contentType: ParsedContentType): string {
     lines.push(
       `export const ${routeVar('adminGet', contentType.name, 'List')} = createRoute({
   method: 'get',
-  path: '${adminCollPath}',
+  path: ${JSON.stringify(adminCollPath)},
   tags: [${JSON.stringify(tag)}],
   request: {
     query: ${ADMIN_LIST_QUERY},
@@ -341,7 +340,7 @@ function generateContentRoutes(contentType: ParsedContentType): string {
   responses: {
     200: {
       content: { 'application/json': { schema: listResponseSchema(${sVar}) } },
-      description: 'List of ${label}',
+      description: ${JSON.stringify(`List of ${label}`)},
     },
     400: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -355,7 +354,7 @@ function generateContentRoutes(contentType: ParsedContentType): string {
     lines.push(
       `export const ${routeVar('adminGet', contentType.name, '')} = createRoute({
   method: 'get',
-  path: '${adminItemPath}',
+  path: ${JSON.stringify(adminItemPath)},
   tags: [${JSON.stringify(tag)}],
   request: {
     params: ${ID_PARAMS},
@@ -364,11 +363,11 @@ function generateContentRoutes(contentType: ParsedContentType): string {
   responses: {
     200: {
       content: { 'application/json': { schema: itemResponseSchema(${sVar}) } },
-      description: '${label}',
+      description: ${JSON.stringify(label)},
     },
     404: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
-      description: '${label} not found',
+      description: ${JSON.stringify(`${label} not found`)},
     },
   },
 })`
@@ -378,7 +377,7 @@ function generateContentRoutes(contentType: ParsedContentType): string {
     lines.push(
       `export const ${routeVar('adminCreate', contentType.name, '')} = createRoute({
   method: 'post',
-  path: '${adminCollPath}',
+  path: ${JSON.stringify(adminCollPath)},
   tags: [${JSON.stringify(tag)}],
   request: {
     body: {
@@ -388,7 +387,7 @@ function generateContentRoutes(contentType: ParsedContentType): string {
   responses: {
     201: {
       content: { 'application/json': { schema: itemResponseSchema(${sVar}) } },
-      description: '${label} created',
+      description: ${JSON.stringify(`${label} created`)},
     },
     422: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -402,7 +401,7 @@ function generateContentRoutes(contentType: ParsedContentType): string {
     lines.push(
       `export const ${routeVar('adminUpdate', contentType.name, '')} = createRoute({
   method: 'patch',
-  path: '${adminItemPath}',
+  path: ${JSON.stringify(adminItemPath)},
   tags: [${JSON.stringify(tag)}],
   request: {
     params: ${ID_PARAMS},
@@ -413,11 +412,11 @@ function generateContentRoutes(contentType: ParsedContentType): string {
   responses: {
     200: {
       content: { 'application/json': { schema: itemResponseSchema(${sVar}) } },
-      description: '${label} updated',
+      description: ${JSON.stringify(`${label} updated`)},
     },
     404: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
-      description: '${label} not found',
+      description: ${JSON.stringify(`${label} not found`)},
     },
     422: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -431,7 +430,7 @@ function generateContentRoutes(contentType: ParsedContentType): string {
     lines.push(
       `export const ${routeVar('adminDelete', contentType.name, '')} = createRoute({
   method: 'delete',
-  path: '${adminItemPath}',
+  path: ${JSON.stringify(adminItemPath)},
   tags: [${JSON.stringify(tag)}],
   request: {
     params: ${ID_PARAMS},
@@ -439,11 +438,11 @@ function generateContentRoutes(contentType: ParsedContentType): string {
   responses: {
     200: {
       content: { 'application/json': { schema: z.object({ ok: z.literal(true) }) } },
-      description: '${label} deleted',
+      description: ${JSON.stringify(`${label} deleted`)},
     },
     404: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
-      description: '${label} not found',
+      description: ${JSON.stringify(`${label} not found`)},
     },
     409: ${ITEM_IN_USE_RESPONSE},
   },
@@ -459,7 +458,7 @@ function generateContentRoutes(contentType: ParsedContentType): string {
     lines.push(
       `export const ${routeVar('get', contentType.name, '')} = createRoute({
   method: 'get',
-  path: '${itemPath}',
+  path: ${JSON.stringify(itemPath)},
   tags: [${JSON.stringify(tag)}],
   request: {
     query: ${INCLUDE_QUERY},
@@ -467,11 +466,11 @@ function generateContentRoutes(contentType: ParsedContentType): string {
   responses: {
     200: {
       content: { 'application/json': { schema: itemResponseSchema(${sVar}) } },
-      description: '${label}',
+      description: ${JSON.stringify(label)},
     },
     404: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
-      description: '${label} not found',
+      description: ${JSON.stringify(`${label} not found`)},
     },
   },
 })`
@@ -481,7 +480,7 @@ function generateContentRoutes(contentType: ParsedContentType): string {
     lines.push(
       `export const ${routeVar('adminGet', contentType.name, '')} = createRoute({
   method: 'get',
-  path: '${adminItemBase}',
+  path: ${JSON.stringify(adminItemBase)},
   tags: [${JSON.stringify(tag)}],
   request: {
     query: ${INCLUDE_QUERY},
@@ -489,11 +488,11 @@ function generateContentRoutes(contentType: ParsedContentType): string {
   responses: {
     200: {
       content: { 'application/json': { schema: itemResponseSchema(${sVar}) } },
-      description: '${label}',
+      description: ${JSON.stringify(label)},
     },
     404: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
-      description: '${label} not found',
+      description: ${JSON.stringify(`${label} not found`)},
     },
   },
 })`
@@ -504,7 +503,7 @@ function generateContentRoutes(contentType: ParsedContentType): string {
     lines.push(
       `export const ${routeVar('adminCreate', contentType.name, '')} = createRoute({
   method: 'post',
-  path: '${adminPostPath}',
+  path: ${JSON.stringify(adminPostPath)},
   tags: [${JSON.stringify(tag)}],
   request: {
     body: {
@@ -514,7 +513,7 @@ function generateContentRoutes(contentType: ParsedContentType): string {
   responses: {
     201: {
       content: { 'application/json': { schema: itemResponseSchema(${sVar}) } },
-      description: '${label} created',
+      description: ${JSON.stringify(`${label} created`)},
     },
     409: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -532,7 +531,7 @@ function generateContentRoutes(contentType: ParsedContentType): string {
     lines.push(
       `export const ${routeVar('adminUpdate', contentType.name, '')} = createRoute({
   method: 'patch',
-  path: '${adminPatchPath}',
+  path: ${JSON.stringify(adminPatchPath)},
   tags: [${JSON.stringify(tag)}],
   request: {
     params: ${ID_PARAMS},
@@ -543,11 +542,11 @@ function generateContentRoutes(contentType: ParsedContentType): string {
   responses: {
     200: {
       content: { 'application/json': { schema: itemResponseSchema(${sVar}) } },
-      description: '${label} updated',
+      description: ${JSON.stringify(`${label} updated`)},
     },
     404: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
-      description: '${label} not found',
+      description: ${JSON.stringify(`${label} not found`)},
     },
     422: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -577,7 +576,7 @@ function generateTaxonomyRoutes(taxonomyType: ParsedTaxonomyType): string {
   lines.push(
     `export const ${routeVar('get', taxonomyType.name, 'List')} = createRoute({
   method: 'get',
-  path: '${collPath}',
+  path: ${JSON.stringify(collPath)},
   tags: [${JSON.stringify(tag)}],
   request: {
     query: ${PUBLIC_LIST_QUERY},
@@ -585,7 +584,7 @@ function generateTaxonomyRoutes(taxonomyType: ParsedTaxonomyType): string {
   responses: {
     200: {
       content: { 'application/json': { schema: listResponseSchema(${sVar}) } },
-      description: 'List of ${label}',
+      description: ${JSON.stringify(`List of ${label}`)},
     },
     400: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -599,7 +598,7 @@ function generateTaxonomyRoutes(taxonomyType: ParsedTaxonomyType): string {
   lines.push(
     `export const ${routeVar('get', taxonomyType.name, '')} = createRoute({
   method: 'get',
-  path: '${openApiPath(itemPath)}',
+  path: ${JSON.stringify(openApiPath(itemPath))},
   tags: [${JSON.stringify(tag)}],
   request: {
     params: ${ID_PARAMS},
@@ -608,11 +607,11 @@ function generateTaxonomyRoutes(taxonomyType: ParsedTaxonomyType): string {
   responses: {
     200: {
       content: { 'application/json': { schema: itemResponseSchema(${sVar}) } },
-      description: '${label}',
+      description: ${JSON.stringify(label)},
     },
     404: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
-      description: '${label} not found',
+      description: ${JSON.stringify(`${label} not found`)},
     },
   },
 })`
@@ -622,7 +621,7 @@ function generateTaxonomyRoutes(taxonomyType: ParsedTaxonomyType): string {
   lines.push(
     `export const ${routeVar('adminGet', taxonomyType.name, 'List')} = createRoute({
   method: 'get',
-  path: '${adminCollPath}',
+  path: ${JSON.stringify(adminCollPath)},
   tags: [${JSON.stringify(tag)}],
   request: {
     query: ${ADMIN_LIST_QUERY},
@@ -630,7 +629,7 @@ function generateTaxonomyRoutes(taxonomyType: ParsedTaxonomyType): string {
   responses: {
     200: {
       content: { 'application/json': { schema: listResponseSchema(${sVar}) } },
-      description: 'List of ${label}',
+      description: ${JSON.stringify(`List of ${label}`)},
     },
     400: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -644,7 +643,7 @@ function generateTaxonomyRoutes(taxonomyType: ParsedTaxonomyType): string {
   lines.push(
     `export const ${routeVar('adminGet', taxonomyType.name, '')} = createRoute({
   method: 'get',
-  path: '${adminItemPath}',
+  path: ${JSON.stringify(adminItemPath)},
   tags: [${JSON.stringify(tag)}],
   request: {
     params: ${ID_PARAMS},
@@ -653,11 +652,11 @@ function generateTaxonomyRoutes(taxonomyType: ParsedTaxonomyType): string {
   responses: {
     200: {
       content: { 'application/json': { schema: itemResponseSchema(${sVar}) } },
-      description: '${label}',
+      description: ${JSON.stringify(label)},
     },
     404: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
-      description: '${label} not found',
+      description: ${JSON.stringify(`${label} not found`)},
     },
   },
 })`
@@ -667,7 +666,7 @@ function generateTaxonomyRoutes(taxonomyType: ParsedTaxonomyType): string {
   lines.push(
     `export const ${routeVar('adminCreate', taxonomyType.name, '')} = createRoute({
   method: 'post',
-  path: '${adminCollPath}',
+  path: ${JSON.stringify(adminCollPath)},
   tags: [${JSON.stringify(tag)}],
   request: {
     body: {
@@ -677,7 +676,7 @@ function generateTaxonomyRoutes(taxonomyType: ParsedTaxonomyType): string {
   responses: {
     201: {
       content: { 'application/json': { schema: itemResponseSchema(${sVar}) } },
-      description: '${label} created',
+      description: ${JSON.stringify(`${label} created`)},
     },
     422: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -691,7 +690,7 @@ function generateTaxonomyRoutes(taxonomyType: ParsedTaxonomyType): string {
   lines.push(
     `export const ${routeVar('adminUpdate', taxonomyType.name, '')} = createRoute({
   method: 'patch',
-  path: '${adminItemPath}',
+  path: ${JSON.stringify(adminItemPath)},
   tags: [${JSON.stringify(tag)}],
   request: {
     params: ${ID_PARAMS},
@@ -702,11 +701,11 @@ function generateTaxonomyRoutes(taxonomyType: ParsedTaxonomyType): string {
   responses: {
     200: {
       content: { 'application/json': { schema: itemResponseSchema(${sVar}) } },
-      description: '${label} updated',
+      description: ${JSON.stringify(`${label} updated`)},
     },
     404: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
-      description: '${label} not found',
+      description: ${JSON.stringify(`${label} not found`)},
     },
     422: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -720,7 +719,7 @@ function generateTaxonomyRoutes(taxonomyType: ParsedTaxonomyType): string {
   lines.push(
     `export const ${routeVar('adminDelete', taxonomyType.name, '')} = createRoute({
   method: 'delete',
-  path: '${adminItemPath}',
+  path: ${JSON.stringify(adminItemPath)},
   tags: [${JSON.stringify(tag)}],
   request: {
     params: ${ID_PARAMS},
@@ -728,11 +727,11 @@ function generateTaxonomyRoutes(taxonomyType: ParsedTaxonomyType): string {
   responses: {
     200: {
       content: { 'application/json': { schema: z.object({ ok: z.literal(true) }) } },
-      description: '${label} deleted',
+      description: ${JSON.stringify(`${label} deleted`)},
     },
     404: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
-      description: '${label} not found',
+      description: ${JSON.stringify(`${label} not found`)},
     },
     409: ${ITEM_IN_USE_RESPONSE},
   },
