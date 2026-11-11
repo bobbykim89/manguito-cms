@@ -58,6 +58,7 @@ import {
 } from '@bobbykim/manguito-cms-db'
 import {
   walkSchemaDirectory,
+  parseSchema,
   parseRoles,
   parseRoutes,
   buildSchemaRegistry,
@@ -329,6 +330,24 @@ describe('runMigrate', () => {
       expect(generateMigration).not.toHaveBeenCalled()
       expect(applyMigrations).not.toHaveBeenCalled()
       expect(exitSpy).toHaveBeenCalledWith(1)
+      exitSpy.mockRestore()
+    })
+  })
+
+  describe('schema parse failure while seeding', () => {
+    it('prints the seeding guided error, exits 1 and does not seed', async () => {
+      // MUTATION: the refactored command prints a different heading, or seeds despite the failure.
+      const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('process.exit') })
+      vi.mocked(walkSchemaDirectory).mockReturnValue({ ok: true, value: [
+        { raw: '{}', schema_type: 'content-type' as const, path: 'schemas/post.json' },
+      ]})
+      vi.mocked(parseSchema).mockReturnValueOnce({ ok: false, errors: [{ file: 'schemas/post.json', message: 'bad' }] } as never)
+
+      await expect(runMigrate({}, makeDeps())).rejects.toThrow('process.exit')
+
+      expect(exitSpy).toHaveBeenCalledWith(1)
+      expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining('Schema errors prevented seeding system tables.'))
+      expect(seedSystemTables).not.toHaveBeenCalled()
       exitSpy.mockRestore()
     })
   })

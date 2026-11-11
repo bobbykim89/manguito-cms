@@ -5,17 +5,7 @@ import { fileURLToPath } from 'node:url'
 import type { Command } from 'commander'
 import { build as viteBuild } from 'vite'
 import { build as tsupBuild } from 'tsup'
-import {
-  walkSchemaDirectory,
-  parseSchema,
-  parseRoles,
-  parseRoutes,
-  buildSchemaRegistry,
-  findSchemaDeprecations,
-  loadSchemaFile,
-  type ParseError,
-  type ParsedSchema,
-} from '@bobbykim/manguito-cms-core'
+import { findSchemaDeprecations } from '@bobbykim/manguito-cms-core'
 import { generateSchemaFile } from '@bobbykim/manguito-cms-db'
 import { generateSchemaRegistry } from '../codegen/registry.js'
 import { generateRoutes } from '../codegen/routes.js'
@@ -26,6 +16,7 @@ import { generateVersionModel } from '../codegen/version-model.js'
 import { resolveConfig } from '../utils/config.js'
 import { resolveSchemaConfig } from '../utils/schema-config.js'
 import { checkRegistry } from '../utils/schema-checks.js'
+import { parseProjectSchemas } from '../utils/registry.js'
 import { loadEnvFile } from '../utils/env.js'
 import { loadProjectVersionModel } from '../utils/project-version-model.js'
 import { printGuidedError, printSuccess, printValidationErrors, printSchemaDeprecations } from '../utils/error.js'
@@ -53,61 +44,13 @@ export async function runBuild(
   const config = await resolveConfig(cwd)
 
   // 3. Parse all schemas — collect ALL errors before stopping
-  const allErrors: ParseError[] = []
-  const parsedSchemas: ParsedSchema[] = []
-
-  const walkResult = walkSchemaDirectory(config.schema)
-  if (!walkResult.ok) {
-    allErrors.push(...walkResult.errors)
-  } else {
-    for (const file of walkResult.value) {
-      const parseResult = parseSchema(file.raw, file.schema_type, file.path)
-      if (!parseResult.ok) {
-        allErrors.push(...parseResult.errors)
-      } else {
-        parsedSchemas.push(parseResult.schema)
-      }
-    }
-  }
-
-  const rolesPath = resolve(cwd, config.schema.base_path, 'roles.json')
-  const rolesLoadResult = loadSchemaFile(rolesPath)
-  let parsedRoles = null
-  if (!rolesLoadResult.ok) {
-    allErrors.push(...rolesLoadResult.errors)
-  } else {
-    const rolesParseResult = parseRoles(rolesLoadResult.value, rolesPath)
-    if (!rolesParseResult.ok) {
-      allErrors.push(...rolesParseResult.errors)
-    } else {
-      parsedRoles = rolesParseResult.value
-    }
-  }
-
-  const routesPath = resolve(cwd, config.schema.base_path, 'routes.json')
-  const routesLoadResult = loadSchemaFile(routesPath)
-  let parsedRoutesDef = null
-  if (!routesLoadResult.ok) {
-    allErrors.push(...routesLoadResult.errors)
-  } else {
-    const routesParseResult = parseRoutes(routesLoadResult.value, routesPath)
-    if (!routesParseResult.ok) {
-      allErrors.push(...routesParseResult.errors)
-    } else {
-      parsedRoutesDef = routesParseResult.value
-    }
-  }
-
-  if (allErrors.length > 0) {
-    printValidationErrors(allErrors, 'Schema parse errors', 'manguito build')
+  const parsed = parseProjectSchemas(cwd, config)
+  if (!parsed.ok) {
+    printValidationErrors(parsed.errors, 'Schema parse errors', 'manguito build')
     process.exit(1)
   }
 
-  const registry = buildSchemaRegistry(
-    parsedSchemas,
-    parsedRoutesDef!,
-    parsedRoles!
-  )
+  const registry = parsed.value
   printSchemaDeprecations(findSchemaDeprecations(registry))
   // References between schemas (unknown or wrong-type targets, circular
   // paragraphs, media size limits, unsupported relations), the same checks
@@ -130,10 +73,11 @@ export async function runBuild(
   printSuccess('Config loaded')
 
   // 5. Schemas parsed
-  const contentCount = parsedSchemas.filter((s) => s.schema_type === 'content-type').length
-  const paragraphCount = parsedSchemas.filter((s) => s.schema_type === 'paragraph-type').length
-  const taxonomyCount = parsedSchemas.filter((s) => s.schema_type === 'taxonomy-type').length
-  const enumCount = parsedSchemas.filter((s) => s.schema_type === 'enum-type').length
+  const countOf = (type: string): number => registry.all_schemas.filter((x) => x.schema_type === type).length
+  const contentCount = countOf('content-type')
+  const paragraphCount = countOf('paragraph-type')
+  const taxonomyCount = countOf('taxonomy-type')
+  const enumCount = countOf('enum-type')
   const enumPart = enumCount > 0 ? `, ${enumCount} enum types` : ''
   printSuccess(
     `Schemas parsed (${contentCount} content types, ${paragraphCount} paragraph types, ${taxonomyCount} taxonomy types${enumPart})`

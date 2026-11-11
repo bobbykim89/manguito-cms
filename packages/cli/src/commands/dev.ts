@@ -18,17 +18,9 @@ import {
 import { createCmsApp } from '@bobbykim/manguito-cms-api'
 import type { ResolverMap } from '@bobbykim/manguito-cms-api'
 import {
-  walkSchemaDirectory,
-  parseSchema,
-  parseRoles,
-  parseRoutes,
-  buildSchemaRegistry,
   findSchemaDeprecations,
-  loadSchemaFile,
   hashPassword,
   type SchemaRegistry,
-  type ParsedSchema,
-  type ParseError,
   type Result,
 } from '@bobbykim/manguito-cms-core'
 import { generateDrizzleConfig } from '../codegen/drizzle-config.js'
@@ -43,10 +35,12 @@ import { shouldBridgeToHono } from './dev-routing.js'
 import { resolveConfig } from '../utils/config.js'
 import { resolveSchemaConfig } from '../utils/schema-config.js'
 import { checkRegistry } from '../utils/schema-checks.js'
+import { parseProjectSchemas } from '../utils/registry.js'
 import { connectDb } from '../utils/db.js'
 import { printGuidedError, printSuccess, printValidationErrors, printSchemaDeprecations } from '../utils/error.js'
 import { createPromptAdapter } from '../utils/prompt.js'
 import { loadProgrammaticResolvers } from '../utils/programmatic-loader.js'
+import { createReloadQueue } from '../utils/reload-queue.js'
 
 type HonoFetch = (request: Request) => Response | Promise<Response>
 
@@ -276,23 +270,27 @@ export async function runDev(
   // 11. Start fs.watch on schemas/ directory
   const schemasDir = resolve(cwd, config.schema.base_path)
 
+  // One queue for both watchers: reloads never overlap, and a burst of saves
+  // collapses into at most one more reload.
+  const reload = createReloadQueue(() =>
+    reloadSafely({
+      cwd,
+      config,
+      manguitoDir,
+      drizzleConfigPath,
+      db,
+      updateFetch: (fetch) => {
+        honoFetch = fetch
+      },
+      getResolvers: () => loadProgrammaticResolvers(cwd, config.programmatic.dir),
+    }),
+  )
+
   const watcher = watch(schemasDir, { recursive: true })
   void (async () => {
     for await (const event of watcher) {
-      if (event.filename && /\.(json|ya?ml)$/.test(event.filename)) {
-        // 12. On schema file change: incremental re-parse + hot-swap
-        await reloadSafely({
-          cwd,
-          config,
-          manguitoDir,
-          drizzleConfigPath,
-          db,
-          updateFetch: (fetch) => {
-            honoFetch = fetch
-          },
-          getResolvers: () => loadProgrammaticResolvers(cwd, config.programmatic.dir),
-        })
-      }
+      // 12. On schema file change: incremental re-parse + hot-swap
+      if (event.filename && /\.(json|ya?ml)$/.test(event.filename)) void reload()
     }
   })()
 
@@ -305,19 +303,7 @@ export async function runDev(
     const progWatcher = watch(programmaticDir, { recursive: true })
     void (async () => {
       for await (const event of progWatcher) {
-        if (event.filename && /\.(ts|mjs|js)$/.test(event.filename)) {
-          await reloadSafely({
-            cwd,
-            config,
-            manguitoDir,
-            drizzleConfigPath,
-            db,
-            updateFetch: (fetch) => {
-              honoFetch = fetch
-            },
-            getResolvers: () => loadProgrammaticResolvers(cwd, config.programmatic.dir),
-          })
-        }
+        if (event.filename && /\.(ts|mjs|js)$/.test(event.filename)) void reload()
       }
     })()
   }
@@ -433,7 +419,7 @@ function loadValidatedSchema(
   cwd: string,
   config: Awaited<ReturnType<typeof resolveConfig>>,
 ): Result<ValidatedSchema> {
-  const parsed = parseAllSchemas(cwd, config)
+  const parsed = parseProjectSchemas(cwd, config)
   if (!parsed.ok) return parsed
   const registry = parsed.value
 
@@ -448,39 +434,6 @@ function loadValidatedSchema(
 
   printSchemaDeprecations(findSchemaDeprecations(registry))
   return { ok: true, value: { registry, versionModel: reduceVersionModel(versions.value.model) } }
-}
-
-// Parses every schema file, roles.json and routes.json, collecting all errors.
-function parseAllSchemas(
-  cwd: string,
-  config: Awaited<ReturnType<typeof resolveConfig>>,
-): Result<SchemaRegistry> {
-  const errors: ParseError[] = []
-  const parsedSchemas: ParsedSchema[] = []
-
-  const walkResult = walkSchemaDirectory(config.schema)
-  if (!walkResult.ok) {
-    errors.push(...walkResult.errors)
-  } else {
-    for (const file of walkResult.value) {
-      const parseResult = parseSchema(file.raw, file.schema_type, file.path)
-      if (parseResult.ok) parsedSchemas.push(parseResult.schema)
-      else errors.push(...parseResult.errors)
-    }
-  }
-
-  const rolesPath = resolve(cwd, config.schema.base_path, 'roles.json')
-  const rolesLoad = loadSchemaFile(rolesPath)
-  const rolesResult = rolesLoad.ok ? parseRoles(rolesLoad.value, rolesPath) : rolesLoad
-  if (!rolesResult.ok) errors.push(...rolesResult.errors)
-
-  const routesPath = resolve(cwd, config.schema.base_path, 'routes.json')
-  const routesLoad = loadSchemaFile(routesPath)
-  const routesResult = routesLoad.ok ? parseRoutes(routesLoad.value, routesPath) : routesLoad
-  if (!routesResult.ok) errors.push(...routesResult.errors)
-
-  if (errors.length > 0 || !rolesResult.ok || !routesResult.ok) return { ok: false, errors }
-  return { ok: true, value: buildSchemaRegistry(parsedSchemas, routesResult.value, rolesResult.value) }
 }
 
 // ─── Admin root resolver ──────────────────────────────────────────────────────

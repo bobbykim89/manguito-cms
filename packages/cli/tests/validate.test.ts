@@ -64,7 +64,10 @@ describe('runValidate', () => {
     vi.mocked(loadSchemaFile).mockReturnValue({ ok: true, value: '{}' })
     vi.mocked(parseRoles).mockReturnValue({ ok: true, value: [] } as never)
     vi.mocked(parseRoutes).mockReturnValue({ ok: true, value: [] } as never)
-    vi.mocked(buildSchemaRegistry).mockReturnValue({} as never)
+    // The real buildSchemaRegistry keeps every schema it is given in all_schemas.
+    vi.mocked(buildSchemaRegistry).mockImplementation(((schemas: unknown[]) => ({
+      all_schemas: schemas, enum_types: {},
+    })) as never)
     vi.mocked(validateCrossReferences).mockReturnValue([])
     vi.mocked(findConstraintNameCollisions).mockReturnValue([])
     vi.mocked(loadVersionSnapshots).mockReturnValue({ ok: true, value: [] })
@@ -102,6 +105,34 @@ describe('runValidate', () => {
 
     expect(exitSpy).toHaveBeenCalledWith(1)
     expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining('blog-post.json'))
+    exitSpy.mockRestore()
+  })
+
+  it('prints the success counts from the parsed schemas', async () => {
+    // MUTATION: count from the wrong list, or the wrong type: the line then differs.
+    vi.mocked(walkSchemaDirectory).mockReturnValue({ ok: true, value: [
+      { raw: '{}', schema_type: 'content-type' as const, path: 'schemas/post.json' },
+    ]})
+    vi.mocked(parseSchema).mockReturnValueOnce({ ok: true, schema: { schema_type: 'content-type', name: 'post' } } as never)
+
+    await runValidate({}, { cwd: FAKE_CWD })
+
+    expect(process.stdout.write).toHaveBeenCalledWith(
+      expect.stringContaining('Schemas valid (1 content types, 0 paragraph types, 0 taxonomy types)')
+    )
+  })
+
+  it('prints the "Validation errors" heading when a schema fails to parse', async () => {
+    // MUTATION: print a different heading for a parse failure.
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('process.exit') })
+    vi.mocked(walkSchemaDirectory).mockReturnValue({ ok: true, value: [
+      { raw: '{}', schema_type: 'content-type' as const, path: 'schemas/post.json' },
+    ]})
+    vi.mocked(parseSchema).mockReturnValueOnce({ ok: false, errors: [{ file: 'schemas/post.json', message: 'bad' }] } as never)
+
+    await expect(runValidate({}, { cwd: FAKE_CWD })).rejects.toThrow('process.exit')
+
+    expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining('Validation errors'))
     exitSpy.mockRestore()
   })
 

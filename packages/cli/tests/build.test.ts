@@ -84,9 +84,10 @@ describe('runBuild', () => {
     vi.mocked(loadSchemaFile).mockReturnValue({ ok: true, value: '{}' })
     vi.mocked(parseRoles).mockReturnValue({ ok: true, value: [] } as never)
     vi.mocked(parseRoutes).mockReturnValue({ ok: true, value: [] } as never)
-    vi.mocked(buildSchemaRegistry).mockReturnValue({
-      content_types: {}, paragraph_types: {}, taxonomy_types: {}, enum_types: {},
-    } as never)
+    // The real buildSchemaRegistry keeps every schema it is given in all_schemas.
+    vi.mocked(buildSchemaRegistry).mockImplementation(((schemas: unknown[]) => ({
+      content_types: {}, paragraph_types: {}, taxonomy_types: {}, enum_types: {}, all_schemas: schemas,
+    })) as never)
     vi.mocked(resolveSchemaConfig).mockReturnValue({ base_path: '/fake/schemas', folders: {} } as never)
     vi.mocked(loadVersionSnapshots).mockReturnValue({ ok: true, value: [] } as never)
     vi.mocked(computeVersionModel).mockReturnValue({
@@ -166,6 +167,38 @@ describe('runBuild', () => {
     expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining('paragraph--card'))
     expect(generateSchemaRegistry).not.toHaveBeenCalled()
     exitSpy.mockRestore()
+  })
+
+  it('prints the "Schema parse errors" heading and exits 1 when a schema fails to parse', async () => {
+    // MUTATION: the loader's caller prints a different heading, or never exits.
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('process.exit') })
+    vi.mocked(walkSchemaDirectory).mockReturnValue({ ok: true, value: [
+      { raw: '{}', schema_type: 'content-type' as const, path: 'schemas/blog-post.json' },
+    ]})
+    vi.mocked(parseSchema).mockReturnValueOnce({ ok: false, errors: [{ file: 'schemas/blog-post.json', message: 'bad' }] } as never)
+
+    await expect(runBuild({}, { cwd: FAKE_CWD })).rejects.toThrow('process.exit')
+
+    expect(exitSpy).toHaveBeenCalledWith(1)
+    expect(process.stderr.write).toHaveBeenCalledWith(expect.stringContaining('Schema parse errors'))
+    exitSpy.mockRestore()
+  })
+
+  it('prints the parsed counts, including enum types', async () => {
+    // MUTATION: count from the wrong list, or drop the enum part: the line then differs.
+    vi.mocked(walkSchemaDirectory).mockReturnValue({ ok: true, value: [
+      { raw: '{}', schema_type: 'content-type' as const, path: 'schemas/post.json' },
+      { raw: '{}', schema_type: 'enum-type' as const, path: 'schemas/status.json' },
+    ]})
+    vi.mocked(parseSchema)
+      .mockReturnValueOnce({ ok: true, schema: { schema_type: 'content-type', name: 'post' } } as never)
+      .mockReturnValueOnce({ ok: true, schema: { schema_type: 'enum-type', name: 'status' } } as never)
+
+    await runBuild({}, { cwd: FAKE_CWD })
+
+    expect(process.stdout.write).toHaveBeenCalledWith(
+      expect.stringContaining('Schemas parsed (1 content types, 0 paragraph types, 0 taxonomy types, 1 enum types)')
+    )
   })
 
   it('calls process.exit(1) with error message when roles.json fails to parse', async () => {

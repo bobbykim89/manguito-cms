@@ -10,7 +10,7 @@ import {
   walkSchemaDirectory,
 } from '@bobbykim/manguito-cms-core'
 import type { ParseError, ParsedSchema, SchemaRegistry } from '@bobbykim/manguito-cms-core'
-import { findConstraintNameCollisions, foreignKeyName } from '../constraint-names'
+import { codegenForeignKeyName, findConstraintNameCollisions, foreignKeyName } from '../constraint-names'
 
 type RawField = Record<string, unknown>
 
@@ -82,45 +82,72 @@ describe('foreignKeyName', () => {
   })
 })
 
+describe('codegenForeignKeyName', () => {
+  // A default name of exactly `length` characters: the column pads it out.
+  const ofLength = (length: number, column = 'c'): [string, string, string, string] => {
+    const table = 'content_owner_table'
+    const target = 'taxonomy_target_table'
+    const fixed = foreignKeyName(table, column, target, 'id').length
+    return [table, column.padEnd(column.length + length - fixed, 'x'), target, 'id']
+  }
+
+  it('keeps drizzle\'s name when it is exactly 63 characters', () => {
+    // MUTATION: hash at `>= 63`. A 63-character name is kept by Postgres whole,
+    // so it must stay as drizzle names it.
+    const args = ofLength(63)
+    expect(foreignKeyName(...args)).toHaveLength(63)
+    expect(codegenForeignKeyName(...args)).toBe(foreignKeyName(...args))
+  })
+
+  it('hashes a 64-character name to 63 characters', () => {
+    // MUTATION: keep a 52-character prefix. The name then no longer matches
+    // `^.{51}_[0-9a-f]{8}_fk$` and is 64 characters long.
+    const args = ofLength(64)
+    const def = foreignKeyName(...args)
+    expect(def).toHaveLength(64)
+    const name = codegenForeignKeyName(...args)
+    expect(name).toHaveLength(63)
+    expect(name.startsWith(def.slice(0, 51) + '_')).toBe(true)
+    expect(name.endsWith('_fk')).toBe(true)
+    expect(name).toMatch(/^.{51}_[0-9a-f]{8}_fk$/)
+  })
+
+  it('gives different names to two foreign keys that share their first 51 characters', () => {
+    // MUTATION: hash only the table name. Both keys then get the same hash
+    // and the same 51-character prefix, so their names are equal.
+    const table = 'junction_content_a_long_link_table_name_for_the_pin'
+    const left = codegenForeignKeyName(table, 'left_id', 'content_owner', 'id')
+    const right = codegenForeignKeyName(table, 'right_id', 'content_owner', 'id')
+    expect(foreignKeyName(table, 'left_id', 'content_owner', 'id').slice(0, 51)).toBe(
+      foreignKeyName(table, 'right_id', 'content_owner', 'id').slice(0, 51),
+    )
+    expect(left).not.toBe(right)
+  })
+})
+
 describe('findConstraintNameCollisions — a link table’s two foreign keys (K1)', () => {
   // `junction_taxonomy_tag_` is 22 characters, so a 40-character field gives a
   // 62-character link table. Its foreign keys `<link table>_left_id_…` and
-  // `<link table>_right_id_…` then differ only at character 64.
+  // `<link table>_right_id_…` agree in their first 63 characters, but codegen
+  // hashes each name past 63 characters, so they are stored apart.
   const prefix = 'junction_taxonomy_tag_'.length
   const withList = (field: string) =>
     registryOf(taxonomy('taxonomy--tag', [TITLE, m2m(field)]))
 
-  it('refuses a 62-character link table and names the field length that fits', () => {
-    // MUTATION: compare full names instead of their first 63 characters. The two
-    // foreign keys differ at character 64, so nothing would be reported.
+  it('passes a 62-character link table, whose foreign keys codegen hashes apart', () => {
+    // MUTATION: `checkLinkTable` still compares `stored(foreignKeyName(...))`.
+    // The two default names agree in their first 63 characters, so the schema is refused.
     const field = 'f'.repeat(62 - prefix)
     expect(`junction_taxonomy_tag_${field}`).toHaveLength(62)
-    const errors = collisions(withList(field))
-    expect(errors).toHaveLength(1)
-    expect(errors[0]).toMatchObject({ file: 'schemas/taxonomy-types/taxonomy--tag.json', path: 'fields[1].name' })
-    expect(errors[0]!.message).toContain(`field "${field}" of "taxonomy--tag"`)
-    expect(errors[0]!.message).toContain('Postgres keeps only the first 63 characters of a name')
-    expect(errors[0]!.message).toContain(`shorten field "${field}" to at most ${61 - prefix} characters, or the name of type "taxonomy--tag"`)
+    expect(collisions(withList(field))).toEqual([])
   })
 
-  it('is cleared by shortening the field to the length the message names', () => {
-    // MUTATION: suggest one character more (62 − prefix). A field of that length
-    // gives a 62-character link table again, and the error stays.
-    const [error] = collisions(withList('f'.repeat(62 - prefix)))
-    const fixed = 'f'.repeat(suggested(error!))
-    expect(collisions(withList(fixed))).toEqual([])
-    expect(`junction_taxonomy_tag_${fixed}`).toHaveLength(61)
-  })
-
-  it('names only the type when the link-table prefix leaves no room for the field', () => {
-    // MUTATION: always suggest shortening the field. Here the prefix
-    // `junction_taxonomy_<43 b's>_` alone is 62 characters, so no field fits.
+  it('passes a type whose link-table prefix alone is 62 characters', () => {
+    // MUTATION: `checkLinkTable` still compares `stored(foreignKeyName(...))`.
+    // The prefix `junction_taxonomy_<43 b's>_` leaves the two default names
+    // agreeing in their first 63 characters.
     const longType = (n: number) => `taxonomy--${'b'.repeat(n)}`
-    const registry = (n: number) => registryOf(TAG, taxonomy(longType(n), [m2m('x')]))
-    const errors = collisions(registry(43))
-    expect(errors).toHaveLength(1)
-    expect(errors[0]!.message).toContain(`shorten the name of type "${longType(43)}": its link table names already have 62 characters before the field name`)
-    expect(collisions(registry(30))).toEqual([])
+    expect(collisions(registryOf(TAG, taxonomy(longType(43), [m2m('x')])))).toEqual([])
   })
 })
 
@@ -130,59 +157,17 @@ describe('findConstraintNameCollisions — two foreign keys of one table (K2)', 
   const one = `${'a'.repeat(50)}_one`
   const two = `${'a'.repeat(50)}_two`
 
-  it('refuses two reference columns that share the characters Postgres keeps', () => {
-    // MUTATION: compare full names. The two foreign keys differ after character
-    // 63, so nothing would be reported.
-    const errors = collisions(registryOf(TAG, content('content--post', [ref(one), ref(two)])))
-    expect(errors).toHaveLength(1)
-    expect(errors[0]).toMatchObject({ file: 'schemas/content-types/content--post.json', path: 'fields[0].tab.fields[1].name' })
-    expect(errors[0]!.message).toContain(`"${foreignKeyName('content_post', one, 'taxonomy_tag', 'id')}"`)
-    expect(errors[0]!.message).toContain('Postgres keeps only the first 63 characters of a name')
-    expect(errors[0]!.message).toContain(
-      `rename field "${one}" or rename field "${two}" so that the two differ within their first 50 characters, or shorten the name of type "content--post"`,
-    )
+  it('passes two reference columns whose default foreign-key names share their first 63 characters', () => {
+    // MUTATION: `typeTableConstraints` still uses `foreignKeyName`. The two
+    // default names agree in their first 63 characters, so the schema is refused.
+    expect(collisions(registryOf(TAG, content('content--post', [ref(one), ref(two)])))).toEqual([])
   })
 
-  it('is cleared by a rename that differs at the last character the message allows', () => {
-    // MUTATION: suggest one character more (63 − table length). A rename that
-    // differs only at that character still collides, since Postgres drops it.
-    const [error] = collisions(registryOf(TAG, content('content--post', [ref(one), ref(two)])))
-    const n = suggested(error!)
-    const renamed = `${'a'.repeat(n - 1)}b`
-    expect(collisions(registryOf(TAG, content('content--post', [ref(one), ref(renamed)])))).toEqual([])
-  })
-
-  it('names the column when it differs from the field name', () => {
-    // MUTATION: name only the field. The collision is in the column, which a
-    // `column` declaration keeps apart from the field name.
-    const pinned = { ...ref('pinned'), column: two }
-    const [error] = collisions(registryOf(TAG, content('content--post', [ref(one), pinned])))
-    expect(error!.message).toContain(`field "pinned" (column "${two}")`)
-  })
-
-  it('suggests changing a declared column, and changing it clears the collision', () => {
-    // MUTATION: suggest renaming field "pinned". Its constraint is named after
-    // the declared column, so a renamed field still collides; the message
-    // must name the column change, which this test then applies.
-    const pinned = { ...ref('pinned'), column: two }
-    const [error] = collisions(registryOf(TAG, content('content--post', [ref(one), pinned])))
-    expect(error!.message).toContain(`or change the column "${two}" of field "pinned" so that the two differ`)
-    const changed = { ...pinned, column: `${'a'.repeat(suggested(error!) - 1)}b` }
-    expect(collisions(registryOf(TAG, content('content--post', [ref(one), changed])))).toEqual([])
-  })
-
-  it('names the longest type name that fits when the table leaves no room for a column, and that clears it', () => {
-    // MUTATION: suggest one character more (63 − shared + offset). A type of
-    // that length leaves the two foreign keys parting at character 64.
-    // content_<54 p's> is 62 characters, so both foreign keys keep only the table.
-    const type = (n: number) => `content--${'p'.repeat(n)}`
-    const errors = collisions(registryOf(TAG, content(type(54), [ref('r_one'), ref('r_two')])))
-    expect(errors).toHaveLength(1)
-    // The two part 3 characters after the table (`_r_`): 63 − 1 − 3 = 59 for the table, 60 for the type.
-    expect(errors[0]!.message).toContain(`shorten the name of type "${type(54)}" to at most 60 characters`)
-    const fixed = type(suggested(errors[0]!) - 'content--'.length)
-    expect(fixed).toHaveLength(60)
-    expect(collisions(registryOf(TAG, content(fixed, [ref('r_one'), ref('r_two')])))).toEqual([])
+  it('passes two reference columns on a table whose name leaves no room for a column', () => {
+    // MUTATION: `typeTableConstraints` still uses `foreignKeyName`.
+    // content_<54 p's> is 62 characters, so both default names keep only the table.
+    const type = `content--${'p'.repeat(54)}`
+    expect(collisions(registryOf(TAG, content(type, [ref('r_one'), ref('r_two')])))).toEqual([])
   })
 })
 
@@ -249,11 +234,17 @@ describe('findConstraintNameCollisions — a link unique name against a schema-w
 })
 
 describe('findConstraintNameCollisions — names in more than one kind of constraint', () => {
+  // A foreign key name of exactly 63 characters is kept whole. On content_post,
+  // a 31-character reference column gives one. An enum column named that name
+  // plus `_x` has a `<column>_check` that Postgres cuts to the same 63 characters;
+  // the columns differ at character 64, so core's DUPLICATE_COLUMN lets both through.
+  const fk = 'x'.repeat(31)
+  const check = `${foreignKeyName('content_post', fk, 'taxonomy_tag', 'id')}_x`
+
   it('reports a foreign key and a check constraint that share their first 63 characters', () => {
-    // MUTATION: compare names only within one kind. The foreign key of `x…`
-    // and the check of `content_post_x…` both begin with 63 identical characters.
-    const fk = 'x'.repeat(55)
-    const check = `content_post_${'x'.repeat(50)}`
+    // MUTATION: compare names only within one kind. The foreign key and the
+    // check both begin with the same 63 characters.
+    expect(foreignKeyName('content_post', fk, 'taxonomy_tag', 'id')).toHaveLength(63)
     const errors = collisions(registryOf(TAG, content('content--post', [ref(fk), enumField(check)])))
     expect(errors).toHaveLength(1)
     expect(errors[0]!.message).toContain(`"${foreignKeyName('content_post', fk, 'taxonomy_tag', 'id')}"`)
@@ -263,16 +254,73 @@ describe('findConstraintNameCollisions — names in more than one kind of constr
   })
 
   it('suggests a length for the enum field, and shortening it to that clears the collision', () => {
-    // MUTATION: suggest 57 (63 − "_check".length). Here the foreign key's first
-    // 63 characters are `content_post_<44 x's>_check`, exactly what a 57-character
-    // column gives its check, so the collision would stay.
-    const fk = `${'x'.repeat(44)}_check_yyy`
-    const check = `content_post_${'x'.repeat(44)}_check`
+    // MUTATION: suggest 63. A 63-character column is the foreign key's name
+    // itself, so its check, cut to 63, still collides and the clearing check fails.
+    // 62 is the tight bound: a shorter column's cut check ends in part of `_check`.
     const errors = collisions(registryOf(TAG, content('content--post', [ref(fk), enumField(check)])))
     expect(errors).toHaveLength(1)
-    expect(errors[0]!.message).toContain(`shorten field "${check}" to at most 56 characters`)
+    expect(errors[0]!.message).toContain(`shorten field "${check}" to at most 62 characters`)
     const shortened = check.slice(0, suggested(errors[0]!))
     expect(collisions(registryOf(TAG, content('content--post', [ref(fk), enumField(shortened)])))).toEqual([])
+  })
+})
+
+describe('findConstraintNameCollisions — foreign keys of one table with one name', () => {
+  // drizzle joins table, column, target table and target column with `_`, so
+  // `ref_taxonomy` -> `taxonomy_tag` and `ref` -> `taxonomy_taxonomy_tag` agree.
+  const OTHER = taxonomy('taxonomy--taxonomy_tag', [TITLE])
+  const post = (fields: RawField[]) => registryOf(TAG, OTHER, content('content--post', fields))
+  const pair = (prefix: string) => [ref(`${prefix}ref_taxonomy`), ref(`${prefix}ref`, 'taxonomy--taxonomy_tag')]
+
+  it('reports a short identical pair, naming both fields', () => {
+    // MUTATION: make checkTypeTable skip foreign-key pairs (or compare only a
+    // foreign key with a check). The two identical names would then pass.
+    const errors = collisions(post(pair('')))
+    expect(foreignKeyName('content_post', 'ref_taxonomy', 'taxonomy_tag', 'id')).toBe(
+      foreignKeyName('content_post', 'ref', 'taxonomy_taxonomy_tag', 'id'),
+    )
+    expect(errors).toHaveLength(1)
+    expect(errors[0]!.message).toContain('"content_post_ref_taxonomy_taxonomy_tag_id_fk"')
+    expect(errors[0]!.message).toContain('field "ref_taxonomy"')
+    expect(errors[0]!.message).toContain('field "ref"')
+    // MUTATION: blame a hash coincidence. Nothing is hashed here: the joined
+    // default names are identical.
+    expect(errors[0]!.message).toContain('drizzle joins the table, column and target names with "_", and here the joined names coincide')
+  })
+
+  it('reports a long identical pair, whose hashed names agree too', () => {
+    // MUTATION: skip foreign-key pairs in checkTypeTable; the two long names,
+    // hashed from one default name, would then go unreported.
+    const prefix = `${'a'.repeat(40)}_`
+    const [a, b] = pair(prefix) as [RawField, RawField]
+    expect(foreignKeyName('content_post', a.name as string, 'taxonomy_tag', 'id').length).toBeGreaterThan(63)
+    const errors = collisions(post([a, b]))
+    expect(errors).toHaveLength(1)
+    expect(errors[0]!.message).toContain(`"${codegenForeignKeyName('content_post', a.name as string, 'taxonomy_tag', 'id')}"`)
+    expect(errors[0]!.message).toContain(`field "${a.name}"`)
+    expect(errors[0]!.message).toContain(`field "${b.name}"`)
+  })
+
+  it('is cleared by renaming one field, as the message suggests', () => {
+    // MUTATION: suggest a rename that keeps the joined name, e.g. renaming the
+    // field but leaving its column fixed; the collision would survive the rename.
+    const errors = collisions(post(pair('')))
+    expect(errors[0]!.message).toContain('rename field "ref"')
+    expect(collisions(post([ref('ref_taxonomy'), ref('ref_two', 'taxonomy--taxonomy_tag')]))).toEqual([])
+  })
+
+  it('suggests changing the declared column, and changing it clears the collision', () => {
+    // MUTATION: make renameOf suggest renaming the field when a `column`
+    // declaration keeps it apart; renaming then leaves the column, and the
+    // collision, in place.
+    const declared = { ...ref('other', 'taxonomy--taxonomy_tag'), column: 'ref' }
+    const errors = collisions(post([ref('ref_taxonomy'), declared]))
+    expect(errors).toHaveLength(1)
+    expect(errors[0]!.message).toContain('change the column "ref" of field "other"')
+    expect(errors[0]!.message).not.toContain('rename field "other"')
+    expect(collisions(post([ref('ref_taxonomy'), { ...declared, column: 'ref_two' }]))).toEqual([])
+    // Renaming the field alone does not clear it.
+    expect(collisions(post([ref('ref_taxonomy'), { ...declared, name: 'other_two' }]))).toHaveLength(1)
   })
 })
 
