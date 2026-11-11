@@ -294,7 +294,7 @@ function generateContentRoutes(contentType: ParsedContentType): string {
   responses: {
     200: {
       content: { 'application/json': { schema: listResponseSchema(${sVar}) } },
-      description: 'List of ${label}',
+      description: ${JSON.stringify(`List of ${label}`)},
     },
     400: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -317,11 +317,11 @@ function generateContentRoutes(contentType: ParsedContentType): string {
   responses: {
     200: {
       content: { 'application/json': { schema: itemResponseSchema(${sVar}) } },
-      description: '${label}',
+      description: ${JSON.stringify(label)},
     },
     404: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
-      description: '${label} not found',
+      description: ${JSON.stringify(`${label} not found`)},
     },
   },
 })`
@@ -341,7 +341,7 @@ function generateContentRoutes(contentType: ParsedContentType): string {
   responses: {
     200: {
       content: { 'application/json': { schema: listResponseSchema(${sVar}) } },
-      description: 'List of ${label}',
+      description: ${JSON.stringify(`List of ${label}`)},
     },
     400: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -364,11 +364,11 @@ function generateContentRoutes(contentType: ParsedContentType): string {
   responses: {
     200: {
       content: { 'application/json': { schema: itemResponseSchema(${sVar}) } },
-      description: '${label}',
+      description: ${JSON.stringify(label)},
     },
     404: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
-      description: '${label} not found',
+      description: ${JSON.stringify(`${label} not found`)},
     },
   },
 })`
@@ -388,7 +388,7 @@ function generateContentRoutes(contentType: ParsedContentType): string {
   responses: {
     201: {
       content: { 'application/json': { schema: itemResponseSchema(${sVar}) } },
-      description: '${label} created',
+      description: ${JSON.stringify(`${label} created`)},
     },
     422: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -413,11 +413,11 @@ function generateContentRoutes(contentType: ParsedContentType): string {
   responses: {
     200: {
       content: { 'application/json': { schema: itemResponseSchema(${sVar}) } },
-      description: '${label} updated',
+      description: ${JSON.stringify(`${label} updated`)},
     },
     404: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
-      description: '${label} not found',
+      description: ${JSON.stringify(`${label} not found`)},
     },
     422: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -439,11 +439,11 @@ function generateContentRoutes(contentType: ParsedContentType): string {
   responses: {
     200: {
       content: { 'application/json': { schema: z.object({ ok: z.literal(true) }) } },
-      description: '${label} deleted',
+      description: ${JSON.stringify(`${label} deleted`)},
     },
     404: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
-      description: '${label} not found',
+      description: ${JSON.stringify(`${label} not found`)},
     },
     409: ${ITEM_IN_USE_RESPONSE},
   },
@@ -467,11 +467,11 @@ function generateContentRoutes(contentType: ParsedContentType): string {
   responses: {
     200: {
       content: { 'application/json': { schema: itemResponseSchema(${sVar}) } },
-      description: '${label}',
+      description: ${JSON.stringify(label)},
     },
     404: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
-      description: '${label} not found',
+      description: ${JSON.stringify(`${label} not found`)},
     },
   },
 })`
@@ -489,11 +489,11 @@ function generateContentRoutes(contentType: ParsedContentType): string {
   responses: {
     200: {
       content: { 'application/json': { schema: itemResponseSchema(${sVar}) } },
-      description: '${label}',
+      description: ${JSON.stringify(label)},
     },
     404: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
-      description: '${label} not found',
+      description: ${JSON.stringify(`${label} not found`)},
     },
   },
 })`
@@ -514,7 +514,7 @@ function generateContentRoutes(contentType: ParsedContentType): string {
   responses: {
     201: {
       content: { 'application/json': { schema: itemResponseSchema(${sVar}) } },
-      description: '${label} created',
+      description: ${JSON.stringify(`${label} created`)},
     },
     409: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -543,11 +543,11 @@ function generateContentRoutes(contentType: ParsedContentType): string {
   responses: {
     200: {
       content: { 'application/json': { schema: itemResponseSchema(${sVar}) } },
-      description: '${label} updated',
+      description: ${JSON.stringify(`${label} updated`)},
     },
     404: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
-      description: '${label} not found',
+      description: ${JSON.stringify(`${label} not found`)},
     },
     422: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -585,7 +585,7 @@ function generateTaxonomyRoutes(taxonomyType: ParsedTaxonomyType): string {
   responses: {
     200: {
       content: { 'application/json': { schema: listResponseSchema(${sVar}) } },
-      description: 'List of ${label}',
+      description: ${JSON.stringify(`List of ${label}`)},
     },
     400: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -608,11 +608,11 @@ function generateTaxonomyRoutes(taxonomyType: ParsedTaxonomyType): string {
   responses: {
     200: {
       content: { 'application/json': { schema: itemResponseSchema(${sVar}) } },
-      description: '${label}',
+      description: ${JSON.stringify(label)},
     },
     404: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
-      description: '${label} not found',
+      description: ${JSON.stringify(`${label} not found`)},
     },
   },
 })`
@@ -630,7 +630,7 @@ function generateTaxonomyRoutes(taxonomyType: ParsedTaxonomyType): string {
   responses: {
     200: {
       content: { 'application/json': { schema: listResponseSchema(${sVar}) } },
-      description: 'List of ${label}',
+      description: ${JSON.stringify(`List of ${label}`)},
     },
     400: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -653,11 +653,11 @@ function generateTaxonomyRoutes(taxonomyType: ParsedTaxonomyType): string {
   responses: {
     200: {
       content: { 'application/json': { schema: itemResponseSchema(${sVar}) } },
-      description: '${label}',
+      description: ${JSON.stringify(label)},
     },
     404: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
-      description: '${label} not found',
+      description: ${JSON.stringify(`${label} not found`)},
     },
   },
 })`
@@ -677,7 +677,7 @@ function generateTaxonomyRoutes(taxonomyType: ParsedTaxonomyType): string {
   responses: {
     201: {
       content: { 'application/json': { schema: itemResponseSchema(${sVar}) } },
-      description: '${label} created',
+      description: ${JSON.stringify(`${label} created`)},
     },
     422: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -702,11 +702,11 @@ function generateTaxonomyRoutes(taxonomyType: ParsedTaxonomyType): string {
   responses: {
     200: {
       content: { 'application/json': { schema: itemResponseSchema(${sVar}) } },
-      description: '${label} updated',
+      description: ${JSON.stringify(`${label} updated`)},
     },
     404: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
-      description: '${label} not found',
+      description: ${JSON.stringify(`${label} not found`)},
     },
     422: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
@@ -728,11 +728,11 @@ function generateTaxonomyRoutes(taxonomyType: ParsedTaxonomyType): string {
   responses: {
     200: {
       content: { 'application/json': { schema: z.object({ ok: z.literal(true) }) } },
-      description: '${label} deleted',
+      description: ${JSON.stringify(`${label} deleted`)},
     },
     404: {
       content: { 'application/json': { schema: ErrorResponseSchema } },
-      description: '${label} not found',
+      description: ${JSON.stringify(`${label} not found`)},
     },
     409: ${ITEM_IN_USE_RESPONSE},
   },
