@@ -17,7 +17,7 @@ if (!DB_URL) {
 
 // #96: core accepts any non-empty string as an enum value, and codegen writes
 // each value into a SQL string inside the generated sql`` template.
-const VALUES = [`don't know`, 'back`tick', 'dollar ${x}', 'back\\slash', 'plain']
+const VALUES = [`don't know`, 'back`tick', 'dollar ${x}', 'back\\slash', 'crlf\r\nline', 'plain']
 
 const TABLE = 'content_eq_post'
 const TMP_DIR = path.resolve(__dirname, '..', '..', '..', 'tests', '.tmp-enum-quoting')
@@ -90,8 +90,9 @@ afterAll(async () => {
 
 describe('generated enum check constraints quote their values safely', () => {
   it('keeps schema.ts valid TypeScript when a value holds a backtick', () => {
-    // MUTATION: drop the template-literal escaping. The backtick in "back`tick"
-    // then ends the generated sql`` template and schema.ts no longer parses.
+    // MUTATION: write the IN list straight into the sql`` template instead of
+    // through sql.raw. The backtick in "back`tick" then ends the template and
+    // schema.ts no longer parses.
     const code = generateSchemaFile(registryWithEnum(VALUES))
     const out = ts.transpileModule(code, { reportDiagnostics: true, fileName: 'schema.ts' })
     expect((out.diagnostics ?? []).map((d) => ts.flattenDiagnosticMessageText(d.messageText, '\n'))).toEqual([])
@@ -99,10 +100,9 @@ describe('generated enum check constraints quote their values safely', () => {
 
   it('applies on Postgres and admits exactly the declared values', async () => {
     // MUTATION: drop the doubling of `'`. "don't know" then ends the SQL string
-    // early and CREATE TABLE fails. Dropping the `\` escaping turns
-    // "back\slash" into "backslash", so inserting the real value is rejected.
-    // Dropping the `${` escaping makes "dollar ${x}" an interpolation, and
-    // importing schema.ts fails on the undefined `x`.
+    // early and CREATE TABLE fails. Writing the list straight into the template
+    // also fails here: the cooked text turns "back\slash" into "backslash" and
+    // CRLF into LF, so the real values are rejected.
     writeFileSync(SCHEMA_PATH, generateSchemaFile(registryWithEnum(VALUES)))
     const schema = (await import(SCHEMA_PATH)) as Record<string, unknown>
     const table = Object.values(schema).find(
