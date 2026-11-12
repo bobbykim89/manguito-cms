@@ -1,5 +1,13 @@
 # @bobbykim/manguito-cms-admin
 
+## 0.6.5
+
+### Patch Changes
+
+- e349a88: Codegen quotes schema text safely (#96). An enum value holding an apostrophe, backtick, `${`, backslash or CRLF no longer breaks the generated CHECK constraint or `schema.ts`. A field label or enum option holding a line break or a double quote no longer breaks the generated admin form.
+- Updated dependencies [9729712]
+  - @bobbykim/manguito-cms-core@0.11.2
+
 ## 0.6.4
 
 ### Patch Changes
