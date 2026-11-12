@@ -28,7 +28,7 @@
     "vite.config.ts"
   ],
   "scripts": {
-    "build": "vue-tsc && vite build && tsup",
+    "build": "vite build && tsup",
     "typecheck": "vue-tsc --noEmit && vue-tsc --noEmit -p tsconfig.tests.json && tsc --noEmit -p tsconfig.codegen.json && tsc --noEmit -p tsconfig.adapter.json",
     "dev": "vite",
     "test": "dotenv -e ../../.env.test -- vitest run",
