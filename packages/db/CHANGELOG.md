@@ -1,5 +1,14 @@
 # @bobbykim/manguito-cms-db
 
+## 0.3.2
+
+### Patch Changes
+
+- e349a88: Codegen quotes schema text safely (#96). An enum value holding an apostrophe, backtick, `${`, backslash or CRLF no longer breaks the generated CHECK constraint or `schema.ts`. A field label or enum option holding a line break or a double quote no longer breaks the generated admin form.
+- 9729712: ES module projects get ES module type declarations. Each export pointed `import` and `require` at the same `.d.ts`, which TypeScript reads as CommonJS, so a `"type": "module"` project with `NodeNext` resolution (the `create-manguito` default) mixed drizzle-orm's CommonJS and ES module types. Passing drizzle's `sql` to the db then failed to type-check. Each export now has its own `import` and `require` types (#72).
+- Updated dependencies [9729712]
+  - @bobbykim/manguito-cms-core@0.11.2
+
 ## 0.3.1
 
 ### Patch Changes

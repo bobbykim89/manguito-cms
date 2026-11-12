@@ -1,5 +1,16 @@
 # @bobbykim/manguito-cms-api
 
+## 0.9.6
+
+### Patch Changes
+
+- 9729712: ES module projects get ES module type declarations. Each export pointed `import` and `require` at the same `.d.ts`, which TypeScript reads as CommonJS, so a `"type": "module"` project with `NodeNext` resolution (the `create-manguito` default) mixed drizzle-orm's CommonJS and ES module types. Passing drizzle's `sql` to the db then failed to type-check. Each export now has its own `import` and `require` types (#72).
+- 4cea14b: Generated routes quote a type's label and a singleton's base path safely (#68). A label such as `Author's Note`, or a singleton `default_base_path` with an apostrophe, used to end its single-quoted string and make the generated routes file invalid, which broke `manguito build` and `manguito dev`.
+- Updated dependencies [e349a88]
+- Updated dependencies [9729712]
+  - @bobbykim/manguito-cms-db@0.3.2
+  - @bobbykim/manguito-cms-core@0.11.2
+
 ## 0.9.5
 
 ### Patch Changes
