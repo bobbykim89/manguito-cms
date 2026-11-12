@@ -1,7 +1,7 @@
 import { createPostgresAdapter, seedSystemTables, type DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import { hashPassword } from '@bobbykim/manguito-cms-core'
 import { sql } from 'drizzle-orm'
-import { testParsedSchema, testRoleUsers } from './fixtures.js'
+import { testParsedSchema, testRoleUsers } from '@bobbykim/manguito-cms-test-fixtures'
 
 export async function getTestDb(): Promise<DrizzlePostgresInstance> {
   const url = process.env['DB_URL']

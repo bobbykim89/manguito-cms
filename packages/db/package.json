@@ -45,7 +45,7 @@
     "pg": "^8.22.0"
   },
   "devDependencies": {
-    "@bobbykim/manguito-cms-test-utils": "workspace:*",
+    "@bobbykim/manguito-cms-test-fixtures": "workspace:*",
     "@types/node": "^25.9.5",
     "@types/pg": "^8.20.0",
     "dotenv-cli": "latest",

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { sql } from 'drizzle-orm'
-import { getTestDb, createTestApp, authenticatedRequest, seedRoleUsers } from '@bobbykim/manguito-cms-test-utils'
+import { getTestDb, authenticatedRequest, seedRoleUsers } from '@bobbykim/manguito-cms-test-utils'
+import { createTestApp } from './test-app'
 import { linkUniqueName, type DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import {
   makeCardinalityFixture,

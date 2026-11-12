@@ -24,7 +24,7 @@
     "hono": "^4.12.28"
   },
   "devDependencies": {
-    "@bobbykim/manguito-cms-test-utils": "workspace:*",
+    "@bobbykim/manguito-cms-test-fixtures": "workspace:*",
     "@types/node": "^25.9.5",
     "dotenv-cli": "latest",
     "drizzle-kit": "^0.31.10",

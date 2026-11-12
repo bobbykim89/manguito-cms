@@ -1,14 +1,31 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { sql } from 'drizzle-orm'
-import {
-  getTestDb,
-  testParsedSchema,
-  testRoleUsers,
-  createTestApp,
-  authenticatedRequest,
-  teardownTestData,
-} from '@bobbykim/manguito-cms-test-utils'
-import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
+import { createCmsApp } from '@bobbykim/manguito-cms-api'
+import { createLocalAdapter } from '@bobbykim/manguito-cms-api/storage'
+import type { SchemaRegistry } from '@bobbykim/manguito-cms-core'
+import { createPostgresAdapter, type DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
+import { testParsedSchema, testRoleUsers, authenticatedRequest } from '@bobbykim/manguito-cms-test-fixtures'
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+//
+// Built on the published packages, as a project would use them. The shared
+// test-utils helpers serve the packages' own tests.
+
+async function getTestDb(): Promise<DrizzlePostgresInstance> {
+  const url = process.env['DB_URL']
+  if (!url) throw new Error('DB_URL is not set. Add it to .env.test before running the smoke test.')
+  const adapter = createPostgresAdapter({ url })
+  await adapter.connect()
+  return adapter.getDb()
+}
+
+function createTestApp(schema: SchemaRegistry, db: DrizzlePostgresInstance) {
+  return createCmsApp({ storage: createLocalAdapter(), registry: schema, db }).app
+}
+
+async function teardownTestData(db: DrizzlePostgresInstance, tableName: string, id: string): Promise<void> {
+  await db.execute(sql`DELETE FROM ${sql.raw(`"${tableName}"`)} WHERE id = ${id}`)
+}
 
 // ─── Shared state ────────────────────────────────────────────────────────────
 
