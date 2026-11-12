@@ -15,16 +15,9 @@ RUN corepack enable
 WORKDIR /repo
 COPY . .
 RUN pnpm install --frozen-lockfile
-# Build workspace packages in dependency order. Turbo's --filter "sandbox..."
-# hits a cycle via test-utils devDependencies, so build packages explicitly.
-# A second pnpm install fixes the manguito bin symlink (failed at first install
-# because packages/cli/dist/index.js didn't exist yet).
-RUN pnpm --filter @bobbykim/manguito-cms-core run build && \
-    pnpm --filter @bobbykim/manguito-cms-db run build && \
-    pnpm --filter @bobbykim/manguito-cms-api run build && \
-    pnpm --filter @bobbykim/manguito-cms-admin run build && \
-    pnpm --filter @bobbykim/manguito-cms-cli run build && \
-    pnpm install --frozen-lockfile
+# Build the workspace packages (turbo orders them), then reinstall so the
+# manguito bin links to packages/cli/dist, which didn't exist at first install.
+RUN pnpm build:packages
 RUN pnpm --filter sandbox run build
 
 FROM node:22-alpine AS pruned

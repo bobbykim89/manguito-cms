@@ -5,11 +5,8 @@ import { createPostgresAdapter } from '../src/adapters/postgres'
 import { seedSystemTables } from '../src/seeder/index'
 import { getMigrationStatus, applyMigrations } from '../src/migrations/index'
 import type { DrizzlePostgresInstance, MigrationRunnerOptions } from '../src/types'
-import {
-  getTestDb,
-  teardownTestData,
-  testParsedSchema,
-} from '@bobbykim/manguito-cms-test-utils'
+import { testParsedSchema } from '@bobbykim/manguito-cms-test-fixtures'
+import { getTestDb, teardownTestData } from './helpers'
 
 // ─── globalSetup reference paths ──────────────────────────────────────────────
 //

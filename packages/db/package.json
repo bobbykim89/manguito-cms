@@ -14,9 +14,14 @@
   },
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.js"
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
     }
   },
   "main": "./dist/index.js",
@@ -40,7 +45,7 @@
     "pg": "^8.22.0"
   },
   "devDependencies": {
-    "@bobbykim/manguito-cms-test-utils": "workspace:*",
+    "@bobbykim/manguito-cms-test-fixtures": "workspace:*",
     "@types/node": "^25.9.5",
     "@types/pg": "^8.20.0",
     "dotenv-cli": "latest",

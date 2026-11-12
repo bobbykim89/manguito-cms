@@ -10,7 +10,7 @@ import type {
 } from '@bobbykim/manguito-cms-core'
 import { buildSchemaRegistry, parseSchema } from '@bobbykim/manguito-cms-core'
 import type { ParsedSchema } from '@bobbykim/manguito-cms-core'
-import { testParsedSchema } from '@bobbykim/manguito-cms-test-utils'
+import { testParsedSchema } from '@bobbykim/manguito-cms-test-fixtures'
 import { codegenForeignKeyName } from '../../constraint-names'
 import { linkUniqueName } from '../../link-tables'
 import {

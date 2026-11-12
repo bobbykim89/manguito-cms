@@ -2,7 +2,8 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { sql } from 'drizzle-orm'
 import { buildSchemaRegistry } from '@bobbykim/manguito-cms-core'
-import { getTestDb, createTestApp, authenticatedRequest, testParsedSchema, seedRoleUsers } from '@bobbykim/manguito-cms-test-utils'
+import { getTestDb, authenticatedRequest, testParsedSchema, seedRoleUsers } from '@bobbykim/manguito-cms-test-utils'
+import { createTestApp } from './test-app'
 import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import {
   makeCardinalityFixture,

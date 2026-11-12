@@ -15,11 +15,10 @@
     "lint": "eslint src"
   },
   "devDependencies": {
-    "@bobbykim/manguito-cms-api": "workspace:*",
     "@bobbykim/manguito-cms-core": "workspace:*",
     "@bobbykim/manguito-cms-db": "workspace:*",
+    "@bobbykim/manguito-cms-test-fixtures": "workspace:*",
     "@types/node": "^25.9.5",
-    "drizzle-orm": "^0.45.2",
-    "vitest": "^4.1.10"
+    "drizzle-orm": "^0.45.2"
   }
 }

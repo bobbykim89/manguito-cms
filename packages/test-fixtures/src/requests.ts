@@ -1,8 +1,4 @@
 import { createHmac } from 'node:crypto'
-import { createCmsApp } from '@bobbykim/manguito-cms-api'
-import { createLocalAdapter } from '@bobbykim/manguito-cms-api/storage'
-import type { SchemaRegistry } from '@bobbykim/manguito-cms-core'
-import type { DrizzlePostgresInstance } from '@bobbykim/manguito-cms-db'
 import { testRoleUsers } from './fixtures.js'
 
 // ─── JWT signing ──────────────────────────────────────────────────────────────
@@ -29,15 +25,13 @@ async function signAuthToken(payload: {
   return `${data}.${signature}`
 }
 
-// ─── App factory ─────────────────────────────────────────────────────────────
+// ─── App shape ───────────────────────────────────────────────────────────────
 
-export function createTestApp(schema: SchemaRegistry, db: DrizzlePostgresInstance) {
-  const { app } = createCmsApp({
-    storage: createLocalAdapter(),
-    registry: schema,
-    db,
-  })
-  return app
+// The part of a Hono app the helper uses. Typed structurally so this package
+// needs no api import: api tests pass an app built from api's source, the
+// sandbox one built from the published package.
+export type TestApp = {
+  request: (path: string, init: RequestInit) => Response | Promise<Response>
 }
 
 // ─── Authenticated request helper ─────────────────────────────────────────────
@@ -45,7 +39,7 @@ export function createTestApp(schema: SchemaRegistry, db: DrizzlePostgresInstanc
 export type TestRole = 'admin' | 'manager' | 'editor' | 'writer' | 'viewer'
 
 export async function authenticatedRequest(
-  app: ReturnType<typeof createTestApp>,
+  app: TestApp,
   role: TestRole,
   method: string,
   path: string,

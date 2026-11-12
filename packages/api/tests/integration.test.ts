@@ -9,9 +9,9 @@ import {
   testParsedSchema,
   testRoleUsers,
   seedRoleUsers,
-  createTestApp,
   authenticatedRequest,
 } from '@bobbykim/manguito-cms-test-utils'
+import { createTestApp } from '../src/__tests__/test-app'
 
 // ─── Routes derived from testParsedSchema ─────────────────────────────────────
 //

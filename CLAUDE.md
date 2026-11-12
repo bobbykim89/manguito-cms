@@ -32,7 +32,8 @@ Phase 10 — Deployment — Lambda, Neon (publishing to npm stays manual — REL
 @bobbykim/manguito-cms-admin — vue 3 admin panel
 @bobbykim/manguito-cms-cli — manguito CLI binary
 @bobbykim/create-manguito — `npm create @bobbykim/manguito` project scaffolder
-@bobbykim/manguito-cms-test-utils — private shared test fixtures, never published
+@bobbykim/manguito-cms-test-fixtures — private shared test fixtures, never published
+@bobbykim/manguito-cms-test-utils — private shared db test helpers, never published
 
 ## Stack
 

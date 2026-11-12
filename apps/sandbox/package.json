@@ -12,7 +12,8 @@
     "validate": "manguito validate --env .env",
     "create:superuser": "manguito createsuperuser --env .env",
     "smoke": "dotenv -e ../../.env.test -- vitest run tests/smoke.test.ts",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@bobbykim/manguito-cms-admin": "workspace:*",
@@ -23,10 +24,11 @@
     "hono": "^4.12.28"
   },
   "devDependencies": {
-    "@bobbykim/manguito-cms-test-utils": "workspace:*",
+    "@bobbykim/manguito-cms-test-fixtures": "workspace:*",
     "@types/node": "^25.9.5",
     "dotenv-cli": "latest",
     "drizzle-kit": "^0.31.10",
+    "drizzle-orm": "^0.45.2",
     "typescript": "^6.0.3",
     "vitest": "^4.1.10"
   }

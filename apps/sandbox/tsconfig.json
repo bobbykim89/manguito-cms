@@ -10,5 +10,5 @@
     "skipLibCheck": true,
     "esModuleInterop": true
   },
-  "include": ["manguito.config.ts"]
+  "include": ["manguito.config.ts", "src", "tests"]
 }
