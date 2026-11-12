@@ -8,8 +8,9 @@ import { testParsedSchema, testRoleUsers, authenticatedRequest } from '@bobbykim
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 //
-// Built on the published packages, as a project would use them. The shared
-// test-utils helpers serve the packages' own tests.
+// Built on the published packages, as a project would use them. test-utils'
+// db helpers can't be shared here: the sandbox is an ES module and test-utils'
+// source is read as CommonJS, so the two would see different drizzle-orm types.
 
 async function getTestDb(): Promise<DrizzlePostgresInstance> {
   const url = process.env['DB_URL']

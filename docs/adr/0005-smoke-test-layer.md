@@ -14,4 +14,5 @@ Smoke tests are a separate layer from unit and integration tests. They live in `
 ## Consequences
 
 - `pnpm test` runs the fast package suites during development; `pnpm smoke` is run deliberately (before opening a PR) — locally optional, automated on `main` in CI (phase 10).
-- Smoke tests reuse the same `test-utils` helpers ([0003](./0003-real-postgres-integration-tests.md)); the sandbox config uses a schema matching the `testParsedSchema` fixture shape so fixtures stay compatible.
+- Smoke tests reuse the shared fixtures ([0003](./0003-real-postgres-integration-tests.md)); the sandbox config uses a schema matching the `testParsedSchema` fixture shape so fixtures stay compatible.
+  - *Amended (#72):* the fixtures and `authenticatedRequest` now live in `test-fixtures`. The smoke test builds its own `getTestDb`, `createTestApp` and `teardownTestData` on the published packages: the sandbox is an ES module, and `test-utils`' source is read as CommonJS, so sharing its db helpers would mix two flavours of drizzle-orm's types.

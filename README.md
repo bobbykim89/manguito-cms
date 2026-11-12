@@ -441,7 +441,8 @@ manguito-cms/
 │   ├── admin/       # Vue 3 admin panel
 │   ├── cli/         # manguito CLI binary
 │   ├── create-manguito/  # `npm create @bobbykim/manguito` scaffolder
-│   └── test-utils/  # Shared test fixtures and helpers — not published
+│   ├── test-fixtures/  # Shared test fixtures — not published
+│   └── test-utils/  # Shared db test helpers — not published
 ├── apps/
 │   └── sandbox/     # Local test harness — not published
 │       └── schemas/ # Example content-, paragraph-, taxonomy- and enum-types
@@ -520,11 +521,13 @@ storage credentials — `cp apps/sandbox/.env.example apps/sandbox/.env` leaves
 `AWS_REGION` empty and `manguito build` then fails with `Region is missing`. For
 package development use `pnpm build:packages`, which is self-contained.
 
-`pnpm install` warns about a cyclic workspace dependency between `packages/api` and
-`packages/test-utils` — `api` uses `test-utils` for its tests while `test-utils` uses
-`api` for its request helpers. Turborepo builds through it, but `turbo.json` makes the
-`db` and `api` typecheck wait for their own build, because their tests reach their own
-`dist` through `test-utils`. Harmless today, worth untangling eventually.
+Two private packages serve the tests. `packages/test-fixtures` holds the schema and
+role-user fixtures and `authenticatedRequest`, and depends only on core.
+`packages/test-utils` adds the db helpers (`getTestDb`, `seedRoleUsers`,
+`teardownTestData`) for api's tests and the root `globalSetup`. db's tests use their
+own helpers built from db's source, since test-utils depends on db. The sandbox smoke
+test has its own too: it is an ES module, while test-utils' source is read as
+CommonJS, so the two would see different drizzle-orm types.
 
 Releases are cut with Changesets. The version bump goes through a pull request like any other change, then publishing runs from `master`. See [RELEASE.md](./RELEASE.md) for the step-by-step process.
 
