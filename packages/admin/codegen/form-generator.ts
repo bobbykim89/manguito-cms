@@ -33,13 +33,19 @@ const COMPONENT_IMPORT: Record<string, string> = {
   ComputedDisplay: `${ADMIN_PKG}/src/components/fields/ComputedDisplay.vue`,
 }
 
-// Escape backslashes and single quotes for use inside JS single-quoted string literals.
-function esc(s: string): string {
-  return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+// A single-quoted JS string literal for free text such as a label or an enum
+// option, which can hold quotes or line breaks (#96). U+2028 and U+2029 need no
+// escape: they are legal in string literals since ES2019. A `"` is left as is,
+// so the attribute that holds the literal must go through escAttr.
+const STRING_ESCAPES: Record<string, string> = {
+  '\\': '\\\\',
+  "'": "\\'",
+  '\n': '\\n',
+  '\r': '\\r',
 }
 
 function str(s: string): string {
-  return `'${esc(s)}'`
+  return `'${s.replace(/[\\'\n\r]/g, (c) => STRING_ESCAPES[c]!)}'`
 }
 
 // Escape characters that are unsafe inside an HTML double-quoted attribute value.
@@ -103,11 +109,11 @@ function renderField(field: ParsedField, indent: string): string {
   const attr = indent + '  '
 
   if (field.ui_component.component === 'computed-display') {
-    return [`${indent}<${compName}`, `${attr}:field="${fieldObj}"`, `${indent}/>`].join('\n')
+    return [`${indent}<${compName}`, `${attr}:field="${escAttr(fieldObj)}"`, `${indent}/>`].join('\n')
   }
 
   const lines: string[] = [`${indent}<${compName}`]
-  lines.push(`${attr}:field="${fieldObj}"`)
+  lines.push(`${attr}:field="${escAttr(fieldObj)}"`)
 
   if (field.ui_component.component === 'paragraph-embed') {
     const importName = paragraphRefToImportName(field.ui_component.ref)

@@ -176,6 +176,12 @@ function tableNameToVarName(tableName: string): string {
   return tableName.replace(/-/g, '_')
 }
 
+// A CHECK's IN list as SQL text, e.g. `'draft', 'don''t know'`. Core accepts
+// any non-empty string as an enum value, so `'` is doubled for SQL (#96).
+function enumInList(values: string[]): string {
+  return values.map((v) => `'${v.replace(/'/g, "''")}'`).join(', ')
+}
+
 // One entry of a table's constraint callback: an explicitly named foreign key.
 function foreignKeyEntry(column: string, name: string, target: string, onDelete: string): string {
   return `    ${column}_fk: s.foreignKey({ name: '${name}', columns: [table.${column}], foreignColumns: [${target}] }).onDelete('${onDelete}'),`
@@ -230,12 +236,14 @@ function generateTableDef(
   const colBlock = colLines.map((l) => `    ${l}`).join('\n')
   const checks = enumFields.map((f) => {
     const col = f.db_column!
-    const values = col.check_constraint!.map((v) => `'${v}'`).join(', ')
     const cname = checkConstraintName(col.column_name)
+    // The IN list goes in through sql.raw as a JSON string. Written straight
+    // into the sql`` template, a value's `\`, backtick, `${` or CRLF would
+    // change when the template literal is cooked.
     return [
       `    ${cname}: s.check(`,
       `      '${cname}',`,
-      `      sql\`\${table.${col.column_name}} IN (${values})\``,
+      `      sql\`\${table.${col.column_name}} IN (\${sql.raw(${JSON.stringify(enumInList(col.check_constraint!))})})\``,
       `    ),`,
     ].join('\n')
   })
