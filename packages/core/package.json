@@ -14,14 +14,24 @@
   },
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.js"
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
     },
     "./cardinality": {
-      "types": "./dist/cardinality.d.ts",
-      "import": "./dist/cardinality.mjs",
-      "require": "./dist/cardinality.js"
+      "import": {
+        "types": "./dist/cardinality.d.mts",
+        "default": "./dist/cardinality.mjs"
+      },
+      "require": {
+        "types": "./dist/cardinality.d.ts",
+        "default": "./dist/cardinality.js"
+      }
     }
   },
   "main": "./dist/index.js",

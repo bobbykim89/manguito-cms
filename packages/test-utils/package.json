@@ -4,6 +4,7 @@
   "license": "MIT",
   "author": "Bobby Kim <bobby.sihun.kim@gmail.com>",
   "private": true,
+  "type": "module",
   "exports": {
     ".": {
       "import": "./src/index.ts",

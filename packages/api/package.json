@@ -14,29 +14,54 @@
   },
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.js"
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
     },
     "./storage": {
-      "types": "./dist/storage/index.d.ts",
-      "import": "./dist/storage/index.mjs",
-      "require": "./dist/storage/index.js"
+      "import": {
+        "types": "./dist/storage/index.d.mts",
+        "default": "./dist/storage/index.mjs"
+      },
+      "require": {
+        "types": "./dist/storage/index.d.ts",
+        "default": "./dist/storage/index.js"
+      }
     },
     "./runtime": {
-      "types": "./dist/runtime/index.d.ts",
-      "import": "./dist/runtime/index.mjs",
-      "require": "./dist/runtime/index.js"
+      "import": {
+        "types": "./dist/runtime/index.d.mts",
+        "default": "./dist/runtime/index.mjs"
+      },
+      "require": {
+        "types": "./dist/runtime/index.d.ts",
+        "default": "./dist/runtime/index.js"
+      }
     },
     "./codegen": {
-      "types": "./dist/codegen/index.d.ts",
-      "import": "./dist/codegen/index.mjs",
-      "require": "./dist/codegen/index.js"
+      "import": {
+        "types": "./dist/codegen/index.d.mts",
+        "default": "./dist/codegen/index.mjs"
+      },
+      "require": {
+        "types": "./dist/codegen/index.d.ts",
+        "default": "./dist/codegen/index.js"
+      }
     },
     "./graphql": {
-      "types": "./dist/graphql/index.d.ts",
-      "import": "./dist/graphql/index.mjs",
-      "require": "./dist/graphql/index.js"
+      "import": {
+        "types": "./dist/graphql/index.d.mts",
+        "default": "./dist/graphql/index.mjs"
+      },
+      "require": {
+        "types": "./dist/graphql/index.d.ts",
+        "default": "./dist/graphql/index.js"
+      }
     }
   },
   "main": "./dist/index.js",
